@@ -954,7 +954,11 @@ fn fit_window_to_screen(app: &AppHandle) {
         let size = tauri::LogicalSize::new(cw.min(aw * 0.96).max(640.0), ch.min(ah * 0.96).max(480.0));
         let _ = w.set_min_size(Some(tauri::LogicalSize::new(size.width.min(960.0), size.height.min(620.0))));
         let _ = w.set_size(size);
-        let _ = w.center();
+        // Position explicitly: center() can run before the resize is applied on macOS.
+        let pos = m.work_area().position;
+        let x = pos.x as f64 / scale + (aw - size.width).max(0.0) / 2.0;
+        let y = pos.y as f64 / scale + (ah - size.height).max(0.0) / 2.0;
+        let _ = w.set_position(tauri::LogicalPosition::new(x, y));
     }
 }
 
