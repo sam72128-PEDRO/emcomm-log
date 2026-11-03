@@ -13,3 +13,5 @@ release/*.AppImage
 release/*.rpm
 release/ci/
 release/smoke*/
+release/e2e/
+e2e/
