@@ -162,7 +162,7 @@
   const emFields: [keyof T.EmergencyFields, string][] = [
     ["incident_name", "Incident"],
     ["incident_number", "Incident number"],
-    ["operational_period", "Operational period"],
+    ["operational_period", "Period (text)"],
     ["message_number", "Message number"],
     ["precedence", "Precedence"],
     ["originator", "Originator"],
