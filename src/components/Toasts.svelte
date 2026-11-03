@@ -46,6 +46,10 @@
     border: 1px solid var(--border-strong);
     box-shadow: var(--shadow);
   }
+  .toast .grow {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .toast.ok {
     border-color: var(--ok);
     color: var(--text);

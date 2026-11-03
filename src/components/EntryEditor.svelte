@@ -37,6 +37,7 @@
   } from "../lib/entryForm";
   import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
+  import { currentPeriod } from "../lib/periods";
   import DateTimeInput from "./DateTimeInput.svelte";
   import TagInput from "./TagInput.svelte";
 
@@ -73,6 +74,7 @@
     preset,
     profile: app.profile,
     incident: app.active?.info.incident ?? book.info.incident,
+    currentOpId: type === "emergency" ? (currentPeriod(app.periods)?.id ?? null) : null,
   });
 
   function startForm(): EntryForm {
@@ -87,6 +89,21 @@
   let baseline = $state<EntryForm>(
     untrack(() => (mode === "edit" && entry ? formFromEntry(entry) : newForm(ctx()))),
   );
+  // Periods load after the logbook opens; a new, untouched entry picks up the current one then
+  // (once, so a deliberate "None" is not overridden later).
+  let opDefaulted = false;
+  $effect(() => {
+    const id = type === "emergency" ? (currentPeriod(app.periods)?.id ?? "") : "";
+    untrack(() => {
+      if (opDefaulted || !id) return;
+      opDefaulted = true;
+      if (mode === "new" && !form.op_id && !baseline.op_id) {
+        form.op_id = id;
+        baseline.op_id = id;
+      }
+    });
+  });
+  const periodChoices = $derived(app.periods.filter((p) => p.status === "active" || p.id === form.op_id));
   let errors = $state<FieldErrors>({});
   let saving = $state(false);
   let saveError = $state<T.AppError | null>(null);
@@ -635,7 +652,7 @@
   {#if type === "emergency" && !compact}
     <fieldset>
       <legend>Incident</legend>
-      <div class="grid-3">
+      <div class="grid-4">
         <div class="field">
           <label for={fid("inc")}>Incident</label><input
             id={fid("inc")}
@@ -653,7 +670,16 @@
           />
         </div>
         <div class="field">
-          <label for={fid("op")}>Operational period</label><input
+          <label for={fid("opid")}>Operational period</label>
+          <select id={fid("opid")} bind:value={form.op_id}>
+            <option value="">{app.periods.length ? "None — by event time" : "None defined"}</option>
+            {#each periodChoices as p (p.id)}<option value={p.id}
+                >{p.name}{p.status === "void" ? " (voided)" : ""}</option
+              >{/each}
+          </select>
+        </div>
+        <div class="field">
+          <label for={fid("op")}>Period (text)</label><input
             id={fid("op")}
             type="text"
             bind:value={form.em.operational_period}
@@ -666,7 +692,7 @@
       <fieldset>
         <legend>Message details</legend>
         <p class="hint" style="margin:0 0 8px">
-          Structured fields kept for a future ICS 213 mapping. This is a log record, not an official form.
+          These fields fill an ICS 213 when you export one from the Traffic Log or the entry's details.
         </p>
         <div class="grid-4">
           <div class="field">
@@ -775,18 +801,59 @@
               rows="2"></textarea>
           </div>
           <div class="field">
-            <label for={fid("resp")}>Response</label><textarea
+            <label for={fid("resp")}>Response (ICS 213 reply)</label><textarea
               id={fid("resp")}
               bind:value={form.em.response}
               rows="2"></textarea>
           </div>
+        </div>
+        <div class="grid-4" style="margin-top:10px">
+          <div class="field">
+            <label for={fid("apn")}>Approved by — name</label><input
+              id={fid("apn")}
+              type="text"
+              bind:value={form.em.approved_by_name}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("app")}>Approved by — position/title</label><input
+              id={fid("app")}
+              type="text"
+              bind:value={form.em.approved_by_position}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("rbn")}>Replied by — name</label><input
+              id={fid("rbn")}
+              type="text"
+              bind:value={form.em.replied_by_name}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("rbp")}>Replied by — position/title</label><input
+              id={fid("rbp")}
+              type="text"
+              bind:value={form.em.replied_by_position}
+              maxlength="200"
+            />
+          </div>
+          <DateTimeInput
+            id={fid("rat")}
+            label="Replied at"
+            bind:value={form.em.replied_at_utc}
+            zone={app.zone}
+            clearable
+          />
         </div>
       </fieldset>
     {:else if form.kind === "activity"}
       <fieldset>
         <legend>Activity details</legend>
         <p class="hint" style="margin:0 0 8px">
-          Structured fields kept for a future ICS 214 mapping. This is a log record, not an official form.
+          Activity entries make up the ICS 214 activity log for their operational period.
         </p>
         <div class="grid-4">
           <div class="field">

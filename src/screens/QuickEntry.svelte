@@ -8,6 +8,7 @@
   import { allowedKinds, applyTemplate, formCopyOf, KIND_LABEL, newForm } from "../lib/entryForm";
   import type { EntryForm } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
+  import { currentPeriod } from "../lib/periods";
   import EntryEditor from "../components/EntryEditor.svelte";
   import KindBadge from "../components/KindBadge.svelte";
 
@@ -25,7 +26,9 @@
     preset: book.settings.preset,
     profile: app.profile,
     incident: app.active?.info.incident ?? book.info.incident,
+    currentOpId: type === "emergency" ? (currentPeriod(app.periods)?.id ?? null) : null,
   });
+  const op = $derived(type === "emergency" ? currentPeriod(app.periods) : null);
 
   async function loadTemplates() {
     templates = await api.listTemplates().catch(() => []);
@@ -147,6 +150,13 @@
       <Zap size={22} class="icon" />Quick Entry – Add {type === "ham" ? "Log Entry" : "Traffic"}
     </h1>
     <span class="spacer"></span>
+    {#if op}<span class="badge ok" title="New entries are tagged with this operational period"
+        >PERIOD: {op.name}</span
+      >{:else if type === "emergency" && app.periods.some((p) => p.status === "active")}<span
+        class="badge warn"
+        title="No operational period is running now. New entries are placed by their time; add the next period on the Dashboard."
+        >NO CURRENT PERIOD</span
+      >{/if}
     <span class="muted"
       >Times entered in {app.zone === "utc" ? "UTC" : "local time"} · {app.stats?.total_active ?? 0} active entries</span
     >

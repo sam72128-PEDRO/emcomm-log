@@ -95,6 +95,7 @@
   }
   .dt input {
     flex: 1 1 200px;
-    min-width: 200px;
+    /* Wide enough for the full date and time, but never wider than a narrow column (compact editor). */
+    min-width: min(200px, 100%);
   }
 </style>

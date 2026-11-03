@@ -149,5 +149,6 @@ export function savedEntry(seq: number, subject: string): T.Entry {
     ham: null,
     emergency: null,
     attachments: [],
+    op_id: null,
   };
 }

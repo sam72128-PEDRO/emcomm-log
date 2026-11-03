@@ -113,6 +113,20 @@ export const api = {
   exportPreview: (req: T.ExportRequest) => call<T.ExportPreview>("export_preview", { req }),
   runExport: (req: T.ExportRequest, dest: string) => call<T.ExportResult>("run_export", { req, dest }),
 
+  listPeriods: () => call<T.OperationalPeriod[]>("list_periods"),
+  currentPeriod: () => call<T.OperationalPeriod | null>("current_period"),
+  savePeriod: (id: string | null, input: T.OperationalPeriodInput) =>
+    call<T.PeriodSaveResult>("save_period", { id, input }),
+  setPeriodVoid: (id: string, isVoid: boolean) =>
+    call<T.OperationalPeriod>("set_period_void", { id, void: isVoid }),
+  periodResources: (opId: string) => call<T.OpResource[]>("period_resources", { opId }),
+  setPeriodResources: (opId: string, rows: T.OpResource[]) =>
+    call<T.OpResource[]>("set_period_resources", { opId, rows }),
+  form213Preview: (req: T.Form213Request) => call<T.FormPreview>("form213_preview", { req }),
+  form214Preview: (req: T.Form214Request) => call<T.FormPreview>("form214_preview", { req }),
+  exportForm213: (req: T.Form213Request, dest: string) => call<T.FormResult>("export_form213", { req, dest }),
+  exportForm214: (req: T.Form214Request, dest: string) => call<T.FormResult>("export_form214", { req, dest }),
+
   quitApp: () => call<void>("quit_app"),
   cancelClose: () => call<void>("cancel_close"),
 };

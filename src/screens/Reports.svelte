@@ -3,6 +3,7 @@
     ChartColumn,
     FileDown,
     PackagePlus,
+    FileText,
     FolderSearch,
     CircleAlert,
     CircleCheck,
@@ -13,6 +14,7 @@
   import { api, toAppError } from "../lib/api";
   import type * as T from "../lib/types";
   import { todayDateString, zoneLabel } from "../lib/time";
+  import Form214Dialog from "../components/Form214Dialog.svelte";
 
   const info = app.active!.info;
   const formats: { id: T.ExportFormat; label: string; desc: string; ext: string; ham?: boolean }[] = [
@@ -25,6 +27,7 @@
   ];
   const available = formats.filter((f) => !f.ham || info.logbook_type === "ham");
 
+  let form214 = $state(false);
   let format = $state<T.ExportFormat>("pdf");
   let scope = $state<"all" | "range" | "filter">(app.reportScope);
   let from = $state(todayDateString(app.zone));
@@ -244,6 +247,25 @@
     </div>
   </section>
 
+  {#if app.bookType === "emergency"}
+    <section class="panel">
+      <div class="panel-head"><h2><FileText size={20} class="icon" />ICS forms</h2></div>
+      <div class="panel-body col">
+        <p class="muted" style="margin:0">
+          Filled on FEMA's official forms. Signature lines are left blank for signing after printing, and the
+          fields stay editable in any PDF reader.
+        </p>
+        <div class="row wrap">
+          <button onclick={() => (form214 = true)}><FileText size={16} />ICS 214 Activity Log…</button>
+          <button onclick={() => app.navigate("log")}><FileText size={16} />ICS 213 General Message…</button>
+          <span class="hint"
+            >For an ICS 213, select message entries in the Traffic Log (or open one) and choose ICS 213.</span
+          >
+        </div>
+      </div>
+    </section>
+  {/if}
+
   <section class="panel">
     <div class="panel-head">
       <h2><PackagePlus size={20} class="icon" />Portable logbook package (.emlog)</h2>
@@ -279,6 +301,8 @@
     </div>
   </section>
 </div>
+
+{#if form214}<Form214Dialog onclose={() => (form214 = false)} />{/if}
 
 <style>
   .page {

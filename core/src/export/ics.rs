@@ -2,12 +2,15 @@
 //! The forms default to Helvetica with no `NeedAppearances`, so every filled field gets its own
 //! appearance stream drawn with the embedded DejaVu Sans (Unicode), and its `/DA` names that font so
 //! the result stays editable. Signature fields are never touched. Text that does not fit a field is
-//! never dropped: it is returned as overflow for the caller to continue elsewhere.
+//! never dropped: it is returned as overflow for the caller to continue on a continuation page.
+//!
+//! [`FormBuilder`] assembles one output document from copies of template pages. Each copy's fields
+//! get a suffix so copies hold independent values, and all copies share one embedded font.
 
 use super::pdf::{FONT_DATA, FontMetrics, wrap};
 use crate::error::{AppError, AppResult};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub static ICS_213: &[u8] = include_bytes!("../../assets/ics/ICS-213-v3.pdf");
 pub static ICS_214: &[u8] = include_bytes!("../../assets/ics/ICS-214-v3.1.pdf");
@@ -18,12 +21,7 @@ const MIN_SIZE: f32 = 6.0;
 const MIN_MULTILINE: f32 = 7.0;
 const PAD: f32 = 2.0;
 const LINE: f32 = 1.15;
-
-pub struct FilledForm {
-    pub pdf: Vec<u8>,
-    /// Field name -> the part of its text that did not fit.
-    pub overflow: BTreeMap<String, String>,
-}
+const LETTER: (f32, f32) = (612.0, 792.0);
 
 fn err(e: lopdf::Error) -> AppError {
     AppError::internal(format!("ICS form template: {e}"))
@@ -40,7 +38,7 @@ fn resolved_dict(doc: &Document, o: &Object) -> AppResult<Dictionary> {
     resolve(doc, o)?.as_dict().cloned().map_err(err)
 }
 
-fn decode_text(o: &Object) -> Option<String> {
+pub(crate) fn decode_text(o: &Object) -> Option<String> {
     let Object::String(b, _) = o else { return None };
     if b.len() >= 2 && b[0] == 0xFE && b[1] == 0xFF {
         let u: Vec<u16> = b[2..].chunks(2).map(|c| u16::from_be_bytes([c[0], *c.get(1).unwrap_or(&0)])).collect();
@@ -58,6 +56,7 @@ fn text_string(s: &str) -> Object {
     Object::String(b, StringFormat::Hexadecimal)
 }
 
+#[derive(Clone)]
 struct Field {
     id: ObjectId,
     widgets: Vec<ObjectId>,
@@ -211,41 +210,163 @@ fn page_resources(doc: &Document, page: ObjectId) -> Option<Object> {
     }
 }
 
-/// Fill `values` (field name -> text) into the form `template`, drop the 1-based `drop_pages`
-/// (instruction pages) and stamp `footer` on every remaining page.
-pub fn fill(template: &[u8], values: &BTreeMap<&str, String>, drop_pages: &[u32], footer: &str) -> AppResult<FilledForm> {
-    let fm = FontMetrics::load()?;
-    let mut doc = Document::load_mem(template).map_err(err)?;
-    let all = fields(&doc)?;
-    let font_id = doc.new_object_id();
-    let mut used: BTreeMap<u16, char> = BTreeMap::new();
-    let mut overflow = BTreeMap::new();
+fn last_partial(name: &str) -> &str {
+    name.rsplit('.').next().unwrap_or(name)
+}
 
-    for (name, text) in values {
-        let f = all.get(*name).ok_or_else(|| AppError::internal(format!("ICS form has no field named \"{name}\"")))?;
+/// One output PDF built from copies of an official form's pages.
+pub struct FormBuilder {
+    doc: Document,
+    fm: FontMetrics,
+    font_id: ObjectId,
+    used: BTreeMap<u16, char>,
+    pages_root: ObjectId,
+    template_pages: Vec<ObjectId>,
+    template_fields: BTreeMap<String, Field>,
+    widget_owner: HashMap<ObjectId, String>,
+    /// Output pages and the footer each one carries.
+    out_pages: Vec<(ObjectId, String)>,
+    fields: BTreeMap<String, Field>,
+    top_fields: Vec<ObjectId>,
+}
+
+impl FormBuilder {
+    pub fn new(template: &[u8]) -> AppResult<FormBuilder> {
+        let doc = Document::load_mem(template).map_err(err)?;
+        let template_fields = fields(&doc)?;
+        let mut widget_owner = HashMap::new();
+        for (name, f) in &template_fields {
+            for w in &f.widgets {
+                widget_owner.insert(*w, name.clone());
+            }
+        }
+        let template_pages: Vec<ObjectId> = doc.get_pages().into_values().collect();
+        let pages_root = doc.catalog().map_err(err)?.get(b"Pages").and_then(Object::as_reference).map_err(err)?;
+        let mut doc = doc;
+        let font_id = doc.new_object_id();
+        Ok(FormBuilder {
+            doc,
+            fm: FontMetrics::load()?,
+            font_id,
+            used: BTreeMap::new(),
+            pages_root,
+            template_pages,
+            template_fields,
+            widget_owner,
+            out_pages: Vec::new(),
+            fields: BTreeMap::new(),
+            top_fields: Vec::new(),
+        })
+    }
+
+    pub fn page_count(&self) -> usize {
+        self.out_pages.len()
+    }
+
+    /// Append a copy of template page `n` (1-based). Its fields are reachable as "<name><suffix>";
+    /// suffixes must be unique per copy of the same page.
+    pub fn add_page(&mut self, n: usize, suffix: &str, footer: &str) -> AppResult<()> {
+        let src = *self.template_pages.get(n - 1).ok_or_else(|| AppError::internal(format!("ICS template has no page {n}")))?;
+        let page_id = self.doc.new_object_id();
+        let mut page = self.doc.get_dictionary(src).map_err(err)?.clone();
+        let annots: Vec<Object> = match page.get(b"Annots") {
+            Ok(o) => resolve(&self.doc, o)?.as_array().map_err(err)?.clone(),
+            Err(_) => vec![],
+        };
+        let mut new_annots = Vec::new();
+        let mut parents: HashMap<String, ObjectId> = HashMap::new();
+        for a in annots {
+            let Ok(w) = a.as_reference() else {
+                new_annots.push(a);
+                continue;
+            };
+            let Some(name) = self.widget_owner.get(&w).cloned() else {
+                new_annots.push(Object::Reference(w));
+                continue;
+            };
+            let f = self.template_fields[&name].clone();
+            let key = format!("{name}{suffix}");
+            let mut wd = self.doc.get_dictionary(w).map_err(err)?.clone();
+            wd.set("P", Object::Reference(page_id));
+            wd.remove(b"AP");
+            let new_w;
+            if f.id == w {
+                // Field and widget are one dictionary.
+                if wd.has(b"Parent") {
+                    return Err(AppError::internal(format!("ICS template field \"{name}\" is nested; not supported")));
+                }
+                wd.set("T", text_string(&format!("{}{suffix}", last_partial(&name))));
+                wd.remove(b"V");
+                new_w = self.doc.add_object(wd);
+                self.top_fields.push(new_w);
+                self.fields.insert(key, Field { id: new_w, widgets: vec![new_w], ..f });
+            } else {
+                let parent = match parents.get(&key).copied().or_else(|| self.fields.get(&key).map(|x| x.id)) {
+                    Some(p) => p,
+                    None => {
+                        let mut pd = self.doc.get_dictionary(f.id).map_err(err)?.clone();
+                        if pd.has(b"Parent") {
+                            return Err(AppError::internal(format!("ICS template field \"{name}\" is nested; not supported")));
+                        }
+                        pd.set("T", text_string(&format!("{}{suffix}", last_partial(&name))));
+                        pd.set("Kids", Object::Array(vec![]));
+                        pd.remove(b"V");
+                        let p = self.doc.add_object(pd);
+                        self.top_fields.push(p);
+                        self.fields.insert(key.clone(), Field { id: p, widgets: vec![], ..f.clone() });
+                        p
+                    }
+                };
+                parents.insert(key.clone(), parent);
+                wd.set("Parent", Object::Reference(parent));
+                new_w = self.doc.add_object(wd);
+                if let Ok(Object::Array(kids)) = self.doc.get_dictionary_mut(parent).map_err(err)?.get_mut(b"Kids") {
+                    kids.push(Object::Reference(new_w));
+                }
+                self.fields.get_mut(&key).expect("parent registered").widgets.push(new_w);
+            }
+            new_annots.push(Object::Reference(new_w));
+        }
+        page.set("Annots", Object::Array(new_annots));
+        page.set("Parent", Object::Reference(self.pages_root));
+        let res = font_resources(&self.doc, page_resources(&self.doc, src).as_ref(), self.font_id)?;
+        page.set("Resources", Object::Dictionary(res));
+        self.doc.objects.insert(page_id, Object::Dictionary(page));
+        self.out_pages.push((page_id, footer.to_string()));
+        Ok(())
+    }
+
+    /// Fill a text field on a page added earlier (name includes its copy suffix). Returns the part
+    /// of `text` that did not fit, if any.
+    pub fn set(&mut self, name: &str, text: &str) -> AppResult<Option<String>> {
+        let f = self.fields.get(name).cloned().ok_or_else(|| AppError::internal(format!("ICS form has no field named \"{name}\"")))?;
         if !f.is_text {
             return Err(AppError::internal(format!("ICS form field \"{name}\" is not a text field")));
         }
-        let mut shown = text.clone();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        let mut shown = text.to_string();
+        let mut overflow = None;
         let mut da_size = MAX_SIZE;
         for (i, w) in f.widgets.iter().enumerate() {
-            let (wd, ht) = rect(&doc, *w)?;
-            let (size, lines, rest) = layout(&fm, text, wd, ht, f.multiline);
+            let (wd, ht) = rect(&self.doc, *w)?;
+            let (size, lines, rest) = layout(&self.fm, text, wd, ht, f.multiline);
             if i == 0 {
                 da_size = size;
                 if let Some(r) = rest {
                     shown = text[..text.len() - r.len()].trim_end().to_string();
-                    overflow.insert((*name).to_string(), r);
+                    overflow = Some(r);
                 }
             }
-            let ap = appearance(&fm, &mut used, wd, ht, size, &lines, f.multiline);
+            let ap = appearance(&self.fm, &mut self.used, wd, ht, size, &lines, f.multiline);
             let mut xd = Dictionary::new();
             xd.set("Type", Object::Name(b"XObject".to_vec()));
             xd.set("Subtype", Object::Name(b"Form".to_vec()));
             xd.set("BBox", Object::Array(vec![0.into(), 0.into(), Object::Real(wd), Object::Real(ht)]));
-            xd.set("Resources", Object::Dictionary(font_resources(&doc, None, font_id)?));
-            let xo = doc.add_object(Stream::new(xd, ap.into_bytes()));
-            let wdict = doc.get_object_mut(*w).map_err(err)?.as_dict_mut().map_err(err)?;
+            xd.set("Resources", Object::Dictionary(font_resources(&self.doc, None, self.font_id)?));
+            let xo = self.doc.add_object(Stream::new(xd, ap.into_bytes()));
+            let wdict = self.doc.get_dictionary_mut(*w).map_err(err)?;
             let mut apd = Dictionary::new();
             apd.set("N", Object::Reference(xo));
             wdict.set("AP", Object::Dictionary(apd));
@@ -253,48 +374,93 @@ pub fn fill(template: &[u8], values: &BTreeMap<&str, String>, drop_pages: &[u32]
                 wdict.set("DA", Object::string_literal(format!("/{FONT_RES} {size:.1} Tf 0 g")));
             }
         }
-        let fdict = doc.get_object_mut(f.id).map_err(err)?.as_dict_mut().map_err(err)?;
+        let fdict = self.doc.get_dictionary_mut(f.id).map_err(err)?;
         fdict.set("V", text_string(&shown));
         fdict.set("DA", Object::string_literal(format!("/{FONT_RES} {da_size:.1} Tf 0 g")));
+        Ok(overflow)
     }
 
-    // AcroForm default resources must know the font so viewers can re-render edited fields.
-    let root = doc.trailer.get(b"Root").and_then(Object::as_reference).map_err(err)?;
-    let acro_obj = doc.get_dictionary(root).map_err(err)?.get(b"AcroForm").map_err(err)?.clone();
-    let mut acro = resolved_dict(&doc, &acro_obj)?;
-    let dr = font_resources(&doc, acro.get(b"DR").ok(), font_id)?;
-    acro.set("DR", Object::Dictionary(dr));
-    match acro_obj {
-        Object::Reference(id) => *doc.get_object_mut(id).map_err(err)? = Object::Dictionary(acro),
-        _ => doc.get_object_mut(root).map_err(err)?.as_dict_mut().map_err(err)?.set("AcroForm", Object::Dictionary(acro)),
+    /// Append one or more plain continuation pages: a title, then `body` wrapped to the page.
+    pub fn add_text_pages(&mut self, title: &str, body: &str, footer: &str) -> AppResult<()> {
+        let (w, h) = LETTER;
+        let (left, top, bottom, size, lead) = (36.0, h - 48.0, 52.0, 9.5, 12.5);
+        let lines = wrap(&self.fm, body, w - 2.0 * left, size);
+        let mut i = 0;
+        let mut first = true;
+        while first || i < lines.len() {
+            let heading = if first { title.to_string() } else { format!("{title} (continued)") };
+            let mut ops = format!("BT\n/{FONT_RES} 12 Tf\n0 g\n1 0 0 1 {left} {top} Tm {}\n", show(&self.fm, &mut self.used, &heading));
+            let mut y = top - 24.0;
+            while i < lines.len() && y >= bottom {
+                ops.push_str(&format!("/{FONT_RES} {size} Tf\n1 0 0 1 {left} {y:.2} Tm {}\n", show(&self.fm, &mut self.used, &lines[i])));
+                y -= lead;
+                i += 1;
+            }
+            ops.push_str("ET\n");
+            let content = self.doc.add_object(Stream::new(Dictionary::new(), ops.into_bytes()));
+            let mut page = Dictionary::new();
+            page.set("Type", Object::Name(b"Page".to_vec()));
+            page.set("Parent", Object::Reference(self.pages_root));
+            page.set("MediaBox", Object::Array(vec![0.into(), 0.into(), Object::Real(w), Object::Real(h)]));
+            page.set("Resources", Object::Dictionary(font_resources(&self.doc, None, self.font_id)?));
+            page.set("Contents", Object::Array(vec![Object::Reference(content)]));
+            let id = self.doc.add_object(page);
+            self.out_pages.push((id, footer.to_string()));
+            first = false;
+        }
+        Ok(())
     }
 
-    if !drop_pages.is_empty() {
-        doc.delete_pages(drop_pages);
-    }
-    let pages: Vec<ObjectId> = doc.get_pages().into_values().collect();
-    for (n, page) in pages.iter().enumerate() {
-        let text = format!("{footer}   Page {} of {}", n + 1, pages.len());
-        let ops = format!("q\nBT\n/{FONT_RES} 6.5 Tf\n0.35 g\n1 0 0 1 36 22 Tm {}\nET\nQ\n", show(&fm, &mut used, &text));
-        let stream_id = doc.add_object(Stream::new(Dictionary::new(), ops.into_bytes()));
-        let res = font_resources(&doc, page_resources(&doc, *page).as_ref(), font_id)?;
-        let pd = doc.get_object_mut(*page).map_err(err)?.as_dict_mut().map_err(err)?;
-        let mut contents = match pd.get(b"Contents") {
-            Ok(Object::Array(a)) => a.clone(),
-            Ok(o) => vec![o.clone()],
-            Err(_) => vec![],
-        };
-        contents.push(Object::Reference(stream_id));
-        pd.set("Contents", Object::Array(contents));
-        pd.set("Resources", Object::Dictionary(res));
-    }
+    /// Assemble the output: only the added pages, their fields, page footers ("… Page n of N") and
+    /// the embedded font. Template pages and fields that were not copied are dropped.
+    pub fn finish(mut self, title: &str) -> AppResult<Vec<u8>> {
+        if self.out_pages.is_empty() {
+            return Err(AppError::internal("ICS form has no pages"));
+        }
+        let total = self.out_pages.len();
+        for (n, (page, footer)) in self.out_pages.clone().into_iter().enumerate() {
+            let text = format!("{footer}   Page {} of {total}", n + 1);
+            let ops = format!("q\nBT\n/{FONT_RES} 6.5 Tf\n0.35 g\n1 0 0 1 36 22 Tm {}\nET\nQ\n", show(&self.fm, &mut self.used, &text));
+            let stream_id = self.doc.add_object(Stream::new(Dictionary::new(), ops.into_bytes()));
+            let pd = self.doc.get_dictionary_mut(page).map_err(err)?;
+            let mut contents = match pd.get(b"Contents") {
+                Ok(Object::Array(a)) => a.clone(),
+                Ok(o) => vec![o.clone()],
+                Err(_) => vec![],
+            };
+            contents.push(Object::Reference(stream_id));
+            pd.set("Contents", Object::Array(contents));
+        }
+        let kids: Vec<Object> = self.out_pages.iter().map(|(id, _)| Object::Reference(*id)).collect();
+        {
+            let root = self.doc.get_dictionary_mut(self.pages_root).map_err(err)?;
+            root.set("Kids", Object::Array(kids));
+            root.set("Count", Object::Integer(total as i64));
+        }
 
-    insert_font(&mut doc, &fm, font_id, &used)?;
-    doc.prune_objects();
-    doc.compress();
-    let mut pdf = Vec::new();
-    doc.save_to(&mut pdf).map_err(|e| AppError::internal(format!("Writing ICS form: {e}")))?;
-    Ok(FilledForm { pdf, overflow })
+        let cat = self.doc.trailer.get(b"Root").and_then(Object::as_reference).map_err(err)?;
+        let acro_obj = self.doc.get_dictionary(cat).map_err(err)?.get(b"AcroForm").map_err(err)?.clone();
+        let mut acro = resolved_dict(&self.doc, &acro_obj)?;
+        let dr = font_resources(&self.doc, acro.get(b"DR").ok(), self.font_id)?;
+        acro.set("DR", Object::Dictionary(dr));
+        acro.set("Fields", Object::Array(self.top_fields.iter().map(|id| Object::Reference(*id)).collect()));
+        match acro_obj {
+            Object::Reference(id) => *self.doc.get_object_mut(id).map_err(err)? = Object::Dictionary(acro),
+            _ => self.doc.get_dictionary_mut(cat).map_err(err)?.set("AcroForm", Object::Dictionary(acro)),
+        }
+        let mut info = Dictionary::new();
+        info.set("Title", text_string(title));
+        info.set("Producer", text_string(&format!("EMCOMM LOG {}", crate::logbook::APP_VERSION)));
+        let info_id = self.doc.add_object(info);
+        self.doc.trailer.set("Info", Object::Reference(info_id));
+
+        insert_font(&mut self.doc, &self.fm, self.font_id, &self.used)?;
+        self.doc.prune_objects();
+        self.doc.compress();
+        let mut pdf = Vec::new();
+        self.doc.save_to(&mut pdf).map_err(|e| AppError::internal(format!("Writing ICS form: {e}")))?;
+        Ok(pdf)
+    }
 }
 
 fn insert_font(doc: &mut Document, fm: &FontMetrics, font_id: ObjectId, used: &BTreeMap<u16, char>) -> AppResult<()> {
@@ -304,14 +470,9 @@ fn insert_font(doc: &mut Document, fm: &FontMetrics, font_id: ObjectId, used: &B
         widths.push(Object::Integer(*g as i64));
         widths.push(Object::Array(vec![Object::Integer((fm.advance(*g) as f32 * scale).round() as i64)]));
     }
-    let mut file = Stream::new(
-        {
-            let mut d = Dictionary::new();
-            d.set("Length1", Object::Integer(FONT_DATA.len() as i64));
-            d
-        },
-        FONT_DATA.to_vec(),
-    );
+    let mut fd = Dictionary::new();
+    fd.set("Length1", Object::Integer(FONT_DATA.len() as i64));
+    let mut file = Stream::new(fd, FONT_DATA.to_vec());
     let _ = file.compress();
     let file_id = doc.add_object(file);
     let bbox = fm.face.global_bounding_box();
@@ -371,72 +532,84 @@ fn insert_font(doc: &mut Document, fm: &FontMetrics, font_id: ObjectId, used: &B
     Ok(())
 }
 
+/// Field name -> value for every filled text field (for tests and verification).
+pub fn read_values(pdf: &[u8]) -> AppResult<BTreeMap<String, String>> {
+    let doc = Document::load_mem(pdf).map_err(err)?;
+    let mut out = BTreeMap::new();
+    for (name, f) in fields(&doc)? {
+        if let Some(v) = doc.get_dictionary(f.id).map_err(err)?.get(b"V").ok().and_then(decode_text) {
+            out.insert(name, v);
+        }
+    }
+    Ok(out)
+}
+
+pub fn page_count(pdf: &[u8]) -> AppResult<usize> {
+    Ok(Document::load_mem(pdf).map_err(err)?.get_pages().len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn sample_213() -> BTreeMap<&'static str, String> {
-        BTreeMap::from([
-            ("1 Incident Name Optional", "Lake County Storm ✓".to_string()),
-            ("2 To Name and Position", "Jane Doe, Shelter Manager".to_string()),
-            ("3 From Name and Position", "José Núñez, EOC Radio Operator".to_string()),
-            ("4 Subject", "Shelter supply request".to_string()),
-            ("5 Date", "2026-11-03".to_string()),
-            ("6 Time", "08:08 -05:00".to_string()),
-            ("7 Message", "Need 40 cots and 80 blankets at Pine Rd shelter by 18:00.\nContact on TAC 2.".to_string()),
-            ("8 Approved by Name", "R. Smith".to_string()),
-            ("PositionTitle_13", "Shelter Lead".to_string()),
-        ])
+    #[test]
+    fn copies_hold_independent_values_and_share_one_font() {
+        let mut b = FormBuilder::new(ICS_213).unwrap();
+        b.add_page(1, "", "f1").unwrap();
+        b.add_page(1, " (2)", "f2").unwrap();
+        assert!(b.set("4 Subject", "First ✓").unwrap().is_none());
+        assert!(b.set("4 Subject (2)", "José second").unwrap().is_none());
+        let pdf = b.finish("t").unwrap();
+        assert_eq!(page_count(&pdf).unwrap(), 2, "instruction page dropped, two copies");
+        let v = read_values(&pdf).unwrap();
+        assert_eq!(v["4 Subject"], "First ✓");
+        assert_eq!(v["4 Subject (2)"], "José second");
+        assert!(!v.contains_key("Signature_19"));
+        let doc = Document::load_mem(&pdf).unwrap();
+        let fonts = doc.objects.values().filter(|o| matches!(o.as_dict(), Ok(d) if d.get(b"BaseFont").ok() == Some(&Object::Name(b"DejaVuSans".to_vec())) && d.get(b"Subtype").ok() == Some(&Object::Name(b"Type0".to_vec())))).count();
+        assert_eq!(fonts, 1);
     }
 
     #[test]
-    fn fills_213_and_drops_instruction_page() {
-        let out = fill(ICS_213, &sample_213(), &[2], "Prepared with EMCOMM LOG test").unwrap();
-        assert!(out.overflow.is_empty());
-        let doc = Document::load_mem(&out.pdf).unwrap();
-        assert_eq!(doc.get_pages().len(), 1);
-        let f = fields(&doc).unwrap();
-        let v = |n: &str| doc.get_dictionary(f[n].id).unwrap().get(b"V").ok().and_then(decode_text);
-        assert_eq!(v("3 From Name and Position").as_deref(), Some("José Núñez, EOC Radio Operator"));
-        assert_eq!(v("1 Incident Name Optional").as_deref(), Some("Lake County Storm ✓"));
-        assert_eq!(v("Signature_19"), None, "signature fields are never filled");
-        for w in &f["7 Message"].widgets {
-            assert!(doc.get_dictionary(*w).unwrap().has(b"AP"));
-        }
+    fn shared_field_widgets_follow_their_copy() {
+        // "Date From" has a widget on 214 pages 1 and 2 in the template.
+        let mut b = FormBuilder::new(ICS_214).unwrap();
+        b.add_page(1, "", "a").unwrap();
+        b.add_page(2, " (2)", "b").unwrap();
+        b.set("Date From", "2026-11-03").unwrap();
+        b.set("Date From (2)", "2026-11-04").unwrap();
+        let v = read_values(&b.finish("t").unwrap()).unwrap();
+        assert_eq!(v["Date From"], "2026-11-03");
+        assert_eq!(v["Date From (2)"], "2026-11-04");
     }
 
     #[test]
     fn overflow_is_returned_not_dropped() {
         let long = (1..=1500).map(|i| format!("word{i}")).collect::<Vec<_>>().join(" ");
-        let vals = BTreeMap::from([("7 Message", long.clone()), ("8 Approved by Name", "Alexandria Montgomery-Vanderbilt III".into())]);
-        let out = fill(ICS_213, &vals, &[2], "x").unwrap();
-        let rest = &out.overflow["7 Message"];
+        let mut b = FormBuilder::new(ICS_213).unwrap();
+        b.add_page(1, "", "x").unwrap();
+        let rest = b.set("7 Message", &long).unwrap().expect("overflow");
         assert!(rest.starts_with("word") && long.ends_with(rest.as_str()));
-        let doc = Document::load_mem(&out.pdf).unwrap();
-        let f = fields(&doc).unwrap();
-        let shown = decode_text(doc.get_dictionary(f["7 Message"].id).unwrap().get(b"V").unwrap()).unwrap();
-        let joined = format!("{shown} {rest}");
+        let v = read_values(&b.finish("t").unwrap()).unwrap();
+        let joined = format!("{} {rest}", v["7 Message"]);
         assert_eq!(joined.split_whitespace().count(), 1500, "every word is either shown or overflowed");
     }
 
     #[test]
-    fn unknown_field_is_an_error() {
-        let vals = BTreeMap::from([("No Such Field", "x".to_string())]);
-        assert!(fill(ICS_213, &vals, &[], "x").is_err());
+    fn text_pages_flow_over_several_pages() {
+        let mut b = FormBuilder::new(ICS_213).unwrap();
+        b.add_page(1, "", "x").unwrap();
+        let body = (1..=200).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        b.add_text_pages("Continuation", &body, "x").unwrap();
+        let pdf = b.finish("t").unwrap();
+        assert!(page_count(&pdf).unwrap() >= 4);
     }
 
-    /// Writes a filled sample for viewing: EMCOMM_FORM_OUT=/path/out.pdf cargo test -p emcomm-core ics_sample -- --ignored
     #[test]
-    #[ignore]
-    fn ics_sample() {
-        let path = std::env::var("EMCOMM_FORM_OUT").expect("EMCOMM_FORM_OUT");
-        let mut vals = sample_213();
-        vals.insert("9 Reply", "Approved. 40 cots and 80 blankets dispatched on truck 12, ETA 16:30.".into());
-        vals.insert("10 Replied by Name", "M. Chen".into());
-        vals.insert("PositionTitle_14", "Logistics Chief".into());
-        vals.insert("DateTime_14", "2026-11-03 09:15 -05:00".into());
-        let out = fill(ICS_213, &vals, &[2], "Prepared with EMCOMM LOG 1.0.0 from logbook \"Lake County Storm\" · entry #5 · message 0005")
-            .unwrap();
-        std::fs::write(path, out.pdf).unwrap();
+    fn unknown_field_is_an_error() {
+        let mut b = FormBuilder::new(ICS_213).unwrap();
+        b.add_page(1, "", "x").unwrap();
+        assert!(b.set("No Such Field", "x").is_err());
+        assert!(b.set("Signature_19", "x").is_err(), "signatures are not text fields");
     }
 }

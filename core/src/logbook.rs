@@ -65,6 +65,24 @@ pub fn effective_pragmas(conn: &Connection) -> AppResult<(String, i64, i64)> {
     Ok((mode, sync, fk))
 }
 
+pub const PRE_MIGRATION_DIR: &str = ".pre-migration";
+
+/// Copy the database (as it is before a schema upgrade) into `<logbook>/.pre-migration/`, verified,
+/// so an upgrade can always be undone by hand. Snapshots, backups and packages never include it.
+fn pre_migration_copy(conn: &Connection, dir: &Path, from: u32) -> AppResult<PathBuf> {
+    let out_dir = dir.join(PRE_MIGRATION_DIR);
+    fs::create_dir_all(&out_dir)?;
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let path = out_dir.join(format!("logbook-schema{from}-{stamp}.sqlite"));
+    conn.execute("VACUUM INTO ?1", params![path.to_string_lossy()])
+        .map_err(|e| AppError::from(e).with_context("Could not save a copy of the logbook before upgrading it; nothing was changed"))?;
+    fsutil::sync_file(&path)?;
+    fsutil::sync_dir(&out_dir)?;
+    let check = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    integrity_check(&check).map_err(|e| e.with_context("The pre-upgrade copy failed its check; nothing was changed"))?;
+    Ok(path)
+}
+
 pub fn integrity_check(conn: &Connection) -> AppResult<()> {
     let res: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
     if res != "ok" {
@@ -347,6 +365,15 @@ impl Logbook {
         if stale {
             integrity_check(&conn).map_err(|e| e.with_context("Recovered from an unclean shutdown but the database failed checks"))?;
             notices.push("The logbook was not closed cleanly last time. Integrity check passed.".to_string());
+        }
+        let from = migrate::current_version(&conn)?;
+        let to = migrate::latest_version(LOGBOOK_MIGRATIONS);
+        if from > 0 && from < to {
+            let copy = pre_migration_copy(&conn, dir, from)?;
+            notices.push(format!(
+                "This logbook was upgraded from schema {from} to {to} for this version of EMCOMM LOG. A copy of the previous version was kept at {}.",
+                copy.display()
+            ));
         }
         migrate::migrate(&mut conn, LOGBOOK_MIGRATIONS)?;
         let (id, ty, archived, name, created): (String, String, Option<String>, String, String) = conn

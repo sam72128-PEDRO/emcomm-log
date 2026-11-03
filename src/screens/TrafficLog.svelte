@@ -7,6 +7,7 @@
     Star,
     Flag,
     Download,
+    FileText,
     Printer,
     ChevronLeft,
     ChevronRight,
@@ -27,9 +28,11 @@
   } from "../lib/entryForm";
   import { formatInstant, fromInputValue, todayBoundsUtc, zoneLabel } from "../lib/time";
   import KindBadge from "../components/KindBadge.svelte";
+  import Form213Dialog from "../components/Form213Dialog.svelte";
 
   const book = app.active!;
   const kinds = allowedKinds(book.info.logbook_type);
+  let form213 = $state(false);
   let page = $state<T.EntryPage>({ total: 0, items: [] });
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -437,8 +440,7 @@
               )}</td
             >
             <td class="nowrap"
-              >{e.ham?.their_call || e.from_text || "—"}{#if e.to_text}
-                → {e.to_text}{/if}</td
+              >{e.ham?.their_call || e.from_text || "—"}{#if e.to_text}{` → ${e.to_text}`}{/if}</td
             >
             <td class="nowrap"
               ><KindBadge kind={e.kind} /> <span class="muted small">{DIRECTION_SHORT[e.direction]}</span></td
@@ -505,8 +507,7 @@
   </div>
   <footer class="foot">
     <span role="status"
-      >Showing {start}–{end} of {page.total} entries{#if app.selection.length}
-        · {app.selection.length} selected{/if}</span
+      >Showing {start}–{end} of {page.total} entries{#if app.selection.length}{` · ${app.selection.length} selected`}{/if}</span
     >
     <span class="spacer"></span>
     <button
@@ -527,10 +528,20 @@
     {#if app.selection.length}<button onclick={() => exportCurrent(true)}
         ><Download size={16} />Export Selection ({app.selection.length})</button
       >{/if}
+    {#if app.bookType === "emergency"}<button
+        onclick={() => (form213 = true)}
+        disabled={!app.selection.length}
+        title={app.selection.length
+          ? "Fill an ICS 213 for each selected message"
+          : "Select one or more message entries first"}
+        ><FileText size={16} />ICS 213{app.selection.length ? ` (${app.selection.length})` : ""}…</button
+      >{/if}
     <button onclick={() => exportCurrent(false)}><Download size={16} />Export…</button>
     <button onclick={print}><Printer size={16} />Print</button>
   </footer>
 </section>
+
+{#if form213}<Form213Dialog entryIds={[...app.selection]} onclose={() => (form213 = false)} />{/if}
 
 <style>
   .log {
