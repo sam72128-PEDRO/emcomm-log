@@ -942,6 +942,43 @@ fn handle_close_request(app: &AppHandle) -> bool {
     false
 }
 
+/// WebView2 browser arguments: wry's defaults plus any supplied through
+/// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (used by WebDriver/msedgedriver for automated testing),
+/// with all --disable-features lists merged since Chromium honors only the last one.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn webview2_args(extra: &str) -> String {
+    let defaults = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+    let mut features: Vec<String> = Vec::new();
+    let mut rest: Vec<String> = Vec::new();
+    for arg in defaults.split_whitespace().chain(extra.split_whitespace()) {
+        match arg.strip_prefix("--disable-features=") {
+            Some(list) => {
+                for f in list.split(',').filter(|f| !f.is_empty()) {
+                    if !features.iter().any(|x| x == f) {
+                        features.push(f.to_string());
+                    }
+                }
+            }
+            None => rest.push(arg.to_string()),
+        }
+    }
+    rest.push(format!("--disable-features={}", features.join(",")));
+    rest.join(" ")
+}
+
+fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().expect("main window config");
+    #[allow(unused_mut)]
+    let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?;
+    #[cfg(windows)]
+    {
+        let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+        builder = builder.additional_browser_args(&webview2_args(&extra));
+    }
+    builder.build()?;
+    Ok(())
+}
+
 /// The default 1440x900 window can exceed small displays (e.g. 1366x768 laptops); shrink to fit.
 fn fit_window_to_screen(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
@@ -987,6 +1024,7 @@ pub fn run() {
                 allow_exit: AtomicBool::new(false),
                 reveal_allow: Mutex::new(HashSet::new()),
             });
+            create_main_window(app)?;
             fit_window_to_screen(app.handle());
             let m = menu::build(app.handle())?;
             app.set_menu(m)?;
@@ -1083,4 +1121,18 @@ pub fn run() {
                 api.prevent_exit();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::webview2_args;
+
+    #[test]
+    fn webview2_args_merge_driver_flags() {
+        assert_eq!(webview2_args(""), "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection");
+        let a = webview2_args("--remote-debugging-port=0 --disable-features=IgnoreDuplicateNavs,msWebOOUI --enable-automation");
+        assert!(a.contains("--remote-debugging-port=0") && a.contains("--enable-automation"));
+        assert_eq!(a.matches("--disable-features=").count(), 1);
+        assert!(a.ends_with("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IgnoreDuplicateNavs"));
+    }
 }
