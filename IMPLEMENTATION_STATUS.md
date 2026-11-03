@@ -73,6 +73,24 @@ out of a narrow dialog; resources dialog not focusing its first cell; missing sp
 `minmax(0, 1fr)` — fixed in code, not yet seen on screen because the Mac locked). Also changed by design: the
 "current period" is only a running one, so entries logged between periods are not attached to the last one.
 
+## Android tablet (2.0.0, `docs/ANDROID_TABLET.md`)
+
+Emulator with the Galaxy Tab S7 FE profile (2560×1600 @ 320 dpi, Android 15 Google APIs image, WebView 124,
+virtual microSD card). Physical-tablet pass not yet done.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Build | **passing** | Signed release APK (arm64, 15.7 MB, APK Signature Scheme v2, no permissions requested); `cargo clippy -D warnings` clean for `aarch64-linux-android` and desktop. |
+| First run, storage, backups location | **passing** | Wizard on the release APK: logbooks prefilled to tablet storage, backups to the microSD card; location chooser; Back closes dialogs. |
+| Save / durability (A03, A06 on Android) | **passing** | Entry saved; `am force-stop` with an unsaved draft → relaunch reopens the logbook, stale-lock integrity check passes, draft offered and restored exactly, entry count unchanged (debug and release builds). |
+| Background / exit | **passing** | Home → verified automatic backup on the card, WAL checkpointed, draft written. Back → Exit → close backup, clean unlock, process ends; relaunch, and Recents swipe → relaunch, draw normally. |
+| Exports, ICS forms, packages | **passing** | PDF report and ICS 213 via "Save to…" into Downloads (213 fields checked with pypdf); Open in PDF viewer; Share sheet; `.emlog` export → import back as a separate copy. |
+| Attachments | **passing** | Picked with the system picker, saved with the entry, opened in Photos. |
+| microSD removal | **passing** | Card unmounted → "Backup destination is not available"; saving unaffected; remount → backup succeeds; restore from a card backup creates a new logbook. |
+| Keyboard / insets / orientation | **passing** | Gboard up: viewport 744 → 408 px, focused field and dialog buttons visible, top bar fixed; portrait 800 px with icon sidebar; rotation keeps state. |
+| Desktop regression | **passing** | `cargo test --workspace` (77 passed), clippy, fmt, svelte-check, eslint, prettier, vitest (22 passed). |
+| Physical Tab S7 FE (Samsung Keyboard, Book Cover Keyboard, S Pen, DeX, real microSD, TalkBack) | **not run** | Needs the device. |
+
 ## Other verification run
 
 | Check | Result |
@@ -93,6 +111,10 @@ credentials provided). Binaries are kept out of Git: Windows/Linux in the CI run
 `release/ci/`), macOS in `release/macos/`.
 
 ## Known limitations
+
+- Android: not yet run on the physical tablet; uninstalling the app deletes its logbooks and its microSD
+  backup folder (export packages first); the release signing key must be backed up (see
+  `docs/ANDROID_TABLET.md`).
 
 - Unsigned builds (Gatekeeper/SmartScreen warnings). No notarization.
 - PDF uses DejaVu Sans: CJK glyphs render as boxes in PDF (other formats are unaffected).

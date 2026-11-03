@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# EMCOMM LOG: EmcommPlugin is loaded by name and its @Command methods and @InvokeArg classes are
+# found by reflection (Tauri plugin manager, Jackson). Keep them intact in minified releases.
+-keep class org.emcommlog.tablet.** { *; }

@@ -668,6 +668,14 @@ impl Logbook {
         Ok(removed)
     }
 
+    /// Checkpoint the WAL into the main file while the logbook stays open (e.g. before a mobile
+    /// app goes to the background, where the process may be killed without a close). Committed
+    /// data is already durable in the WAL; this only makes the main file self-contained.
+    pub fn checkpoint(&self) -> AppResult<()> {
+        self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     /// Checkpoint the WAL into the main file and release the lock cleanly.
     pub fn close(mut self) -> AppResult<()> {
         let _ = self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));

@@ -566,3 +566,35 @@ kbd {
 [hidden] {
   display: none !important;
 }
+
+/* Touch screens (the Android tablet): no accidental text selection or callouts on app chrome,
+   no double-tap zoom delay, and finger-sized small buttons. Text fields stay selectable. */
+@media (pointer: coarse) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input,
+  textarea,
+  [contenteditable="true"],
+  .mono,
+  .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  button,
+  a,
+  label,
+  select,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+  button.small {
+    min-height: 40px;
+  }
+  button.icon-only {
+    min-width: 40px;
+  }
+}

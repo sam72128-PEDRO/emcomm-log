@@ -1,6 +1,8 @@
 // Typed bridge to the Rust commands. Every authoritative operation goes through here.
 import { invoke } from "@tauri-apps/api/core";
 import type * as T from "./types";
+import { IS_ANDROID } from "./platform";
+import { confirm } from "./confirm.svelte";
 
 export function isAppError(e: unknown): e is T.AppError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
@@ -30,7 +32,9 @@ export const api = {
   checkFolder: (path: string, purpose: "live" | "backup") =>
     call<T.FolderCheck>("check_folder", { path, purpose }),
   pickFolder: (title: string, start?: string | null) =>
-    call<string | null>("pick_folder", { title, start: start ?? null }),
+    IS_ANDROID
+      ? androidChooseLocation(title)
+      : call<string | null>("pick_folder", { title, start: start ?? null }),
   pickFile: (title: string, filters: DialogFilter[]) => call<string | null>("pick_file", { title, filters }),
   pickSaveFile: (title: string, defaultName: string, filters: DialogFilter[], start?: string | null) =>
     call<string | null>("pick_save_file", { title, defaultName, filters, start: start ?? null }),
@@ -137,7 +141,55 @@ export const api = {
 
   quitApp: () => call<void>("quit_app"),
   cancelClose: () => call<void>("cancel_close"),
+
+  appBackgrounded: () => call<T.BackupOutcome>("app_backgrounded"),
+  deviceLocations: () => call<T.DeviceLocations | null>("device_locations"),
+  setSystemBars: (dark: boolean, color: string) => call<void>("set_system_bars", { dark, color }),
 };
+
+/**
+ * Android has no folder picker that yields a real path, so "Browse…" offers the places EMCOMM
+ * LOG can use: live logbooks always live in the app's private storage on the tablet; backups go
+ * to the tablet or to the microSD card.
+ */
+async function androidChooseLocation(title: string): Promise<string | null> {
+  const loc = await call<T.DeviceLocations | null>("device_locations");
+  if (!loc) return null;
+  if (!/backup/i.test(title)) return loc.logbooks;
+  if (!loc.sd_backups) {
+    const r = await confirm.ask({
+      title: "Backup location",
+      message: "Backups will be kept in EMCOMM LOG's storage on this tablet.",
+      detail:
+        loc.sd_state && loc.sd_state !== "mounted"
+          ? `The microSD card is not available (${loc.sd_state}). Insert it to back up to the card.`
+          : "No microSD card was found. Insert one to keep backups off the tablet's internal storage.",
+      buttons: [
+        { id: "tablet", label: "Use tablet storage", tone: "primary" },
+        { id: "cancel", label: "Cancel" },
+      ],
+      cancelId: "cancel",
+    });
+    return r.id === "tablet" ? loc.tablet_backups : null;
+  }
+  const r = await confirm.ask({
+    title: "Backup location",
+    message: "Where should backups be kept?",
+    detail:
+      "The microSD card protects against internal-storage failure and can be moved to another device. " +
+      "Android deletes this app's folder on the card if EMCOMM LOG is uninstalled — export a package " +
+      "(Reports → Portable logbook package) for a copy that must outlive the app.",
+    buttons: [
+      { id: "sd", label: "microSD card", tone: "primary" },
+      { id: "tablet", label: "Tablet storage" },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (r.id === "sd") return loc.sd_backups;
+  if (r.id === "tablet") return loc.tablet_backups;
+  return null;
+}
 
 export function newId(): string {
   return crypto.randomUUID();

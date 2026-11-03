@@ -9,7 +9,9 @@
     Search,
     Settings,
     ChevronDown,
+    CircleHelp,
   } from "@lucide/svelte";
+  import { IS_ANDROID } from "../lib/platform";
   import { app } from "../lib/state.svelte";
   import type { Screen } from "../lib/state.svelte";
   import { runAction, modKey } from "../lib/actions";
@@ -39,6 +41,9 @@
     { screen: "log", label: "Search", icon: Search, key: "F", book: true, action: "find" },
     { screen: "settings", label: "Settings", icon: Settings, key: ",", book: false },
   ];
+  // Desktop reaches Help from the native menu bar; Android has none.
+  if (IS_ANDROID)
+    items.push({ screen: "home", label: "Help", icon: CircleHelp, book: false, action: "help_data" });
   const visible = $derived(items.filter((i) => !i.book || app.active));
 
   function go(i: Item) {
@@ -53,6 +58,7 @@
       <li>
         <button
           class="nav"
+          aria-label={i.label}
           aria-current={app.screen === i.screen && !i.action ? "page" : undefined}
           onclick={() => go(i)}
           title={i.key ? `${i.label} (${modKey()}${i.key})` : i.label}
@@ -85,6 +91,10 @@
     display: flex;
     flex-direction: column;
     padding: 14px 10px;
+    /* Short windows (e.g. a tablet with the on-screen keyboard up) scroll the sidebar on its own
+       instead of growing the page. */
+    min-height: 0;
+    overflow-y: auto;
   }
   ul {
     list-style: none;
@@ -144,5 +154,31 @@
   }
   .dot.on {
     background: var(--ok);
+  }
+  /* Narrow windows (a tablet in portrait): icons only, so the content keeps its columns. */
+  @media (max-width: 900px) {
+    .sidebar {
+      width: 72px;
+      padding: 14px 8px;
+    }
+    .nav {
+      padding: 10px 0;
+      justify-content: center;
+      position: relative;
+    }
+    .nav .grow,
+    .current .grow,
+    .current :global(svg) {
+      display: none;
+    }
+    .count {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+    }
+    .current {
+      justify-content: center;
+      padding: 10px 0;
+    }
   }
 </style>
