@@ -1,4 +1,4 @@
-# EMCOMM LOG V1
+# EMCOMM LOG 2.0
 
 Offline, single-user desktop communications log for routine logging, amateur radio (HAM), and emergency
 activations. Windows, macOS, and Linux. Tauri 2 + Svelte 5/TypeScript UI, Rust core, SQLite storage.
@@ -11,10 +11,14 @@ activations. Windows, macOS, and Linux. Tauri 2 + Svelte 5/TypeScript UI, Rust c
   as a separate logbook.
 - Portable **`.emlog`** packages for moving a complete logbook between computers.
 - **Reports**: DOCX, XLSX, PDF, CSV, TXT, and ADIF 3.1.4 (qualifying HAM QSOs). No Office required.
+- **ICS forms** (emergency logbooks, V2): operational periods with assigned resources; ICS 213 General
+  Message and ICS 214 Activity Log filled on FEMA's official PDFs; ICS 309 Communications Log; a channel
+  plan per period (typed in from an ICS 205) that feeds the Channel field. Signatures are always left blank.
 - No network use, accounts, cloud sync, or telemetry.
 
 Documentation: [Operator guide](docs/OPERATOR_GUIDE.md) · [Export formats](docs/EXPORT_FORMATS.md) ·
-[Decisions](DECISIONS.md) · [Implementation status / acceptance matrix](IMPLEMENTATION_STATUS.md)
+[Decisions](DECISIONS.md) · [Implementation status / acceptance matrix](IMPLEMENTATION_STATUS.md) ·
+[V1 spec](docs/) · [V2 spec](docs/EMCOMM_LOG_V2_Technical_Specification.md) · [ICS field map](docs/ICS_FIELD_MAP.md)
 
 ## Repository layout
 
