@@ -257,9 +257,39 @@ check("Emergency logbook created and opened", wait_text(d, "E2E Incident"))
 shot(d, "02-dashboard")
 axe(d, "dashboard")
 
+
+def button(d, label: str):
+    el = d.find_element(By.XPATH, f"//button[normalize-space()='{label}']")
+    d.execute_script("arguments[0].scrollIntoView({block: 'center'})", el)
+    return el
+
+
+# V2: operational period through the UI (A16), channel plan editor and Dashboard panel (A21).
+check("A16 Operational Periods panel on an emergency Dashboard", "No operational periods yet" in body(d))
+button(d, "New period").click()
+check("A16 period dialog opened", wait_text(d, "New operational period", 5))
+axe(d, "period-dialog")
+button(d, "Save period").click()
+check("A16 period saved and current", wait_text(d, "CURRENT", 8))
+check("A21 Channel Plan panel for the current period", wait_text(d, "Channel Plan — OP 1", 5))
+button(d, "Channels").click()
+check("A21 channel plan editor opened", wait_text(d, "Channel plan — OP 1", 5))
+time.sleep(0.5)
+axe(d, "channel-plan")
+d.find_element(By.ID, "ch-0-channel_name").send_keys("TAC 2")
+d.find_element(By.ID, "ch-0-rx_freq").send_keys("155.4750")
+button(d, "Save plan").click()
+check("A21 plan saved and shown on the Dashboard", wait_text(d, "TAC 2", 8) and "155.4750" in body(d))
+shot(d, "02b-periods")
+
 chord(d, "2")
 check("A14 Ctrl+2 opens Quick Entry", wait_text(d, "Quick Entry – Add Traffic", 5))
 time.sleep(0.5)
+check("A16 Quick Entry shows the current period", "PERIOD: OP 1" in body(d))
+check(
+    "A25 Channel field suggests the plan's channels",
+    d.execute_script("return [...document.querySelectorAll('datalist option')].some(o => o.value === 'TAC 2 (155.4750 MHz)')"),
+)
 axe(d, "quick-entry")
 check("A14 Quick Entry autofocuses From", active_id(d) == "ed-new-from", active_id(d))
 order = []

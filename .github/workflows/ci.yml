@@ -1,7 +1,8 @@
 name: CI
 
-# Manual only while V2 is developed on macOS (V2 spec §1); re-enable push/pull_request at V2 Phase 5.
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -51,6 +52,11 @@ jobs:
           python -m pip install -r scripts/requirements-validate.txt
           EMCOMM_FIXTURE_OUT="$RUNNER_TEMP/fixtures" cargo test -p emcomm-core --test exports write_fixture
           python scripts/validate_exports.py "$RUNNER_TEMP/fixtures"
+      - name: ICS forms (213, 214, 309) validated by an independent parser
+        shell: bash
+        run: |
+          EMCOMM_FORM_OUT="$RUNNER_TEMP/forms" cargo test -p emcomm-core --test forms write_form_fixtures -- --ignored
+          python scripts/validate_forms.py "$RUNNER_TEMP/forms"
       # Code signing is opt-in: it activates only when the repository secrets below exist.
       - name: Windows code-signing certificate (if configured)
         id: wincert

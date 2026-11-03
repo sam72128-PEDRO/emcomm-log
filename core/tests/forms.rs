@@ -541,3 +541,41 @@ fn a21_a25_channel_plan_edit_copy_and_persist_without_rewriting_entries() {
     let ro2 = Logbook::open_read_only(&empty.join(DB_FILE)).unwrap();
     assert!(periods::plan_sources(&ro2).unwrap().is_empty());
 }
+
+/// Writes ics213.pdf, ics214.pdf and ics309.pdf for independent validation (scripts/validate_forms.py):
+/// EMCOMM_FORM_OUT=<dir> cargo test -p emcomm-core --test forms write_form_fixtures -- --ignored
+#[test]
+#[ignore]
+fn write_form_fixtures() {
+    let out = std::path::PathBuf::from(std::env::var("EMCOMM_FORM_OUT").expect("EMCOMM_FORM_OUT"));
+    fs::create_dir_all(&out).unwrap();
+    let t = tempfile::tempdir().unwrap();
+    let dir = emergency_book(t.path());
+    let mut lb = Logbook::open(&dir).unwrap();
+    let op = lb.save_period(None, &period("OP 1 ✓", "2026-11-02T12:00:00Z", "2026-11-02T20:00:00Z")).unwrap().period;
+    lb.set_period_resources(
+        &op.id,
+        &[OpResource { name: "José Núñez".into(), ics_position: "COML".into(), home_agency: "County EM".into() }],
+    )
+    .unwrap();
+    let m = lb.save_new(&message("Shelter supply request ✓", "2026-11-02T13:05:00Z"), &rid(), &operator()).unwrap().entry;
+    lb.save_new(&activity("Opened shelter net on TAC 2", "2026-11-02T12:10:00Z"), &rid(), &operator()).unwrap();
+    lb.save_new(&traffic("Radio check", "2026-11-02T12:30:00Z", Direction::Received, "KJ4ABC", "NCS", "12"), &rid(), &operator()).unwrap();
+    let info = lb.info().unwrap();
+    let f213 = build_213(&lb.conn, &info, &r213(vec![m.id])).unwrap();
+    fs::write(out.join("ics213.pdf"), f213.pdf).unwrap();
+    let f214 = build_214(
+        &lb.conn,
+        &info,
+        &Form214Request { op_id: op.id.clone(), name: "Pat Tester".into(), display_zone: "utc".into(), ..Default::default() },
+    )
+    .unwrap();
+    fs::write(out.join("ics214.pdf"), f214.pdf).unwrap();
+    let f309 = build_309(
+        &lb.conn,
+        &info,
+        &Form309Request { op_id: op.id, net_name: "Lake County ARES Net".into(), display_zone: "utc".into(), ..Default::default() },
+    )
+    .unwrap();
+    fs::write(out.join("ics309.pdf"), f309.pdf).unwrap();
+}
