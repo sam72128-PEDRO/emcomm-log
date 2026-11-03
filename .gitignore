@@ -12,3 +12,4 @@ release/*.deb
 release/*.AppImage
 release/*.rpm
 release/ci/
+release/smoke*/
