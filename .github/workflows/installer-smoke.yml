@@ -200,9 +200,24 @@ jobs:
           try { Invoke-WebRequest "https://msedgedriver.microsoft.com/$ver/edgedriver_win64.zip" -OutFile $zip }
           catch { Invoke-WebRequest "https://msedgedriver.azureedge.net/$ver/edgedriver_win64.zip" -OutFile $zip }
           Expand-Archive $zip -DestinationPath edgedriver -Force
-          New-Item -ItemType Directory -Force e2e\data | Out-Null
+          New-Item -ItemType Directory -Force e2e\data, e2e\diag | Out-Null
+          # Diagnostic: does the installed app's WebView2 honor injected debugging arguments?
+          $env:EMCOMM_DATA_DIR = (Resolve-Path e2e\diag).Path
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9333"
+          $dp = Start-Process $exe -PassThru
+          Start-Sleep 12
+          try { (Invoke-WebRequest http://127.0.0.1:9333/json/version -UseBasicParsing -TimeoutSec 5).Content | Out-File e2e\devtools-diag.txt; Write-Host "DIAG: debug port open via env var" }
+          catch { "closed" | Out-File e2e\devtools-diag.txt; Write-Host "DIAG: debug port NOT open via env var" }
+          Stop-Process -Id $dp.Id -Force -ErrorAction SilentlyContinue
+          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+          Remove-Item Env:\WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+          Start-Sleep 3
+          # Wrap msedgedriver to capture its verbose log.
+          $real = (Resolve-Path edgedriver\msedgedriver.exe).Path
+          $log = Join-Path (Resolve-Path e2e).Path "msedgedriver.log"
+          Set-Content -Path edgedriver\wrapped.cmd -Value "@`"$real`" %* --verbose --log-path=`"$log`""
           $env:EMCOMM_DATA_DIR = (Resolve-Path e2e\data).Path
-          $drv = Start-Process tauri-driver -ArgumentList "--native-driver", (Resolve-Path edgedriver\msedgedriver.exe).Path -PassThru -RedirectStandardOutput e2e\driver.log -RedirectStandardError e2e\driver.err
+          $drv = Start-Process tauri-driver -ArgumentList "--native-driver", (Resolve-Path edgedriver\wrapped.cmd).Path -PassThru -RedirectStandardOutput e2e\driver.log -RedirectStandardError e2e\driver.err
           Start-Sleep 3
           python scripts/e2e.py $exe $env:EMCOMM_DATA_DIR (Resolve-Path e2e).Path
           $code = $LASTEXITCODE
