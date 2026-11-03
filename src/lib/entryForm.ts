@@ -185,6 +185,11 @@ export function blankEmergency(): T.EmergencyFields {
     location: "",
     disposition: "",
     preparer: "",
+    approved_by_name: "",
+    approved_by_position: "",
+    replied_by_name: "",
+    replied_by_position: "",
+    replied_at_utc: null,
   };
 }
 
@@ -207,6 +212,8 @@ export interface EntryForm {
   freqText: string;
   freqUnit: FreqUnit;
   attachments: T.StagedAttachment[];
+  /** Operational period id, or "" for none (assigned by event time when forms are made). */
+  op_id: string;
 }
 
 export interface FormContext {
@@ -214,6 +221,8 @@ export interface FormContext {
   preset: T.PresetConfig | null;
   profile: T.Profile | null;
   incident: T.IncidentFields;
+  /** Current operational period for new entries (emergency logbooks). */
+  currentOpId?: string | null;
 }
 
 export function newForm(ctx: FormContext): EntryForm {
@@ -252,6 +261,7 @@ export function newForm(ctx: FormContext): EntryForm {
     freqText: "",
     freqUnit: "MHz",
     attachments: [],
+    op_id: ctx.currentOpId ?? "",
   };
 }
 
@@ -281,6 +291,7 @@ export function applyTemplate(form: EntryForm, d: T.TemplateDefaults, kinds: T.E
       received_at_utc: f.em.received_at_utc,
       activity_start_utc: f.em.activity_start_utc,
       activity_end_utc: f.em.activity_end_utc,
+      replied_at_utc: f.em.replied_at_utc,
       incident_name: f.em.incident_name,
       incident_number: f.em.incident_number,
       operational_period: f.em.operational_period,
@@ -322,6 +333,7 @@ export function formFromEntry(e: T.Entry): EntryForm {
     em: e.emergency ? { ...e.emergency } : blankEmergency(),
     ...freqFields(e.ham?.frequency_hz ?? null),
     attachments: [],
+    op_id: e.op_id ?? "",
   };
 }
 
@@ -339,6 +351,8 @@ export function formCopyOf(e: T.Entry, ctx: FormContext): EntryForm {
   f.em.incident_name = ctx.incident.incident_name;
   f.em.incident_number = ctx.incident.incident_number;
   f.em.operational_period = ctx.incident.operational_period;
+  f.em.replied_at_utc = null;
+  f.op_id = ctx.currentOpId ?? "";
   return f;
 }
 
@@ -357,9 +371,6 @@ export function validateForm(f: EntryForm, type: T.LogbookType): FieldErrors {
     if (fr.hz && band && (fr.hz < band[1] || fr.hz > band[2])) {
       e["ham.band"] = `${formatFrequency(fr.hz).text} MHz is outside the ${band[0]} band`;
     }
-  }
-  if (type === "emergency" && f.kind === "activity" && !f.em.activity_start_utc) {
-    e["emergency.activity_start_utc"] = "Activity start time is required";
   }
   return e;
 }
@@ -396,6 +407,7 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
     ham,
     emergency,
     new_attachments: f.attachments,
+    op_id: f.op_id || null,
   };
 }
 
@@ -417,6 +429,7 @@ export function toTemplateDefaults(f: EntryForm, type: T.LogbookType): T.Templat
           received_at_utc: null,
           activity_start_utc: null,
           activity_end_utc: null,
+          replied_at_utc: null,
         }
       : null;
   return {

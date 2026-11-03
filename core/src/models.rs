@@ -329,6 +329,12 @@ pub struct EmergencyFields {
     pub location: String,
     pub disposition: String,
     pub preparer: String,
+    // ICS 213 blocks 8 and 10 (schema v2).
+    pub approved_by_name: String,
+    pub approved_by_position: String,
+    pub replied_by_name: String,
+    pub replied_by_position: String,
+    pub replied_at_utc: Option<String>,
 }
 
 impl Default for EmergencyFields {
@@ -358,6 +364,11 @@ impl Default for EmergencyFields {
             location: String::new(),
             disposition: String::new(),
             preparer: String::new(),
+            approved_by_name: String::new(),
+            approved_by_position: String::new(),
+            replied_by_name: String::new(),
+            replied_by_position: String::new(),
+            replied_at_utc: None,
         }
     }
 }
@@ -391,6 +402,8 @@ pub struct EntryInput {
     pub ham: Option<HamFields>,
     pub emergency: Option<EmergencyFields>,
     pub new_attachments: Vec<StagedAttachment>,
+    /// Operational period (schema v2); None = assigned by event time when forms are made.
+    pub op_id: Option<String>,
 }
 
 impl Default for EntryInput {
@@ -414,6 +427,7 @@ impl Default for EntryInput {
             ham: None,
             emergency: None,
             new_attachments: vec![],
+            op_id: None,
         }
     }
 }
@@ -460,6 +474,46 @@ pub struct Entry {
     pub ham: Option<HamFields>,
     pub emergency: Option<EmergencyFields>,
     pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub op_id: Option<String>,
+}
+
+// ---------- Operational periods (schema v2) ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperationalPeriod {
+    pub id: String,
+    pub name: String,
+    pub start_utc: String,
+    pub end_utc: String,
+    pub notes: String,
+    pub status: EntryStatus,
+    pub created_at_utc: String,
+    pub updated_at_utc: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct OperationalPeriodInput {
+    pub name: String,
+    pub start_utc: String,
+    pub end_utc: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct OpResource {
+    pub name: String,
+    pub ics_position: String,
+    pub home_agency: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PeriodSaveResult {
+    pub period: OperationalPeriod,
+    /// Names of other active periods that overlap this one (allowed, but worth a warning).
+    pub overlaps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

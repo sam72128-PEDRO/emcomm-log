@@ -37,7 +37,7 @@ fn opt_time(field: &str, v: &Option<String>) -> AppResult<Option<String>> {
     }
 }
 
-fn single_line(field: &str, s: &str, max: usize) -> AppResult<String> {
+pub(crate) fn single_line(field: &str, s: &str, max: usize) -> AppResult<String> {
     let cleaned: String = s.chars().map(|c| if c == '\n' || c == '\r' || c == '\t' { ' ' } else { c }).collect();
     let cleaned: String = cleaned.chars().filter(|c| !c.is_control()).collect();
     let t = cleaned.trim().to_string();
@@ -47,7 +47,7 @@ fn single_line(field: &str, s: &str, max: usize) -> AppResult<String> {
     Ok(t)
 }
 
-fn multi_line(field: &str, s: &str, max: usize) -> AppResult<String> {
+pub(crate) fn multi_line(field: &str, s: &str, max: usize) -> AppResult<String> {
     let normalized = s.replace("\r\n", "\n").replace('\r', "\n");
     let cleaned: String = normalized.chars().filter(|c| *c == '\n' || *c == '\t' || !c.is_control()).collect();
     let t = cleaned.trim_end().trim_start_matches('\n').to_string();
@@ -283,6 +283,11 @@ pub fn validate_emergency(e: &EmergencyFields, kind: EntryKind) -> AppResult<Eme
         location: s("location", &e.location)?,
         disposition: s("disposition", &e.disposition)?,
         preparer: s("preparer", &e.preparer)?,
+        approved_by_name: s("approved_by_name", &e.approved_by_name)?,
+        approved_by_position: s("approved_by_position", &e.approved_by_position)?,
+        replied_by_name: s("replied_by_name", &e.replied_by_name)?,
+        replied_by_position: s("replied_by_position", &e.replied_by_position)?,
+        replied_at_utc: opt_time("emergency.replied_at_utc", &e.replied_at_utc)?,
     };
     check_order("emergency.activity_end_utc", &out.activity_start_utc, &out.activity_end_utc)?;
     if kind == EntryKind::Activity && out.activity_start_utc.is_none() {
@@ -367,6 +372,12 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
         ham,
         emergency,
         new_attachments: atts,
+        op_id: match &input.op_id {
+            Some(id) if uuid::Uuid::parse_str(id).is_err() => {
+                return Err(AppError::validation("op_id", "Invalid operational period reference"));
+            }
+            other => other.clone(),
+        },
     })
 }
 

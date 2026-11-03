@@ -14,13 +14,14 @@ pub const MAX_PAGE: u32 = 500;
 const ENTRY_SELECT: &str = "SELECT e.id, e.sequence_no, e.kind, e.event_at_utc, e.event_timezone, e.event_utc_offset_min,
     e.recorded_at_utc, e.updated_at_utc, e.status, e.voided_at_utc, e.void_reason, e.direction, e.priority, e.handling,
     e.flagged, e.from_text, e.to_text, e.subject, e.body, e.channel, e.location, e.operator_snapshot_json, e.tags_json,
-    e.current_revision, (f.entry_id IS NOT NULL),
+    e.current_revision, e.op_id, (f.entry_id IS NOT NULL),
     h.entry_id, h.their_call, h.station_call, h.operator_call, h.qso_start_utc, h.qso_end_utc, h.frequency_hz, h.band,
     h.mode, h.submode, h.rst_sent, h.rst_rcvd, h.my_grid, h.their_grid, h.qso_notes,
     m.entry_id, m.record_type, m.incident_name, m.incident_number, m.operational_period, m.message_number, m.precedence,
     m.originator, m.originator_position, m.recipient, m.recipient_position, m.sender, m.receiver, m.sent_at_utc,
     m.received_at_utc, m.reply_requested, m.action_requested, m.response, m.resource_unit, m.assignment,
-    m.activity_start_utc, m.activity_end_utc, m.location, m.disposition, m.preparer
+    m.activity_start_utc, m.activity_end_utc, m.location, m.disposition, m.preparer,
+    m.approved_by_name, m.approved_by_position, m.replied_by_name, m.replied_by_position, m.replied_at_utc
   FROM entries e
   LEFT JOIN entry_favorites f ON f.entry_id = e.id
   LEFT JOIN entry_ham h ON h.entry_id = e.id
@@ -63,6 +64,7 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
     let op_json: String = g!();
     let tags_json: String = g!();
     let current_revision: i64 = g!();
+    let op_id: Option<String> = g!();
     let favorite: bool = g!();
     let ham_id: Option<String> = g!();
     let ham = if ham_id.is_some() {
@@ -113,6 +115,11 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
             location: g!(),
             disposition: g!(),
             preparer: g!(),
+            approved_by_name: g!(),
+            approved_by_position: g!(),
+            replied_by_name: g!(),
+            replied_by_position: g!(),
+            replied_at_utc: g!(),
         })
     } else {
         None
@@ -147,6 +154,7 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
         ham,
         emergency,
         attachments: vec![],
+        op_id,
     })
 }
 
@@ -233,8 +241,9 @@ fn insert_emergency(c: &Connection, id: &str, m: &EmergencyFields) -> AppResult<
         "INSERT INTO entry_emergency(entry_id, record_type, incident_name, incident_number, operational_period, message_number,
             precedence, originator, originator_position, recipient, recipient_position, sender, receiver, sent_at_utc,
             received_at_utc, reply_requested, action_requested, response, resource_unit, assignment, activity_start_utc,
-            activity_end_utc, location, disposition, preparer)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
+            activity_end_utc, location, disposition, preparer, approved_by_name, approved_by_position, replied_by_name,
+            replied_by_position, replied_at_utc)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)",
         params![
             id,
             m.record_type.as_str(),
@@ -260,7 +269,12 @@ fn insert_emergency(c: &Connection, id: &str, m: &EmergencyFields) -> AppResult<
             m.activity_end_utc,
             m.location,
             m.disposition,
-            m.preparer
+            m.preparer,
+            m.approved_by_name,
+            m.approved_by_position,
+            m.replied_by_name,
+            m.replied_by_position,
+            m.replied_at_utc
         ],
     )?;
     Ok(())
@@ -284,6 +298,8 @@ fn write_fts(c: &Connection, id: &str) -> AppResult<()> {
             m.receiver.clone(),
             m.resource_unit.clone(),
             m.preparer.clone(),
+            m.approved_by_name.clone(),
+            m.replied_by_name.clone(),
         ]);
         extra.extend([
             m.message_number.clone(),
@@ -405,6 +421,21 @@ fn insert_attachment(c: &Connection, entry_id: &str, f: &FinalizedAttachment, re
     Ok(())
 }
 
+/// An entry may only be newly assigned to an existing, active operational period. Keeping the period
+/// it already has is always allowed (it may have been voided since).
+fn check_op(c: &Connection, op_id: &Option<String>, current: Option<&str>) -> AppResult<()> {
+    let Some(id) = op_id else { return Ok(()) };
+    if current == Some(id.as_str()) {
+        return Ok(());
+    }
+    let status: Option<String> = c.query_row("SELECT status FROM operational_periods WHERE id=?1", params![id], |r| r.get(0)).optional()?;
+    match status.as_deref() {
+        Some("active") => Ok(()),
+        Some(_) => Err(AppError::validation("op_id", "That operational period is voided")),
+        None => Err(AppError::validation("op_id", "That operational period does not exist")),
+    }
+}
+
 fn fill_incident_snapshot(c: &Connection, m: &mut EmergencyFields) -> AppResult<()> {
     let (n, num, op): (String, String, String) =
         c.query_row("SELECT incident_name, incident_number, operational_period FROM logbook", [], |r| {
@@ -484,6 +515,7 @@ impl Logbook {
             return Err(AppError::new(ErrorCode::Conflict, "Request id already used by a different change"));
         }
         let result = (|| -> AppResult<Entry> {
+            check_op(&tx, &v.op_id, None)?;
             if let Some(m) = v.emergency.as_mut() {
                 fill_incident_snapshot(&tx, m)?;
             }
@@ -497,8 +529,8 @@ impl Logbook {
             tx.execute(
                 "INSERT INTO entries(id, logbook_id, sequence_no, kind, event_at_utc, event_timezone, event_utc_offset_min,
                     recorded_at_utc, updated_at_utc, status, direction, priority, handling, flagged, from_text, to_text, subject,
-                    body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21)",
+                    body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id, op_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21,?22)",
                 params![
                     id,
                     logbook_id,
@@ -520,7 +552,8 @@ impl Logbook {
                     v.location,
                     serde_json::to_string(operator)?,
                     serde_json::to_string(&v.tags)?,
-                    request_id
+                    request_id,
+                    v.op_id
                 ],
             )?;
             if let Some(h) = &v.ham {
@@ -604,6 +637,7 @@ impl Logbook {
         }
         let new_rev = before.current_revision + 1;
         let result = (|| -> AppResult<Option<Entry>> {
+            check_op(&tx, &v.op_id, before.op_id.as_deref())?;
             if let Some(m) = v.emergency.as_mut() {
                 fill_incident_snapshot(&tx, m)?;
             }
@@ -615,7 +649,7 @@ impl Logbook {
             tx.execute(
                 "UPDATE entries SET kind=?2, event_at_utc=?3, event_timezone=?4, event_utc_offset_min=?5, updated_at_utc=?6,
                     direction=?7, priority=?8, handling=?9, flagged=?10, from_text=?11, to_text=?12, subject=?13, body=?14,
-                    channel=?15, location=?16, tags_json=?17, current_revision=?18
+                    channel=?15, location=?16, tags_json=?17, current_revision=?18, op_id=?19
                  WHERE id=?1",
                 params![
                     entry_id,
@@ -635,7 +669,8 @@ impl Logbook {
                     v.channel,
                     v.location,
                     serde_json::to_string(&v.tags)?,
-                    new_rev
+                    new_rev,
+                    v.op_id
                 ],
             )?;
             tx.execute("DELETE FROM entry_ham WHERE entry_id=?1", params![entry_id])?;

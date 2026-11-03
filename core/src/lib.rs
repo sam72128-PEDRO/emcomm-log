@@ -13,7 +13,11 @@ pub mod logbook;
 pub mod migrate;
 pub mod models;
 pub mod package;
+pub mod periods;
 pub mod snapshot;
 pub mod validate;
 
 pub use error::{AppError, AppResult, ErrorCode};
+
+/// Re-exported so the app shell can name connection types without its own (possibly mismatched) dependency.
+pub use rusqlite;

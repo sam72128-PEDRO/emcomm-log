@@ -9,10 +9,13 @@
     Paperclip,
     History,
     CircleAlert,
+    FileText,
   } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import EntryEditor from "./EntryEditor.svelte";
   import KindBadge from "./KindBadge.svelte";
+  import Form213Dialog from "./Form213Dialog.svelte";
+  import { periodById } from "../lib/periods";
   import { app } from "../lib/state.svelte";
   import { api, newId, toAppError } from "../lib/api";
   import { confirm } from "../lib/confirm.svelte";
@@ -26,6 +29,7 @@
   let editing = $state(false);
   let editDraft = $state<T.Draft | null>(null);
   let busy = $state(false);
+  let form213 = $state(false);
 
   async function load() {
     const id = app.detailEntryId;
@@ -178,6 +182,11 @@
     ["location", "Location"],
     ["disposition", "Disposition"],
     ["preparer", "Prepared by"],
+    ["approved_by_name", "Approved by"],
+    ["approved_by_position", "Approved by (position)"],
+    ["replied_by_name", "Replied by"],
+    ["replied_by_position", "Replied by (position)"],
+    ["replied_at_utc", "Replied at"],
   ];
 </script>
 
@@ -246,6 +255,15 @@
         </dd>
         <dt>From → To</dt>
         <dd>{entry.from_text || "—"} → {entry.to_text || "—"}</dd>
+        {#if entry.op_id}<dt>Operational period</dt>
+          <dd>
+            {periodById(app.periods, entry.op_id)?.name ?? "(unknown period)"}{periodById(
+              app.periods,
+              entry.op_id,
+            )?.status === "void"
+              ? " (voided)"
+              : ""}
+          </dd>{/if}
         {#if entry.channel}<dt>Channel</dt>
           <dd>{entry.channel}</dd>{/if}
         {#if entry.location}<dt>Location</dt>
@@ -367,6 +385,9 @@
         >
         <button onclick={copyAsNew} disabled={app.readOnly}><Copy size={16} />Use as new</button>
         <button onclick={exportThis}><Download size={16} />Export Selection</button>
+        {#if entry.kind === "message" && entry.status === "active" && app.bookType === "emergency"}<button
+            onclick={() => (form213 = true)}><FileText size={16} />ICS 213…</button
+          >{/if}
         <span class="spacer"></span>
         {#if entry.status === "active"}
           <button
@@ -390,6 +411,8 @@
     {/snippet}
   </Modal>
 {/if}
+
+{#if form213 && entry}<Form213Dialog entryIds={[entry.id]} onclose={() => (form213 = false)} />{/if}
 
 <style>
   .subject {

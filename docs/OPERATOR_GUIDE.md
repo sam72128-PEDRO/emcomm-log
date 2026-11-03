@@ -108,6 +108,33 @@ inclusive date range, or the current Traffic Log filter/selection. Voided entrie
 *Include voided*. The record count is shown before you export. ADIF exports only qualifying QSOs and lists
 every skipped entry with the reason. See [EXPORT_FORMATS.md](EXPORT_FORMATS.md).
 
+### Operational periods and ICS forms (Emergency logbooks)
+
+**Operational periods.** On the Dashboard, *Operational Periods* → **New period** (name, start, end). While a
+period is running, Quick Entry shows **PERIOD: name** and new entries are tagged with it; you can change an
+entry's period in the *Incident* section of the full editor. Between periods the header shows **NO CURRENT
+PERIOD** and new entries are placed by their time. Periods may overlap for a handover (you get a warning).
+Periods are voided, never deleted; entries keep their period. **Resources** lists the people assigned to a
+period (ICS 214 block 6), with *Copy from* another period.
+
+**ICS 213 General Message.** Select one or more *Message* entries in the Traffic Log and choose **ICS 213**,
+or open a message and choose **ICS 213…**. Each message becomes one filled ICS 213 on FEMA's official form:
+To/From, subject, date and time (sent time if set), message, approved by, reply, and replied by — fill the
+*Approved by* and *Replied by* fields in the message's details. Text too long for a block continues on an
+attached continuation page that names the block. Non-message and voided entries are listed as not included.
+
+**ICS 214 Activity Log.** Dashboard → period → **214**, or *Reports & Export* → **ICS 214 Activity Log…**.
+Choose the period, whose log it is, which entry types to list (Activity by default; Message, Traffic, Status
+and Note can be added) and who prepared it. The log lists entries assigned to that period plus unassigned
+entries whose time falls inside it, in time order: 24 rows on the first page, 36 on each continuation page.
+
+All forms: signature lines are left blank for signing after printing, the fields stay editable in any PDF
+reader, voided entries never appear, and a small footer says the form was prepared with EMCOMM LOG. The
+ICS 309 Communications Log is planned for a later phase.
+
+**Upgrading.** The first time this version opens a logbook made by EMCOMM LOG 1.0 it upgrades the file and
+keeps an untouched copy in the logbook's hidden `.pre-migration` folder (you are told where).
+
 ## 8. Where your data lives
 
 | Data | Location |

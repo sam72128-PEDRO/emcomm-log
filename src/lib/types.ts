@@ -124,6 +124,11 @@ export interface EmergencyFields {
   location: string;
   disposition: string;
   preparer: string;
+  approved_by_name: string;
+  approved_by_position: string;
+  replied_by_name: string;
+  replied_by_position: string;
+  replied_at_utc: string | null;
 }
 
 export interface TemplateDefaults {
@@ -293,6 +298,7 @@ export interface EntryInput {
   ham: HamFields | null;
   emergency: EmergencyFields | null;
   new_attachments: StagedAttachment[];
+  op_id: string | null;
 }
 
 export interface Entry {
@@ -324,6 +330,7 @@ export interface Entry {
   ham: HamFields | null;
   emergency: EmergencyFields | null;
   attachments: Attachment[];
+  op_id: string | null;
 }
 
 export interface SaveResult {
@@ -542,4 +549,67 @@ export interface ExportResult {
 export interface CloseResult {
   closed: boolean;
   backup: BackupOutcome | null;
+}
+
+// ---------- V2: operational periods and ICS forms ----------
+
+export interface OperationalPeriod {
+  id: string;
+  name: string;
+  start_utc: string;
+  end_utc: string;
+  notes: string;
+  status: EntryStatus;
+  created_at_utc: string;
+  updated_at_utc: string;
+}
+
+export interface OperationalPeriodInput {
+  name: string;
+  start_utc: string;
+  end_utc: string;
+  notes: string;
+}
+
+export interface PeriodSaveResult {
+  period: OperationalPeriod;
+  overlaps: string[];
+}
+
+export interface OpResource {
+  name: string;
+  ics_position: string;
+  home_agency: string;
+}
+
+export interface Form213Request {
+  entry_ids: string[];
+  display_zone: "local" | "utc";
+}
+
+export interface Form214Request {
+  op_id: string;
+  name: string;
+  ics_position: string;
+  home_agency: string;
+  kinds: EntryKind[];
+  include_details: boolean;
+  prepared_by_name: string;
+  prepared_by_position: string;
+  display_zone: "local" | "utc";
+}
+
+export interface FormPreview {
+  count: number;
+  skipped: { sequence_no: number; reason: string }[];
+}
+
+export interface FormResult {
+  path: string;
+  form: string;
+  exported: number;
+  pages: number;
+  skipped: { sequence_no: number; reason: string }[];
+  warnings: string[];
+  bytes: number;
 }

@@ -9,12 +9,20 @@ pub struct Migration {
     pub down: &'static str,
 }
 
-pub const LOGBOOK_MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    up: include_str!("../migrations/logbook/0001_init.up.sql"),
-    down: include_str!("../migrations/logbook/0001_init.down.sql"),
-}];
+pub const LOGBOOK_MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        up: include_str!("../migrations/logbook/0001_init.up.sql"),
+        down: include_str!("../migrations/logbook/0001_init.down.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "ics_forms",
+        up: include_str!("../migrations/logbook/0002_ics_forms.up.sql"),
+        down: include_str!("../migrations/logbook/0002_ics_forms.down.sql"),
+    },
+];
 
 pub const APP_MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
@@ -113,12 +121,17 @@ mod tests {
     #[test]
     fn logbook_migrations_up_down_up() {
         let mut c = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 1);
+        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 2);
+        rollback(&mut c, LOGBOOK_MIGRATIONS, 1).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='operational_periods'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+        let cols: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name='op_id'", [], |r| r.get(0)).unwrap();
+        assert_eq!(cols, 0, "v2 columns removed on rollback");
         rollback(&mut c, LOGBOOK_MIGRATIONS, 0).unwrap();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
-        assert_eq!(current_version(&c).unwrap(), 1);
+        assert_eq!(current_version(&c).unwrap(), 2);
     }
 
     #[test]

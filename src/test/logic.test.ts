@@ -6,10 +6,12 @@ import {
   toEntryInput,
   applyTemplate,
   allowedKinds,
+  validateForm,
 } from "../lib/entryForm";
 import { fromInputValue, toInputValue, formatInstant, todayBoundsUtc, offsetLabel } from "../lib/time";
 import { keyToAction } from "../lib/actions";
 import { preset } from "./fixtures";
+import { currentPeriod } from "../lib/periods";
 
 describe("frequency parsing", () => {
   it("parses exact decimals without floating point error", () => {
@@ -152,5 +154,75 @@ describe("regressions from hands-on testing", () => {
     expect(validateForm(f, "ham")["ham.band"]).toMatch(/outside the 40m band/);
     f.ham.band = "20m";
     expect(validateForm(f, "ham")["ham.band"]).toBeUndefined();
+  });
+});
+
+describe("operational periods (V2)", () => {
+  const op = (id: string, start: string, end: string, status: "active" | "void" = "active") => ({
+    id,
+    name: id,
+    start_utc: start,
+    end_utc: end,
+    notes: "",
+    status,
+    created_at_utc: start,
+    updated_at_utc: start,
+  });
+  const ps = [
+    op("OP1", "2026-11-02T12:00:00.000Z", "2026-11-02T20:00:00.000Z"),
+    op("Handover", "2026-11-02T19:30:00.000Z", "2026-11-02T20:30:00.000Z"),
+    op("Voided", "2026-11-02T21:00:00.000Z", "2026-11-02T23:00:00.000Z", "void"),
+  ];
+  const at = (iso: string) => Date.parse(iso);
+
+  it("current period is the running one, latest-starting during a handover, none between periods", () => {
+    expect(currentPeriod(ps, at("2026-11-02T15:00:00Z"))?.id).toBe("OP1");
+    expect(currentPeriod(ps, at("2026-11-02T19:45:00Z"))?.id).toBe("Handover");
+    expect(currentPeriod(ps, at("2026-11-02T20:15:00Z"))?.id).toBe("Handover");
+    expect(currentPeriod(ps, at("2026-11-02T22:00:00Z"))).toBeNull();
+    expect(currentPeriod(ps, at("2026-11-02T20:00:00Z"))?.id).toBe("Handover");
+  });
+
+  it("new entries carry the current period; None is sent as null", () => {
+    const ctx = {
+      type: "emergency" as const,
+      preset,
+      profile: null,
+      incident: {
+        incident_name: "Storm",
+        incident_number: "",
+        operational_period: "",
+        agency: "",
+        location: "",
+      },
+      currentOpId: "OP1",
+    };
+    const f = newForm(ctx);
+    f.subject = "x";
+    expect(toEntryInput(f, "emergency", "utc").op_id).toBe("OP1");
+    f.op_id = "";
+    expect(toEntryInput(f, "emergency", "utc").op_id).toBeNull();
+    expect(newForm({ ...ctx, currentOpId: null }).op_id).toBe("");
+  });
+});
+
+describe("activity start defaults to the event time", () => {
+  it("does not block saving and sends the event time as the start", () => {
+    const f = newForm({
+      type: "emergency",
+      preset,
+      profile: null,
+      incident: {
+        incident_name: "Storm",
+        incident_number: "",
+        operational_period: "",
+        agency: "",
+        location: "",
+      },
+    });
+    f.kind = "activity";
+    f.subject = "Net opened";
+    expect(validateForm(f, "emergency")).toEqual({});
+    expect(toEntryInput(f, "emergency", "utc").emergency?.activity_start_utc).toBe(f.event_at_utc);
   });
 });

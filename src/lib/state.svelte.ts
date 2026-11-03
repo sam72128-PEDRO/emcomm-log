@@ -90,6 +90,8 @@ class AppStore {
   editDraft = $state<T.Draft | null>(null);
   dialog = $state<string | null>(null);
   reportScope = $state<"all" | "range" | "filter">("all");
+  /** Operational periods of the open logbook (V2), ordered by start. */
+  periods = $state<T.OperationalPeriod[]>([]);
 
   /** Mounted entry editors, innermost (most recently mounted) last. */
   private editors: EditorHandle[] = [];
@@ -119,7 +121,9 @@ class AppStore {
   }
 
   setActive(v: T.ActiveView | null) {
+    const changed = v?.info.id !== this.active?.info.id;
     this.active = v;
+    if (changed) void this.refreshPeriods();
     this.backup = v?.backup ?? null;
     this.storageBlocked = v && !v.health.ok && v.health.error ? v.health.error : null;
     this.dataVersion++;
@@ -137,6 +141,18 @@ class AppStore {
       this.stats = await api.logbookStats(a, b);
     } catch {
       this.stats = null;
+    }
+  }
+
+  async refreshPeriods() {
+    if (!this.active) {
+      this.periods = [];
+      return;
+    }
+    try {
+      this.periods = await api.listPeriods();
+    } catch {
+      this.periods = [];
     }
   }
 

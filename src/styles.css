@@ -344,17 +344,17 @@ legend {
 }
 .grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .grid-3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 .grid-4 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -499,6 +499,7 @@ table.data tbody tr[aria-selected="true"] {
 /* ---------- banners ---------- */
 .banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
   padding: 10px 14px;
@@ -524,6 +525,12 @@ table.data tbody tr[aria-selected="true"] {
 .banner .icon {
   flex: none;
   margin-top: 1px;
+}
+/* Long paths in banners wrap instead of pushing their buttons out of view. */
+.banner > .grow {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .empty {

@@ -41,6 +41,27 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **passing (automated on Windows and Linux, by hand on macOS); no human screen-reader session** | Installed-app E2E (`scripts/e2e.py`, 50/50 on Windows and Linux): Ctrl+1–5/F/,/Enter shortcuts, Tab order, focus into dialogs and restored after Esc, focus to invalid field, shortcuts blocked under dialogs with announcement, save and validation announced in live regions, native View menu driven by OS automation (pywinauto / xdotool), and the OS accessibility tree (UIA for Narrator/NVDA, AT-SPI for Orca) exposes labelled fields, buttons and combos. axe-core: no serious/critical violations on 10 screens. | macOS release app: native menus with shortcuts, Cmd+1–5/E/Enter, F1, Tab order, Esc and dialog focus verified by hand. Not done: a session with a real screen reader (VoiceOver/NVDA/Orca) by a person. |
 | A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing** | `installer-smoke.yml` on fresh GitHub VMs with the CI installers ([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **Linux** `.deb` (apt), `.AppImage`, and `.rpm` (clean Fedora container) launched with no network, stayed running, created their data store, wizard rendered; **Windows** `.msi` and NSIS `.exe` installed silently and run with the app's outbound traffic blocked by firewall rule, same checks. **macOS** (built locally): `scripts/mac_smoke.sh` mounts the `.dmg`, runs the app with all IP networking denied (Seatbelt), checks it stays up, creates its data store and shows the wizard. | Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
 
+## V2 progress (docs/EMCOMM_LOG_V2_Technical_Specification.md) — macOS only during development
+
+| Phase / ID | Status | Evidence |
+|---|---|---|
+| Phase 1 — official forms gate | **passed** | FEMA ICS 213 v3 / ICS 214 v3.1 are AcroForm; filled and edited in macOS Preview and Chrome (DECISIONS.md #26, `docs/ICS_FIELD_MAP.md`). Acrobat Reader / Firefox not installed here — checked at Phase 5. |
+| A16 Operational periods | **passing** | `forms::a16_periods_create_edit_void_overlap_and_current` (create/edit/void/restore, end ≤ start rejected, overlap reported, current period only while running, entries keep a voided period, resources persist). Release app: period created from the Dashboard, CURRENT badge, PERIOD chip in Quick Entry, entries tagged automatically. |
+| A17 V1 upgrade | **passing** | `forms::a17_v1_logbook_and_package_upgrade_with_a_kept_copy` (verified pre-migration copy, free-text period untouched, V1 `.emlog` imports at schema 2). Release app: this morning's V1 test logbooks opened and upgraded with the notice naming the kept copy. |
+| A18 ICS 213 | **passing** | `forms::a18_*` (every block, sequence order, skipped reasons, overflow to continuation pages, atomic write). Release app: Traffic Log selection → 2 forms, 1 entry listed as not a message; PDF checked field by field and visually in Preview. |
+| A19 ICS 214 | **passing** | `forms::a19_*` (period/assignment selection, ordering, kinds, 24 + 36-row continuation pages with header repeated, >8 resources continue). Release app: 214 for OP 1 with the pre-period V1 entry correctly excluded. |
+| A22 Viewers | **partial (macOS)** | Preview and Chrome render, show Unicode (✓, José Núñez) and keep fields editable. Acrobat Reader / Firefox / Windows / Linux at Phase 5. |
+| A23 No invented signatures; footer | **passing** | Tests assert no `Signature*` field is ever filled; footer on every page (seen in Preview). |
+| A24 Approval/reply persistence | **passing** | `forms::a24_*` (revisions, restart, `.emlog` round trip). |
+| A20 ICS 309, A21/A25 channel plan | not started | Phases 3–4. |
+
+Hands-on V2 pass found and fixed: long upgrade notice overflowing its toast; Esc in a date picker closing the
+whole dialog; activity start "defaults to event time" yet blocked saving (V1 bug); form-result buttons pushed
+out of a narrow dialog; resources dialog not focusing its first cell; missing spaces in "From → To" and
+"· n selected" (V1); the compact editor's Date/Time field overlapping the Type column (grid columns now
+`minmax(0, 1fr)` — fixed in code, not yet seen on screen because the Mac locked). Also changed by design: the
+"current period" is only a running one, so entries logged between periods are not attached to the last one.
+
 ## Other verification run
 
 | Check | Result |
@@ -48,7 +69,7 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | `cargo test --workspace` | 64 passed (29 unit + 35 integration) on macOS, Windows and Linux; 5 opt-in helpers ignored |
 | `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` | clean |
 | `npm run check` (svelte-check, fail on warnings), `npm run lint`, `npm run format:check` | clean |
-| `npm test` (vitest) | 18 passed |
+| `npm test` (vitest) | 21 passed |
 | Hands-on macOS pass (release build, 2026-11-03) | Every screen and flow driven by hand: wizard, Quick Entry (QSO + traffic), templates, drafts/restore, edit/void/revisions, Messages handling, Traffic Log, search, reports/exports, backups/restore, `.emlog` export/import, stale-lock recovery, close/quit. 23 issues found (validation shown as save failure, Cmd+Enter in a dialog saving the entry behind it, traffic entries storing QSO fields, no warning for unsaved drafts on close, stale counts, layout/wording) — all fixed and re-verified in the rebuilt app; regressions added to vitest |
 | Scale (`--release --test scale -- --ignored`) | 100,000 entries: worst durable save 104 ms; FTS search 25 ms; filter page 176 ms; CSV 4.4 s, XLSX 6.3 s, DOCX 8.7 s, PDF 23 s, TXT 4.6 s |
 | Migrations | up → down → up test; checksum tamper and newer-schema refusal tests |

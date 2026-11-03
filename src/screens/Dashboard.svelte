@@ -30,6 +30,8 @@
   import EntryEditor from "../components/EntryEditor.svelte";
   import KindBadge from "../components/KindBadge.svelte";
   import Modal from "../components/Modal.svelte";
+  import PeriodsPanel from "../components/PeriodsPanel.svelte";
+  import { currentPeriod } from "../lib/periods";
 
   const info = $derived(app.active!.info);
   let recent = $state<T.Entry[]>([]);
@@ -76,6 +78,7 @@
     s ? (s.handling.pending ?? 0) + (s.handling.awaiting_ack ?? 0) + (s.handling.sent ?? 0) : 0,
   );
   const health = $derived(app.active!.health);
+  const op = $derived(info.logbook_type === "emergency" ? currentPeriod(app.periods) : null);
   const b = $derived(app.backup);
 
   async function saveNotes() {
@@ -111,7 +114,11 @@
       <div class="hero-text">
         <h1>{info.incident.incident_name || info.name}</h1>
         <p>
-          {#if info.incident.operational_period}<span
+          {#if op}<span
+              >Current period: {op.name} ({formatInstant(op.start_utc, app.zone, app.clock, {
+                date: false,
+              })}–{formatInstant(op.end_utc, app.zone, app.clock, { date: false })})</span
+            >{:else if info.incident.operational_period}<span
               >Operational Period {info.incident.operational_period}</span
             >{/if}
           {#if info.incident.agency}<span>{info.incident.agency}</span>{/if}
@@ -224,6 +231,8 @@
       </table>
     </section>
   </div>
+
+  {#if info.logbook_type === "emergency"}<PeriodsPanel />{/if}
 
   <div class="grid-bottom">
     <section class="panel">
@@ -364,7 +373,7 @@
         />
       </div>
       <div class="field">
-        <label for="di-op">Operational period</label><input
+        <label for="di-op">Operational period (text)</label><input
           id="di-op"
           type="text"
           bind:value={incidentDraft.operational_period}
@@ -387,6 +396,8 @@
     </div>
     <p class="hint" style="margin:0">
       New entries snapshot the current incident and operational period; existing entries keep theirs.
+      {#if info.logbook_type === "emergency"}Structured periods with start and end times (used by ICS forms)
+        are managed in the Operational Periods panel.{/if}
     </p>
     {#snippet footer()}
       <button onclick={() => (editIncident = false)}>Cancel</button>

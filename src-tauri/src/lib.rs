@@ -7,7 +7,7 @@ use emcomm_core::appdb::{AppDb, BackupRun};
 use emcomm_core::backup::{self, BackupListing, BackupPreview};
 use emcomm_core::drafts::{Draft, DraftMeta, DraftStore};
 use emcomm_core::error::{AppError, AppResult, ErrorCode};
-use emcomm_core::export::{self, ExportPreview, ExportRequest, ExportResult};
+use emcomm_core::export::{self, ExportPreview, ExportRequest, ExportResult, forms};
 use emcomm_core::fsutil::{self, now_utc};
 use emcomm_core::logbook::{CreateParams, Logbook, StorageHealth};
 use emcomm_core::models::*;
@@ -907,6 +907,76 @@ async fn run_export(state: State<'_, AppState>, req: ExportRequest, dest: String
     Ok(r)
 }
 
+// ---------- operational periods and ICS forms (V2) ----------
+
+#[tauri::command]
+async fn list_periods(state: State<'_, AppState>) -> Cmd<Vec<OperationalPeriod>> {
+    with_book(&state, |lb| lb.periods())
+}
+
+#[tauri::command]
+async fn current_period(state: State<'_, AppState>) -> Cmd<Option<OperationalPeriod>> {
+    with_book(&state, |lb| lb.current_period())
+}
+
+#[tauri::command]
+async fn save_period(state: State<'_, AppState>, id: Option<String>, input: OperationalPeriodInput) -> Cmd<PeriodSaveResult> {
+    with_book(&state, |lb| lb.save_period(id.as_deref(), &input))
+}
+
+#[tauri::command]
+async fn set_period_void(state: State<'_, AppState>, id: String, void: bool) -> Cmd<OperationalPeriod> {
+    with_book(&state, |lb| lb.set_period_void(&id, void))
+}
+
+#[tauri::command]
+async fn period_resources(state: State<'_, AppState>, op_id: String) -> Cmd<Vec<OpResource>> {
+    with_book(&state, |lb| lb.period_resources(&op_id))
+}
+
+#[tauri::command]
+async fn set_period_resources(state: State<'_, AppState>, op_id: String, rows: Vec<OpResource>) -> Cmd<Vec<OpResource>> {
+    with_book(&state, |lb| lb.set_period_resources(&op_id, &rows))
+}
+
+#[tauri::command]
+async fn form213_preview(state: State<'_, AppState>, req: forms::Form213Request) -> Cmd<forms::FormPreview> {
+    with_book(&state, |lb| forms::preview_213(&lb.conn, &lb.info()?, &req))
+}
+
+#[tauri::command]
+async fn form214_preview(state: State<'_, AppState>, req: forms::Form214Request) -> Cmd<forms::FormPreview> {
+    with_book(&state, |lb| forms::preview_214(&lb.conn, &lb.info()?, &req))
+}
+
+/// Build an ICS form from a read-only connection off the UI thread, then publish it atomically.
+async fn run_form(
+    state: &AppState,
+    dest: String,
+    build: impl FnOnce(&emcomm_core::rusqlite::Connection, &LogbookInfo, &Path) -> AppResult<forms::FormResult> + Send + 'static,
+) -> Cmd<forms::FormResult> {
+    let (db_path, info) = with_book(state, |lb| Ok((lb.db_path(), lb.info()?)))?;
+    let d = dest.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let conn = Logbook::open_read_only(&db_path)?;
+        build(&conn, &info, Path::new(&d))
+    })
+    .await
+    .map_err(|e| AppError::internal(e.to_string()))??;
+    lock(&state.reveal_allow).insert(PathBuf::from(dest));
+    Ok(r)
+}
+
+#[tauri::command]
+async fn export_form213(state: State<'_, AppState>, req: forms::Form213Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&state, dest, move |c, i, p| forms::export_213(c, i, &req, p)).await
+}
+
+#[tauri::command]
+async fn export_form214(state: State<'_, AppState>, req: forms::Form214Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&state, dest, move |c, i, p| forms::export_214(c, i, &req, p)).await
+}
+
 // ---------- app lifecycle ----------
 
 #[tauri::command]
@@ -1112,6 +1182,16 @@ pub fn run() {
             import_package,
             export_preview,
             run_export,
+            list_periods,
+            current_period,
+            save_period,
+            set_period_void,
+            period_resources,
+            set_period_resources,
+            form213_preview,
+            form214_preview,
+            export_form213,
+            export_form214,
             quit_app,
             cancel_close,
         ])

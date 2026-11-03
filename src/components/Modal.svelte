@@ -54,6 +54,13 @@
     if (e.key === "Escape") {
       e.stopPropagation();
       e.preventDefault();
+      // Esc in a date/time field first dismisses its picker (by leaving the field); a second Esc closes.
+      const t = e.target as HTMLInputElement | null;
+      if (t?.tagName === "INPUT" && ["date", "datetime-local", "time"].includes(t.type)) {
+        t.blur();
+        dialogEl.focus();
+        return;
+      }
       if (!busy) onclose();
       return;
     }

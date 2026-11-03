@@ -1,6 +1,6 @@
 # EMCOMM LOG V2 Technical Specification
 
-Version 0.1 draft | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
+Version 0.2 | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
 
 ## 1. Purpose and release boundary
 
@@ -51,9 +51,11 @@ V1's free-text `operational_period` (logbook incident fields and per-entry) is k
 On upgrade nothing is guessed: text that parses unambiguously as a date/time range MAY be offered as a
 one-click "Create period from this", never applied silently.
 
-Quick Entry shows the current OP (the one containing "now", or the most recently started) in the header
-and stores `op_id` on new emergency entries; the operator can change it. Entries without `op_id` are
-assigned to an OP by event time when a form is generated.
+Quick Entry shows the current OP in the header — the active period containing "now" (the latest-starting
+one during an overlap) — and stores its `op_id` on new emergency entries; the operator can change it.
+Between periods there is no current OP and new entries stay unassigned (the header says so), so nothing
+logged after a period ends is attached to it by accident. Entries without `op_id` are placed by event time
+when a form is generated.
 
 ### 3.2 Message entries (ICS 213 additions)
 
@@ -131,7 +133,7 @@ prepared-by (default operator, editable).
 | Operational period (from/to) | OP `start_utc`/`end_utc` |
 | Name, ICS position, home agency/unit | dialog values |
 | Resources assigned | `op_resources` for the OP |
-| Activity log (date/time, notable activities) | included entries with event time inside the OP, ordered by event time then sequence; activity text = summary, plus details when "include details" is on; activity start–end shown when both exist |
+| Activity log (date/time, notable activities) | included entries assigned to the OP, plus unassigned entries with event time inside it (an entry assigned to another OP is never pulled in by time), ordered by event time then sequence; activity text = summary, plus details when "include details" is on; activity start–end shown when both exist |
 | Prepared by (name, position, date/time) | dialog; signature blank |
 
 Rows beyond page 1 continue on the form's continuation page(s) with blocks 1–3 repeated.
@@ -187,7 +189,7 @@ of the new screens. Windows/Linux CI runs only on manual dispatch until Phase 5.
 | A16 | Create, edit and void operational periods; end ≤ start rejected; overlaps warned; new emergency entries record the current OP; periods survive restart, backup/restore and `.emlog` round trip. |
 | A17 | V1 logbook and V1 `.emlog` open/import in V2 with a pre-migration backup; free-text operational period preserved and never auto-converted. |
 | A18 | ICS 213 for a fully populated message fills every mapped block exactly per §4.2; signatures blank; message longer than the box continues on a continuation page with no lost text; multi-select gives one form per message in sequence order. |
-| A19 | ICS 214 includes only non-void entries of the chosen kinds whose event time is inside the OP, ordered by time/sequence; resources block matches the OP; overflow continues on continuation pages with header blocks repeated. |
+| A19 | ICS 214 includes only non-void entries of the chosen kinds that are assigned to the OP or unassigned with event time inside it, ordered by time/sequence; resources block matches the OP; overflow continues on continuation pages with header blocks repeated. |
 | A20 | ICS 309 rows match the Traffic Log scope (OP and filters), with message numbers in the From/To columns per direction; counts in the dialog equal rows exported. |
 | A21 | Channel plan rows can be entered, reordered, edited and removed by keyboard for each OP; copy from previous OP and from another logbook works; plans survive restart, backup/restore and `.emlog` round trip. |
 | A22 | Every form PDF opens in Preview, Acrobat Reader and a browser PDF viewer (macOS during development; Windows/Linux at Phase 5); fields remain editable; Unicode names (accents, ✓) render. |
