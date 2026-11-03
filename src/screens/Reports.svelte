@@ -15,6 +15,7 @@
   import type * as T from "../lib/types";
   import { todayDateString, zoneLabel } from "../lib/time";
   import Form214Dialog from "../components/Form214Dialog.svelte";
+  import Form309Dialog from "../components/Form309Dialog.svelte";
 
   const info = app.active!.info;
   const formats: { id: T.ExportFormat; label: string; desc: string; ext: string; ham?: boolean }[] = [
@@ -28,6 +29,7 @@
   const available = formats.filter((f) => !f.ham || info.logbook_type === "ham");
 
   let form214 = $state(false);
+  let form309 = $state(false);
   let format = $state<T.ExportFormat>("pdf");
   let scope = $state<"all" | "range" | "filter">(app.reportScope);
   let from = $state(todayDateString(app.zone));
@@ -257,6 +259,7 @@
         </p>
         <div class="row wrap">
           <button onclick={() => (form214 = true)}><FileText size={16} />ICS 214 Activity Log…</button>
+          <button onclick={() => (form309 = true)}><FileText size={16} />ICS 309 Communications Log…</button>
           <button onclick={() => app.navigate("log")}><FileText size={16} />ICS 213 General Message…</button>
           <span class="hint"
             >For an ICS 213, select message entries in the Traffic Log (or open one) and choose ICS 213.</span
@@ -303,6 +306,7 @@
 </div>
 
 {#if form214}<Form214Dialog onclose={() => (form214 = false)} />{/if}
+{#if form309}<Form309Dialog onclose={() => (form309 = false)} />{/if}
 
 <style>
   .page {

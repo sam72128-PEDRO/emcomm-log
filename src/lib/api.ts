@@ -126,6 +126,8 @@ export const api = {
   form214Preview: (req: T.Form214Request) => call<T.FormPreview>("form214_preview", { req }),
   exportForm213: (req: T.Form213Request, dest: string) => call<T.FormResult>("export_form213", { req, dest }),
   exportForm214: (req: T.Form214Request, dest: string) => call<T.FormResult>("export_form214", { req, dest }),
+  form309Preview: (req: T.Form309Request) => call<T.FormPreview>("form309_preview", { req }),
+  exportForm309: (req: T.Form309Request, dest: string) => call<T.FormResult>("export_form309", { req, dest }),
 
   quitApp: () => call<void>("quit_app"),
   cancelClose: () => call<void>("cancel_close"),

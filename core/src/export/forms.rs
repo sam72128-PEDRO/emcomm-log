@@ -89,7 +89,7 @@ pub struct FormResult {
     pub bytes: u64,
 }
 
-fn local_parts(zone: DisplayZone, iso: &str) -> Option<(String, String)> {
+pub(crate) fn local_parts(zone: DisplayZone, iso: &str) -> Option<(String, String)> {
     let t: DateTime<Utc> = parse_utc(iso)?;
     Some(match zone {
         DisplayZone::Utc => (t.format("%Y-%m-%d").to_string(), t.format("%H:%MZ").to_string()),
@@ -101,7 +101,7 @@ fn local_parts(zone: DisplayZone, iso: &str) -> Option<(String, String)> {
 }
 
 /// "2026-11-03 08:08 -05:00" or "2026-11-03 13:08Z"
-fn date_time(zone: DisplayZone, iso: &str) -> String {
+pub(crate) fn date_time(zone: DisplayZone, iso: &str) -> String {
     let Some(t) = parse_utc(iso) else { return iso.to_string() };
     match zone {
         DisplayZone::Utc => t.format("%Y-%m-%d %H:%MZ").to_string(),
@@ -113,18 +113,18 @@ fn join_nonempty(parts: &[&str]) -> String {
     parts.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
 }
 
-fn footer_base(info: &LogbookInfo) -> String {
+pub(crate) fn footer_base(info: &LogbookInfo) -> String {
     format!("Prepared with EMCOMM LOG {APP_VERSION} from logbook \u{201c}{}\u{201d}", info.name)
 }
 
-fn zone_note(zone: DisplayZone) -> String {
+pub(crate) fn zone_note(zone: DisplayZone) -> String {
     match zone {
         DisplayZone::Utc => "times in UTC".into(),
         DisplayZone::Local => format!("times in local time (UTC{})", zone.offset_at(Utc::now())),
     }
 }
 
-fn require_emergency(info: &LogbookInfo) -> AppResult<()> {
+pub(crate) fn require_emergency(info: &LogbookInfo) -> AppResult<()> {
     if info.logbook_type != LogbookType::Emergency {
         return Err(AppError::validation("form", "ICS forms are available in Emergency logbooks"));
     }
@@ -236,7 +236,7 @@ fn local_offset(zone: DisplayZone, iso: &str) -> String {
 
 /// Entries for a 214: active, of the chosen kinds, and either assigned to this period or unassigned
 /// with an event time inside it. Ordered by event time, then sequence.
-fn entries_for_period(conn: &Connection, op_id: &str, start: &str, end: &str, kinds: &[EntryKind]) -> AppResult<Vec<Entry>> {
+pub(crate) fn entries_for_period(conn: &Connection, op_id: &str, start: &str, end: &str, kinds: &[EntryKind]) -> AppResult<Vec<Entry>> {
     if kinds.is_empty() {
         return Err(AppError::validation("kinds", "Choose at least one entry type to include"));
     }

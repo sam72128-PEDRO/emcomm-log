@@ -53,7 +53,8 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A22 Viewers | **partial (macOS)** | Preview and Chrome render, show Unicode (✓, José Núñez) and keep fields editable. Acrobat Reader / Firefox / Windows / Linux at Phase 5. |
 | A23 No invented signatures; footer | **passing** | Tests assert no `Signature*` field is ever filled; footer on every page (seen in Preview). |
 | A24 Approval/reply persistence | **passing** | `forms::a24_*` (revisions, restart, `.emlog` round trip). |
-| A20 ICS 309, A21/A25 channel plan | not started | Phases 3–4. |
+| A20 ICS 309 | **passing (core); UI not yet exercised by hand** | `forms::a20_*` (period/kind scope, voided and out-of-period entries left out, selection narrowing with reasons, received/sent message numbers under FROM/TO, wrapped cells with no lost words, 44-line pages flowing to a second page). Sample PDF rendered with macOS Quick Look and checked visually. The dialog and its three entry points pass type checks but were not clicked through: the Mac was locked during the Phase 3 build. |
+| A21/A25 channel plan | not started | Phase 4. |
 
 Hands-on V2 pass found and fixed: long upgrade notice overflowing its toast; Esc in a date picker closing the
 whole dialog; activity start "defaults to event time" yet blocked saving (V1 bug); form-result buttons pushed

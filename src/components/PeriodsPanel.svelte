@@ -9,11 +9,13 @@
   import PeriodDialog from "./PeriodDialog.svelte";
   import ResourcesDialog from "./ResourcesDialog.svelte";
   import Form214Dialog from "./Form214Dialog.svelte";
+  import Form309Dialog from "./Form309Dialog.svelte";
 
   let showVoided = $state(false);
   let editing = $state<{ period: T.OperationalPeriod | null; start: string | null } | null>(null);
   let resourcesFor = $state<T.OperationalPeriod | null>(null);
   let form214For = $state<string | null | undefined>(undefined);
+  let form309For = $state<string | null | undefined>(undefined);
   // Re-evaluated each minute so "current" follows the clock.
   let now = $state(Date.now());
   $effect(() => {
@@ -67,6 +69,11 @@
       disabled={!app.periods.some((p) => p.status === "active")}><FileText size={14} />ICS 214…</button
     >
     <button
+      class="small"
+      onclick={() => (form309For = null)}
+      disabled={!app.periods.some((p) => p.status === "active")}><FileText size={14} />ICS 309…</button
+    >
+    <button
       class="small primary"
       onclick={() => (editing = { period: null, start: latest?.end_utc ?? null })}
       disabled={app.readOnly}><Plus size={14} />New period</button
@@ -92,6 +99,9 @@
             >
             <button class="small ghost" onclick={() => (form214For = p.id)} title="ICS 214 for this period"
               ><FileText size={14} />214</button
+            >
+            <button class="small ghost" onclick={() => (form309For = p.id)} title="ICS 309 for this period"
+              ><FileText size={14} />309</button
             >
             <button
               class="small ghost icon-only"
@@ -141,6 +151,10 @@
 {#if form214For !== undefined}<Form214Dialog
     opId={form214For}
     onclose={() => (form214For = undefined)}
+  />{/if}
+{#if form309For !== undefined}<Form309Dialog
+    opId={form309For}
+    onclose={() => (form309For = undefined)}
   />{/if}
 
 <style>

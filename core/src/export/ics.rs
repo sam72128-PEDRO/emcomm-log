@@ -463,6 +463,97 @@ impl FormBuilder {
     }
 }
 
+/// A PDF drawn from scratch (no official template), sharing the form filler's embedded font.
+/// Used for the ICS 309, which FEMA does not publish as a fillable form.
+pub struct DrawnDoc {
+    doc: Document,
+    fm: FontMetrics,
+    font_id: ObjectId,
+    pages_id: ObjectId,
+    used: BTreeMap<u16, char>,
+    pages: Vec<ObjectId>,
+}
+
+impl DrawnDoc {
+    pub fn new() -> AppResult<DrawnDoc> {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let font_id = doc.new_object_id();
+        Ok(DrawnDoc { doc, fm: FontMetrics::load()?, font_id, pages_id, used: BTreeMap::new(), pages: Vec::new() })
+    }
+
+    pub fn width(&self, s: &str, size: f32) -> f32 {
+        self.fm.width(s, size)
+    }
+
+    pub fn wrap(&self, s: &str, width: f32, size: f32) -> Vec<String> {
+        wrap(&self.fm, s, width, size)
+    }
+
+    /// Content-stream operators that draw `s` with its baseline at (x, y).
+    pub fn text(&mut self, x: f32, y: f32, size: f32, s: &str) -> String {
+        format!("BT /{FONT_RES} {size:.2} Tf 1 0 0 1 {x:.2} {y:.2} Tm {} ET\n", show(&self.fm, &mut self.used, s))
+    }
+
+    /// Text that is cut (never wrapped) to fit `width`, with an ellipsis when cut. For single-line
+    /// cells whose full value appears elsewhere.
+    pub fn text_fit(&mut self, x: f32, y: f32, size: f32, width: f32, s: &str) -> String {
+        if self.fm.width(s, size) <= width {
+            return self.text(x, y, size, s);
+        }
+        let mut t = String::new();
+        for c in s.chars() {
+            if self.fm.width(&format!("{t}{c}\u{2026}"), size) > width {
+                break;
+            }
+            t.push(c);
+        }
+        self.text(x, y, size, &format!("{t}\u{2026}"))
+    }
+
+    pub fn add_page(&mut self, ops: String) {
+        let content = self.doc.add_object(Stream::new(Dictionary::new(), ops.into_bytes()));
+        let mut fonts = Dictionary::new();
+        fonts.set(FONT_RES, Object::Reference(self.font_id));
+        let mut res = Dictionary::new();
+        res.set("Font", Object::Dictionary(fonts));
+        let mut page = Dictionary::new();
+        page.set("Type", Object::Name(b"Page".to_vec()));
+        page.set("Parent", Object::Reference(self.pages_id));
+        page.set("MediaBox", Object::Array(vec![0.into(), 0.into(), Object::Real(LETTER.0), Object::Real(LETTER.1)]));
+        page.set("Resources", Object::Dictionary(res));
+        page.set("Contents", Object::Reference(content));
+        let id = self.doc.add_object(page);
+        self.pages.push(id);
+    }
+
+    pub fn finish(mut self, title: &str) -> AppResult<Vec<u8>> {
+        if self.pages.is_empty() {
+            return Err(AppError::internal("Drawn form has no pages"));
+        }
+        let mut pages = Dictionary::new();
+        pages.set("Type", Object::Name(b"Pages".to_vec()));
+        pages.set("Kids", Object::Array(self.pages.iter().map(|id| Object::Reference(*id)).collect()));
+        pages.set("Count", Object::Integer(self.pages.len() as i64));
+        self.doc.objects.insert(self.pages_id, Object::Dictionary(pages));
+        let mut cat = Dictionary::new();
+        cat.set("Type", Object::Name(b"Catalog".to_vec()));
+        cat.set("Pages", Object::Reference(self.pages_id));
+        let cat_id = self.doc.add_object(cat);
+        self.doc.trailer.set("Root", Object::Reference(cat_id));
+        let mut info = Dictionary::new();
+        info.set("Title", text_string(title));
+        info.set("Producer", text_string(&format!("EMCOMM LOG {}", crate::logbook::APP_VERSION)));
+        let info_id = self.doc.add_object(info);
+        self.doc.trailer.set("Info", Object::Reference(info_id));
+        insert_font(&mut self.doc, &self.fm, self.font_id, &self.used)?;
+        self.doc.compress();
+        let mut pdf = Vec::new();
+        self.doc.save_to(&mut pdf).map_err(|e| AppError::internal(format!("Writing form: {e}")))?;
+        Ok(pdf)
+    }
+}
+
 fn insert_font(doc: &mut Document, fm: &FontMetrics, font_id: ObjectId, used: &BTreeMap<u16, char>) -> AppResult<()> {
     let scale = 1000.0 / fm.upem;
     let mut widths = Vec::new();

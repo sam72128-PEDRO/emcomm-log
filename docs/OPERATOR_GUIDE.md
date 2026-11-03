@@ -130,7 +130,14 @@ entries whose time falls inside it, in time order: 24 rows on the first page, 36
 
 All forms: signature lines are left blank for signing after printing, the fields stay editable in any PDF
 reader, voided entries never appear, and a small footer says the form was prepared with EMCOMM LOG. The
-ICS 309 Communications Log is planned for a later phase.
+ICS 309 is drawn by EMCOMM LOG in the standard layout, because FEMA does not publish a fillable one.
+
+**ICS 309 Communications Log.** Dashboard → period → **309**, *Reports & Export* → **ICS 309 Communications
+Log…**, or the Traffic Log's **ICS 309…** button (with entries selected, only those are logged). Enter the net
+name and radio operator; choose entry types (Traffic and Message by default). Each entry is one log line:
+time, FROM call sign/ID, TO call sign/ID, and the message summary. A received message's number goes under
+FROM, a sent message's under TO. Long text wraps onto extra lines; 44 lines per page, with the header
+repeated.
 
 **Upgrading.** The first time this version opens a logbook made by EMCOMM LOG 1.0 it upgrades the file and
 keeps an untouched copy in the logbook's hidden `.pre-migration` folder (you are told where).
