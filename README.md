@@ -26,7 +26,8 @@ Documentation: [Operator guide](docs/OPERATOR_GUIDE.md) · [Export formats](docs
 | `src-tauri/` | Tauri shell: typed commands, native menus, Rust-side file dialogs, backup scheduler, close workflow. |
 | `src/` | Svelte UI (`screens/`, `components/`, `lib/`), frontend tests in `src/test/`. |
 | `scripts/validate_exports.py` | Independent validation of export fixtures with python-docx, openpyxl, pypdf, adif-io. |
-| `.github/workflows/ci.yml` | Native Windows/macOS/Linux CI: lint, typecheck, tests, fixture validation, installers, cross-OS `.emlog` round trip. |
+| `.github/workflows/ci.yml` | Native Windows and Linux CI: lint, typecheck, tests, fixture validation, installers, Linux⇄Windows `.emlog` round trip. `installer-smoke.yml` then installs and E2E-tests those installers. macOS is built and tested locally (below). |
+| `scripts/mac_smoke.sh` | Local macOS installer smoke test: mounts the `.dmg`, runs the app with IP networking denied. |
 
 ## Prerequisites
 
@@ -77,6 +78,19 @@ npx tauri build
 Output goes to `target/release/bundle/` — macOS `.app` + `.dmg`, Windows `.msi` + NSIS `-setup.exe`,
 Linux `.deb`, `.rpm`, `.AppImage`.
 
+### Building on macOS
+
+CI builds only Windows and Linux; the macOS release is built on a Mac:
+
+```bash
+npm ci && npx tauri build                      # -> target/release/bundle/dmg/*.dmg
+scripts/mac_smoke.sh target/release/bundle/dmg/*.dmg /tmp/emcomm-mac-smoke
+shasum -a 256 target/release/bundle/dmg/*.dmg  # publish next to the .dmg
+```
+
+To check a Windows/Linux `.emlog` on the Mac, download a CI `emlog-fixture-*` artifact and run
+`EMCOMM_IMPORT_PACKAGE=<file.emlog> cargo test -p emcomm-core --test crossos -- --ignored`.
+
 `EMCOMM_DATA_DIR=<folder>` relocates the local app-data folder (settings, profiles, presets, drafts),
 for testing or portable use.
 
@@ -84,4 +98,4 @@ for testing or portable use.
 
 Builds are **unsigned**. macOS will require right-click → Open the first time (Gatekeeper); Windows
 SmartScreen may warn. Code signing and macOS notarization need credentials that were not provided; see
-Tauri's signing guides to add them to CI.
+[docs/SIGNING.md](docs/SIGNING.md).
