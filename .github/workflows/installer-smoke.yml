@@ -1,8 +1,8 @@
-name: Installer smoke test
+name: Installer smoke and E2E
 
-# Installs the installers built by a successful CI run on fresh runners, launches the installed app
-# offline where the OS allows it, checks that it started and created its local data store, and
-# captures a screenshot of the first-run screen.
+# Installs the installers built by a successful CI run on fresh runners, launches the installed
+# app with networking blocked, checks it started and created its data store, captures screenshots,
+# and runs the WebDriver end-to-end + accessibility suite against the installed app.
 on:
   workflow_run:
     workflows: [CI]
@@ -13,82 +13,115 @@ on:
         description: CI run id whose installers to test
         required: true
 
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RUN_ID: ${{ github.event.inputs.run_id || github.event.workflow_run.id }}
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
   smoke:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    name: ${{ matrix.os }}
+    name: smoke ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    permissions:
-      actions: read
-      contents: read
-    env:
-      RUN_ID: ${{ github.event.inputs.run_id || github.event.workflow_run.id }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download installers from CI run
         shell: bash
         run: gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n "emcomm-log-${{ matrix.os }}" -D installers && find installers -type f
 
-      - name: Linux - install .deb, launch with no network
+      - name: Linux tools
         if: runner.os == 'Linux'
-        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb imagemagick
-          sudo apt-get install -y ./installers/deb/*.deb
-          test -x /usr/bin/emcomm-log
           cat > smoke.sh <<'EOF'
+          # usage: smoke.sh <binary> <data-dir> <out-dir> <label>
           set -u
-          export EMCOMM_DATA_DIR="$1"
-          /usr/bin/emcomm-log > "$2/app.log" 2>&1 &
+          export EMCOMM_DATA_DIR="$2"
+          "$1" > "$3/$4.log" 2>&1 &
           pid=$!
           sleep 20
-          import -window root "$2/screenshot.png" || true
-          if kill -0 "$pid" 2>/dev/null; then echo "app running (pid $pid)"; alive=1; else echo "app exited"; alive=0; fi
+          import -window root "$3/$4.png" || true
+          if kill -0 "$pid" 2>/dev/null; then echo "$4: app running"; alive=1; else echo "$4: app exited"; alive=0; fi
           kill "$pid" 2>/dev/null || true
-          [ "$alive" = 1 ]
+          sleep 1
+          [ "$alive" = 1 ] && [ -f "$2/app.sqlite" ]
           EOF
-          mkdir -p out data
-          # Fresh network namespace: only an isolated loopback, no route to anything.
-          sudo unshare --net -- bash -c 'ip link set lo up; ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && echo "network unavailable (expected)"; xvfb-run -a -s "-screen 0 1440x900x24" bash smoke.sh "$PWD/data" "$PWD/out"'
-          sudo chown -R "$USER" out data
-          ls -la data
-          test -f data/app.sqlite
-          cat out/app.log || true
+          mkdir -p out
 
-      - name: Windows - install .msi silently, launch with outbound traffic blocked
+      - name: Linux .deb - install, run with no network
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ./installers/deb/*.deb
+          mkdir -p data-deb
+          sudo unshare --net -- bash -c 'ip link set lo up; ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && echo "network unavailable (expected)"; xvfb-run -a -s "-screen 0 1440x900x24" bash smoke.sh /usr/bin/emcomm-log "$PWD/data-deb" "$PWD/out" deb'
+          sudo apt-get remove -y emcomm-log
+
+      - name: Linux .AppImage - run with no network
+        if: runner.os == 'Linux'
+        run: |
+          app=$(find installers -name '*.AppImage' | head -1)
+          chmod +x "$app"
+          cp "$app" ./emcomm.AppImage
+          mkdir -p data-appimage
+          sudo unshare --net -- bash -c 'ip link set lo up; export APPIMAGE_EXTRACT_AND_RUN=1; xvfb-run -a -s "-screen 0 1440x900x24" bash smoke.sh "$PWD/emcomm.AppImage" "$PWD/data-appimage" "$PWD/out" appimage'
+
+      - name: Linux .rpm - install in clean Fedora, run with network disabled
+        if: runner.os == 'Linux'
+        run: |
+          rpm=$(find installers -name '*.rpm' | head -1)
+          cp "$rpm" ./emcomm.rpm
+          docker run --name fed -v "$PWD:/w" fedora:40 bash -c 'dnf install -y /w/emcomm.rpm xorg-x11-server-Xvfb ImageMagick procps-ng >/dev/null && echo installed'
+          docker commit fed emcomm-fedora >/dev/null
+          docker run --rm --network none -v "$PWD:/w" emcomm-fedora bash -c 'mkdir -p /w/data-rpm; xvfb-run -a -s "-screen 0 1440x900x24" bash /w/smoke.sh /usr/bin/emcomm-log /w/data-rpm /w/out rpm'
+          sudo chown -R "$USER" out
+
+      - name: Windows .msi - silent install, outbound blocked
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          function Test-App([string]$exe, [string]$label) {
+            New-NetFirewallRule -DisplayName "EMCOMM smoke $label" -Direction Outbound -Program $exe -Action Block | Out-Null
+            $data = New-Item -ItemType Directory -Force "data-$label"
+            $env:EMCOMM_DATA_DIR = $data.FullName
+            $proc = Start-Process $exe -PassThru
+            Start-Sleep -Seconds 25
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save((Join-Path (Resolve-Path out) "$label.png"))
+            $alive = -not $proc.HasExited
+            if ($alive) { Stop-Process -Id $proc.Id -Force; Start-Sleep 2 }
+            if (-not $alive) { throw "$label: app exited early" }
+            if (-not (Test-Path "data-$label\app.sqlite")) { throw "$label: no data store" }
+            Write-Host "$label OK: $exe"
+          }
           $msi = (Get-ChildItem installers -Recurse -Filter *.msi | Select-Object -First 1).FullName
           $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart /l*v msi.log" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content msi.log -Tail 50; throw "msiexec failed: $($p.ExitCode)" }
-          $exe = Get-ChildItem "C:\Program Files","C:\Program Files (x86)",$env:LOCALAPPDATA -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1
-          if (-not $exe) { throw "installed executable not found" }
-          Write-Host "Installed: $($exe.FullName)"
-          New-NetFirewallRule -DisplayName "EMCOMM smoke offline" -Direction Outbound -Program $exe.FullName -Action Block | Out-Null
-          New-Item -ItemType Directory -Force out, data | Out-Null
-          $env:EMCOMM_DATA_DIR = (Resolve-Path data).Path
-          $proc = Start-Process $exe.FullName -PassThru
-          Start-Sleep -Seconds 25
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-          $bmp.Save((Join-Path (Resolve-Path out) "screenshot.png"))
-          $alive = -not $proc.HasExited
-          Write-Host "app running: $alive"
-          if ($alive) { Stop-Process -Id $proc.Id -Force }
-          Get-ChildItem data
-          if (-not $alive) { throw "app exited early" }
-          if (-not (Test-Path data\app.sqlite)) { throw "app did not create its data store" }
+          $exe = Get-ChildItem "C:\Program Files" -Recurse -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1
+          if (-not $exe) { throw "MSI executable not found" }
+          Test-App $exe.FullName "msi"
+          $p = Start-Process msiexec.exe -ArgumentList "/x `"$msi`" /qn /norestart" -Wait -PassThru
+          Write-Host "MSI uninstall exit: $($p.ExitCode)"
+          if (Test-Path $exe.FullName) { throw "MSI uninstall left the executable behind" }
 
-      - name: macOS - mount .dmg, install app, launch
+          $setup = (Get-ChildItem installers -Recurse -Filter *-setup.exe | Select-Object -First 1).FullName
+          $p = Start-Process $setup -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "NSIS installer failed: $($p.ExitCode)" }
+          $exe2 = Get-ChildItem $env:LOCALAPPDATA, "C:\Program Files" -Recurse -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1
+          if (-not $exe2) { throw "NSIS executable not found" }
+          Test-App $exe2.FullName "nsis"
+
+      - name: macOS .dmg - install, run with all IP traffic denied
         if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -97,13 +130,14 @@ jobs:
           cp -R "$mnt/EMCOMM LOG.app" /Applications/
           hdiutil detach "$mnt"
           mkdir -p out data
-          EMCOMM_DATA_DIR="$PWD/data" "/Applications/EMCOMM LOG.app/Contents/MacOS/emcomm-log" > out/app.log 2>&1 &
+          # Seatbelt profile: everything allowed except IP networking (local IPC still works).
+          EMCOMM_DATA_DIR="$PWD/data" sandbox-exec -p '(version 1)(allow default)(deny network-outbound (remote ip))(deny network-inbound (local ip))' \
+            "/Applications/EMCOMM LOG.app/Contents/MacOS/emcomm-log" > out/dmg.log 2>&1 &
           pid=$!
           sleep 20
-          screencapture -x out/screenshot.png || true
-          kill -0 $pid && echo "app running" || { cat out/app.log; exit 1; }
+          screencapture -x out/dmg.png || true
+          kill -0 $pid && echo "app running with IP networking denied" || { cat out/dmg.log; exit 1; }
           kill $pid
-          ls -la data
           test -f data/app.sqlite
 
       - uses: actions/upload-artifact@v4
@@ -111,3 +145,70 @@ jobs:
         with:
           name: smoke-${{ matrix.os }}
           path: out/
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: e2e ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Download installers from CI run
+        shell: bash
+        run: gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n "emcomm-log-${{ matrix.os }}" -D installers
+      - name: Test dependencies (pinned)
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          python -m pip install -r scripts/requirements-e2e.txt
+          cargo install tauri-driver --version 2.1.0 --locked
+
+      - name: Linux - install .deb and run E2E
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool webkit2gtk-driver ./installers/deb/*.deb
+          mkdir -p e2e/data
+          export EMCOMM_DATA_DIR="$PWD/e2e/data"
+          xvfb-run -a -s "-screen 0 1440x900x24" bash -c 'tauri-driver > e2e/driver.log 2>&1 & sleep 3; python scripts/e2e.py /usr/bin/emcomm-log "$EMCOMM_DATA_DIR" "$PWD/e2e"'
+
+      - name: Windows - install .msi and run E2E
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem installers -Recurse -Filter *.msi | Select-Object -First 1).FullName
+          $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec failed" }
+          $exe = (Get-ChildItem "C:\Program Files" -Recurse -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1).FullName
+          $ver = (Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}").pv
+          Write-Host "WebView2 runtime $ver"
+          $zip = "edgedriver.zip"
+          try { Invoke-WebRequest "https://msedgedriver.microsoft.com/$ver/edgedriver_win64.zip" -OutFile $zip }
+          catch { Invoke-WebRequest "https://msedgedriver.azureedge.net/$ver/edgedriver_win64.zip" -OutFile $zip }
+          Expand-Archive $zip -DestinationPath edgedriver -Force
+          New-Item -ItemType Directory -Force e2e\data | Out-Null
+          $env:EMCOMM_DATA_DIR = (Resolve-Path e2e\data).Path
+          $drv = Start-Process tauri-driver -ArgumentList "--native-driver", (Resolve-Path edgedriver\msedgedriver.exe).Path -PassThru -RedirectStandardOutput e2e\driver.log -RedirectStandardError e2e\driver.err
+          Start-Sleep 3
+          python scripts/e2e.py $exe $env:EMCOMM_DATA_DIR (Resolve-Path e2e).Path
+          $code = $LASTEXITCODE
+          Stop-Process -Id $drv.Id -Force -ErrorAction SilentlyContinue
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-${{ matrix.os }}
+          path: e2e/
