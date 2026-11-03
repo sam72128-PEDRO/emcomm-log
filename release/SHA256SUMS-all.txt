@@ -1,0 +1,9 @@
+# CI run 41587742360 (commit 5219059), native runners. Unsigned.
+43fe55999c3b41551f85210f7c173134fd072b88c6d4c49efb455735fe6b7d07  macos-latest/dmg/EMCOMM LOG_1.0.0_aarch64.dmg
+e0d492602b992a36b03662a43aacd85abe27364efb4538299500eee1a4ce2fa6  ubuntu-22.04/appimage/EMCOMM LOG_1.0.0_amd64.AppImage
+75a8afa5e86bfa0ab1f2e248c242d35d86b88f88717a82a54e7a643b3fa0809c  ubuntu-22.04/rpm/EMCOMM LOG-1.0.0-1.x86_64.rpm
+9ef965b266cc3d816427d354b7cb423eb4c641668381862c2a0d9c8c578e7385  ubuntu-22.04/deb/EMCOMM LOG_1.0.0_amd64.deb
+6b7fd2dfd4977cc0310529a024a496f736744a5b9b66c3b3f5e604bad7034ac8  windows-latest/msi/EMCOMM LOG_1.0.0_x64_en-US.msi
+c1d804325c6f9787134f1eaf188ff7b22ff938c2ae2e4f91d3b8c5d7300afcfc  windows-latest/nsis/EMCOMM LOG_1.0.0_x64-setup.exe
+# Local build, macOS 14.6.1 arm64
+ad03d589231ffc3905c06a6809eb61d04c6a18efc798018ec2402d87c9fe362a  EMCOMM LOG_1.0.0_aarch64.dmg

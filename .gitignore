@@ -11,3 +11,4 @@ release/*.exe
 release/*.deb
 release/*.AppImage
 release/*.rpm
+release/ci/
