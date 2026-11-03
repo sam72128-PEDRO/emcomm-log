@@ -1,0 +1,2 @@
+selenium==4.52.0
+pywinauto==0.6.9; sys_platform == "win32"
