@@ -109,7 +109,7 @@
     color: var(--text-2);
   }
   .nav[aria-current="page"] {
-    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+    background: linear-gradient(180deg, var(--fill), var(--fill-2));
     color: #fff;
     font-weight: 600;
   }
@@ -117,7 +117,7 @@
     color: #fff;
   }
   .count {
-    background: var(--danger);
+    background: var(--fill-danger);
     color: #fff;
     border-radius: 999px;
     font-size: 12px;

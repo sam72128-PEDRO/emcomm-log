@@ -417,7 +417,7 @@
     color: var(--ok);
   }
   .steps li[aria-current="step"] {
-    background: var(--accent);
+    background: var(--fill);
     color: #fff;
     font-weight: 600;
   }

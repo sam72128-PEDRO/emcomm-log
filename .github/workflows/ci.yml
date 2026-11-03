@@ -13,6 +13,8 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_WIN_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,8 +51,50 @@ jobs:
           python -m pip install -r scripts/requirements-validate.txt
           EMCOMM_FIXTURE_OUT="$RUNNER_TEMP/fixtures" cargo test -p emcomm-core --test exports write_fixture
           python scripts/validate_exports.py "$RUNNER_TEMP/fixtures"
+      # Code signing is opt-in: it activates only when the repository secrets below exist.
+      - name: Windows code-signing certificate (if configured)
+        id: wincert
+        if: runner.os == 'Windows' && env.HAS_WIN_CERT == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          Remove-Item $pfx
+          $cfg = @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = "sha256"; timestampUrl = "http://timestamp.digicert.com" } } } | ConvertTo-Json -Depth 5 -Compress
+          "config=$cfg" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Build installers
-        run: npx tauri build
+        shell: bash
+        env:
+          # macOS signing + notarization (Tauri reads these when present).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_SIGN_CONFIG: ${{ steps.wincert.outputs.config }}
+        run: |
+          if [ -n "$WIN_SIGN_CONFIG" ]; then npx tauri build --config "$WIN_SIGN_CONFIG"; else npx tauri build; fi
+      - name: Verify signatures (when signing is configured)
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          HAS_APPLE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          HAS_WIN: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ] && [ "$HAS_APPLE" = "true" ]; then
+            codesign --verify --deep --strict --verbose=2 "target/release/bundle/macos/EMCOMM LOG.app"
+            spctl --assess --type execute --verbose "target/release/bundle/macos/EMCOMM LOG.app"
+          elif [ "$RUNNER_OS" = "Windows" ] && [ "$HAS_WIN" = "true" ]; then
+            powershell -Command "Get-ChildItem target/release/bundle -Recurse -Include *.msi,*-setup.exe | ForEach-Object { \$s = Get-AuthenticodeSignature \$_.FullName; Write-Host \$_.Name \$s.Status; if (\$s.Status -ne 'Valid') { exit 1 } }"
+          else
+            echo "Signing not configured for $RUNNER_OS; installers are unsigned."
+          fi
       - name: Checksums
         shell: bash
         run: |

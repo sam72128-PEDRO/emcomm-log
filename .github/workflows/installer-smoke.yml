@@ -100,9 +100,9 @@ jobs:
             $bmp.Save((Join-Path (Resolve-Path out) "$label.png"))
             $alive = -not $proc.HasExited
             if ($alive) { Stop-Process -Id $proc.Id -Force; Start-Sleep 2 }
-            if (-not $alive) { throw "$label: app exited early" }
-            if (-not (Test-Path "data-$label\app.sqlite")) { throw "$label: no data store" }
-            Write-Host "$label OK: $exe"
+            if (-not $alive) { throw "${label}: app exited early" }
+            if (-not (Test-Path "data-$label\app.sqlite")) { throw "${label}: no data store" }
+            Write-Host "${label} OK: $exe"
           }
           $msi = (Get-ChildItem installers -Recurse -Filter *.msi | Select-Object -First 1).FullName
           $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart /l*v msi.log" -Wait -PassThru
