@@ -1,10 +1,20 @@
 # Implementation status (acceptance matrix A01–A15)
 
-Environments: local macOS 14.6.1 (Apple Silicon), Rust 1.99.1, Node 26; plus GitHub Actions native runners
-**windows-latest, ubuntu-22.04, macos-latest** (private repo `sam72128-PEDRO/emcomm-log`). CI run
-[41587742360](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41587742360): all 9 jobs green on
-all three OSs (format, lint, typecheck, frontend tests, clippy `-D warnings`, all Rust unit/integration tests,
-independent export validation, installer builds, cross-OS `.emlog` round trips).
+Environments: local macOS 14.6.1 (Apple Silicon), Rust 1.99.1, Node 26 — the macOS build is made and
+tested here; plus GitHub Actions native runners **windows-latest, ubuntu-22.04** (private repo
+`sam72128-PEDRO/emcomm-log`). CI (format, lint, typecheck, frontend tests, clippy `-D warnings`, all Rust
+unit/integration tests, independent export validation, installer builds, Linux⇄Windows `.emlog` round
+trips) is green on both, and earlier runs ([41587742360](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41587742360))
+were green on macOS runners too before macOS moved to local builds (GitHub's macOS runners were
+unavailable for capacity).
+
+**Final sweep (2026-11-03).** Installed-app WebDriver E2E
+([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **50/50 checks
+pass on Windows (`.msi`) and 50/50 on Linux (`.deb`)**, including axe-core on 10 screens with no
+serious/critical violations, native menu automation, and the OS accessibility tree (UIA / AT-SPI). Installer
+smoke passes for `.msi`, NSIS `.exe` (firewalled), `.deb`, `.AppImage`, `.rpm` (no network). macOS: locally
+built `.dmg` passes `scripts/mac_smoke.sh` (IP networking denied, data store created, wizard rendered) and
+imports the Linux- and Windows-produced `.emlog` packages from CI.
 
 CI found and fixed three Windows-only defects: migration checksums broke when Git converted SQL files to CRLF
 (logbooks would not move between Windows and Unix), export fsync used a read-only handle (every Windows export
@@ -24,12 +34,12 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A07 Edit/void/restore timeline; default hides voided; filter reveals | **passing** | `storage::a07_edit_void_restore_timeline_and_filters` (actions/revisions, immutability triggers, unchanged edit adds nothing). Release app: edit showed field diff in timeline; void with reason hid the row from default list. |
 | A08 Auto/manual/close backups independent; partial not marked successful; retention | **passing** | `protection::a08_backups_are_independent_verified_and_retained` (three kinds, verification, independence, injected failure leaves no temp and keeps prior backups, tampered backup fails verification, retention prune), `a08_backup_fails_cleanly_when_destination_missing`, unit `retention_keeps_recent_daily_weekly`. Release app: close backup and 60-s auto backup recorded `Verified`. |
 | A09 Restore creates distinct book; failed validation leaves books untouched | **passing (core)** | `protection::a09_*` (new identity when UUID known, entries/attachments/hashes/sequence preserved, numbering continues, corrupted backup → no new folder, name collision → no leftovers), `restore_keeps_uuid_when_not_known_locally`. The Restore dialog UI was built but not clicked through in the release app. |
-| A10 `.emlog` on another OS preserves data; malformed/oversized/traversal/duplicate safe | **passing** | CI cross-OS round trips Linux→Windows, Windows→macOS, macOS→Linux pass (`crossos.rs`: Unicode names, attachments+hashes, revisions, void, favorites, templates, logbook settings). | Same-OS: `protection::a10_a13_package_round_trip_preserves_everything` (all 3 types; entries, revisions, templates, favorites, settings, attachments, Unicode names; duplicate import reported, never overwrites), `crossos::same_os_round_trip_matches_crossos_expectations`. Malformed: traversal, absolute, backslash, unexpected file, WAL sidecar, missing manifest, future format/schema, wrong format, hash mismatch, malformed manifest, non-SQLite DB, symlink, duplicate names, truncated archive — all rejected with no leftovers. Oversize limits are enforced in code but no >4 GB fixture was built. |
+| A10 `.emlog` on another OS preserves data; malformed/oversized/traversal/duplicate safe | **passing** | CI cross-OS round trips Linux→Windows and Windows→Linux pass; the Linux and Windows packages also import on macOS (local `crossos` run); earlier CI runs also passed Windows→macOS and macOS→Linux (`crossos.rs`: Unicode names, attachments+hashes, revisions, void, favorites, templates, logbook settings). | Same-OS: `protection::a10_a13_package_round_trip_preserves_everything` (all 3 types; entries, revisions, templates, favorites, settings, attachments, Unicode names; duplicate import reported, never overwrites), `crossos::same_os_round_trip_matches_crossos_expectations`. Malformed: traversal, absolute, backslash, unexpected file, WAL sidecar, missing manifest, future format/schema, wrong format, hash mismatch, malformed manifest, non-SQLite DB, symlink, duplicate names, truncated archive — all rejected with no leftovers. Oversize limits are enforced in code but no >4 GB fixture was built. |
 | A11 DOCX/XLSX/PDF/CSV/TXT match scope, order, timestamps, void, long text; no Office | **passing** | Fixtures generated and validated by independent parsers on Windows, Linux and macOS in CI. | `exports::a11_*` and `scripts/validate_exports.py`: 43/43 independent checks pass (csv, openpyxl, python-docx, pypdf). PDF rendered with macOS Quick Look. Release app DOCX export read back with python-docx. 100k-entry streaming exports in `scale.rs`. Not opened in desktop viewers (Word/LibreOffice/Acrobat) on Windows/Linux. |
 | A12 ADIF only eligible QSOs, valid lengths/dates, skipped report | **passing** | `exports::a12_adif_contains_only_eligible_qsos_with_valid_fields` (independent ADI reader checks byte lengths), adif-io parses the fixture (4 QSOs, UTC times). |
 | A13 Emergency message/activity fields persist & round trip; not presented as official | **passing** | `protection::a10_a13_*` (message & activity fields, incident snapshot), `exports::emergency_exports_do_not_claim_official_forms`; UI labels say "not an official form". |
-| A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **partial** | Frontend shortcut/dialog tests pass on all 3 OSs in CI; native File/Edit/View/Help menus render on installed Windows and Linux builds (smoke screenshots). | macOS release app: native menus with shortcuts; Cmd+2/3/E/Enter, Tab order, Esc-close verified by hand. Frontend tests: key mapping, Ctrl/Cmd+Enter save, shortcuts blocked in dialogs with announcement. Live regions and labelled fields are implemented. Not done: hand-testing the native menus on Windows/Linux, and a VoiceOver/NVDA/Orca pass. |
-| A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing (Linux, Windows); partial (macOS)** | `installer-smoke.yml` runs after every green CI on fresh GitHub VMs with the real installers ([run 41621224692](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41621224692)). **Linux:** `.deb` installed with apt, app launched inside a network namespace with no network, stayed running, created its data store, first-run wizard rendered (screenshot). **Windows:** `.msi` installed silently, outbound traffic for the app blocked by firewall rule, same checks pass. **macOS:** `.dmg` mounted and app installed and launched with the same checks, but not network-isolated. Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: the `.rpm`, `.AppImage` and NSIS `.exe` are built but not install-tested; Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
+| A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **passing (automated on Windows and Linux, by hand on macOS); no human screen-reader session** | Installed-app E2E (`scripts/e2e.py`, 50/50 on Windows and Linux): Ctrl+1–5/F/,/Enter shortcuts, Tab order, focus into dialogs and restored after Esc, focus to invalid field, shortcuts blocked under dialogs with announcement, save and validation announced in live regions, native View menu driven by OS automation (pywinauto / xdotool), and the OS accessibility tree (UIA for Narrator/NVDA, AT-SPI for Orca) exposes labelled fields, buttons and combos. axe-core: no serious/critical violations on 10 screens. | macOS release app: native menus with shortcuts, Cmd+1–5/E/Enter, F1, Tab order, Esc and dialog focus verified by hand. Not done: a session with a real screen reader (VoiceOver/NVDA/Orca) by a person. |
+| A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing** | `installer-smoke.yml` on fresh GitHub VMs with the CI installers ([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **Linux** `.deb` (apt), `.AppImage`, and `.rpm` (clean Fedora container) launched with no network, stayed running, created their data store, wizard rendered; **Windows** `.msi` and NSIS `.exe` installed silently and run with the app's outbound traffic blocked by firewall rule, same checks. **macOS** (built locally): `scripts/mac_smoke.sh` mounts the `.dmg`, runs the app with all IP networking denied (Seatbelt), checks it stays up, creates its data store and shows the wizard. | Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
 
 ## Other verification run
 
@@ -38,7 +48,7 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | `cargo test --workspace` | 64 passed (29 unit + 35 integration) on macOS, Windows and Linux; 5 opt-in helpers ignored |
 | `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` | clean |
 | `npm run check` (svelte-check, fail on warnings), `npm run lint`, `npm run format:check` | clean |
-| `npm test` (vitest) | 17 passed |
+| `npm test` (vitest) | 18 passed |
 | Hands-on macOS pass (release build, 2026-11-03) | Every screen and flow driven by hand: wizard, Quick Entry (QSO + traffic), templates, drafts/restore, edit/void/revisions, Messages handling, Traffic Log, search, reports/exports, backups/restore, `.emlog` export/import, stale-lock recovery, close/quit. 23 issues found (validation shown as save failure, Cmd+Enter in a dialog saving the entry behind it, traffic entries storing QSO fields, no warning for unsaved drafts on close, stale counts, layout/wording) — all fixed and re-verified in the rebuilt app; regressions added to vitest |
 | Scale (`--release --test scale -- --ignored`) | 100,000 entries: worst durable save 104 ms; FTS search 25 ms; filter page 176 ms; CSV 4.4 s, XLSX 6.3 s, DOCX 8.7 s, PDF 23 s, TXT 4.6 s |
 | Migrations | up → down → up test; checksum tamper and newer-schema refusal tests |
@@ -46,8 +56,9 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 ## Installer artifacts (this machine)
 
 See `release/SHA256SUMS-all.txt` (all verified after download). CI: Windows x64 `.msi`/`.exe`, Linux x86_64
-`.deb`/`.rpm`/`.AppImage`, macOS arm64 `.dmg`; local: macOS arm64 `.dmg`. All unsigned and not notarized (no
-credentials provided). Binaries are kept out of Git; download them from the CI run's artifacts.
+`.deb`/`.rpm`/`.AppImage`; local build on this Mac: macOS arm64 `.dmg`. All unsigned and not notarized (no
+credentials provided). Binaries are kept out of Git: Windows/Linux in the CI run's artifacts (copies under
+`release/ci/`), macOS in `release/macos/`.
 
 ## Known limitations
 
