@@ -1,6 +1,7 @@
 //! Tauri shell: typed commands over `emcomm_core`, native menus, file dialogs (Rust-side, so the
 //! webview needs no filesystem capability), backup scheduling, and the close workflow.
 
+#[cfg(desktop)]
 mod menu;
 
 use emcomm_core::appdb::{AppDb, BackupRun};
@@ -218,19 +219,40 @@ fn file_dialog(
     if let Some(dir) = start.filter(|d| Path::new(d).is_dir()) {
         d = d.set_directory(dir);
     }
+    #[cfg(desktop)]
     if let Some(w) = app.get_webview_window("main") {
         d = d.set_parent(&w);
     }
     d
 }
 
+/// Android spike: there is no folder picker that yields a real filesystem path (SAF gives
+/// `content://` tree URIs, and SQLite needs a path), so "choose a folder" resolves to a fixed
+/// folder in app-private storage. Backups and exports get their own app-private folders.
+#[cfg(mobile)]
+fn mobile_private_dir(app: &AppHandle, kind: &str) -> AppResult<PathBuf> {
+    let base = app.state::<AppState>().data_dir.clone();
+    let dir = base.join(kind);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
 fn to_path(p: tauri_plugin_dialog::FilePath) -> Option<String> {
     p.into_path().ok().map(|p| p.to_string_lossy().to_string())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn pick_folder(app: AppHandle, title: String, start: Option<String>) -> Cmd<Option<String>> {
     Ok(file_dialog(&app, &title, &[], start.as_deref()).blocking_pick_folder().and_then(to_path))
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn pick_folder(app: AppHandle, title: String, start: Option<String>) -> Cmd<Option<String>> {
+    let _ = start;
+    let kind = if title.to_lowercase().contains("backup") { "backups" } else { "logbooks" };
+    Ok(Some(mobile_private_dir(&app, kind)?.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -247,6 +269,14 @@ async fn pick_save_file(
     start: Option<String>,
 ) -> Cmd<Option<String>> {
     let safe = fsutil::safe_component(&default_name, 120);
+    #[cfg(mobile)]
+    {
+        // Android spike: write exports to app-private storage; the full port hands them to the
+        // share sheet / SAF "create document" instead.
+        let _ = (title, filters, start);
+        Ok(Some(mobile_private_dir(&app, "exports")?.join(safe).to_string_lossy().to_string()))
+    }
+    #[cfg(desktop)]
     Ok(file_dialog(&app, &title, &filters, start.as_deref()).set_file_name(safe).blocking_save_file().and_then(to_path))
 }
 
@@ -1096,6 +1126,7 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
 /// The default 1440x900 window can exceed small displays (e.g. 1366x768 laptops); shrink to fit.
 fn fit_window_to_screen(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
@@ -1142,20 +1173,24 @@ pub fn run() {
                 reveal_allow: Mutex::new(HashSet::new()),
             });
             create_main_window(app)?;
+            #[cfg(desktop)]
             fit_window_to_screen(app.handle());
-            let m = menu::build(app.handle())?;
-            app.set_menu(m)?;
-            app.on_menu_event(|app, event| {
-                let id = event.id().0.clone();
-                if id == "quit" {
-                    if handle_close_request(app) {
-                        app.state::<AppState>().allow_exit.store(true, Ordering::SeqCst);
-                        app.exit(0);
+            #[cfg(desktop)]
+            {
+                let m = menu::build(app.handle())?;
+                app.set_menu(m)?;
+                app.on_menu_event(|app, event| {
+                    let id = event.id().0.clone();
+                    if id == "quit" {
+                        if handle_close_request(app) {
+                            app.state::<AppState>().allow_exit.store(true, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                        return;
                     }
-                    return;
-                }
-                let _ = app.emit("menu", id);
-            });
+                    let _ = app.emit("menu", id);
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -18,3 +18,4 @@ e2e/
 __pycache__/
 release/macos/
 release/*.zip
+release/android/
