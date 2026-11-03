@@ -22,6 +22,10 @@
   --danger-bg: rgba(240, 82, 82, 0.14);
   --info-bg: rgba(60, 192, 245, 0.12);
   --focus: #8fd0ff;
+  --fill: #1f6fc0;
+  --fill-2: #185a9d;
+  --fill-ok: #15803d;
+  --fill-danger: #c81e1e;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   --row-hover: rgba(60, 140, 220, 0.08);
   --input-bg: #0a1828;
@@ -51,6 +55,10 @@
   --danger-bg: rgba(180, 35, 24, 0.09);
   --info-bg: rgba(11, 127, 179, 0.09);
   --focus: #1f6fc0;
+  --fill: #1f6fc0;
+  --fill-2: #185a9d;
+  --fill-ok: #15803d;
+  --fill-danger: #c81e1e;
   --shadow: 0 6px 24px rgba(15, 29, 44, 0.12);
   --row-hover: rgba(31, 111, 192, 0.06);
   --input-bg: #ffffff;
@@ -203,17 +211,17 @@ button:disabled {
   cursor: not-allowed;
 }
 button.primary {
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
-  border-color: var(--accent-2);
+  background: linear-gradient(180deg, var(--fill), var(--fill-2));
+  border-color: var(--fill-2);
   color: var(--accent-text);
   font-weight: 600;
 }
 button.primary:hover:not(:disabled) {
-  background: var(--accent-2);
+  background: var(--fill-2);
 }
 button.success {
-  background: var(--ok);
-  border-color: var(--ok);
+  background: var(--fill-ok);
+  border-color: var(--fill-ok);
   color: #fff;
   font-weight: 600;
 }
@@ -368,11 +376,11 @@ legend {
   color: #fff;
 }
 .badge.kind-message {
-  background: #2f8fe0;
+  background: #1f6fc0;
   color: #fff;
 }
 .badge.kind-status {
-  background: #0e9f8a;
+  background: #0b7366;
   color: #fff;
 }
 .badge.kind-note {
@@ -384,7 +392,7 @@ legend {
   color: #fff;
 }
 .badge.kind-activity {
-  background: #d97706;
+  background: #a8480a;
   color: #fff;
 }
 .badge.ok {
@@ -483,7 +491,7 @@ table.data tbody tr[aria-selected="true"] {
   border-bottom: 2px solid transparent;
 }
 .tabs button[aria-selected="true"] {
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  background: linear-gradient(180deg, var(--fill), var(--fill-2));
   color: #fff;
   font-weight: 600;
 }

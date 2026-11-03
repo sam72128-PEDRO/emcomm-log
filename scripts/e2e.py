@@ -48,12 +48,33 @@ def session() -> webdriver.Remote:
     return d
 
 
+def body(d) -> str:
+    # Read text in one script call: element handles go stale while Svelte re-renders.
+    return d.execute_script("return document.body ? document.body.innerText : ''") or ""
+
+
 def wait_text(d, text: str, timeout: float = 20) -> bool:
     try:
-        WebDriverWait(d, timeout).until(lambda x: text in x.find_element(By.TAG_NAME, "body").text)
+        WebDriverWait(d, timeout).until(lambda x: text in body(x))
         return True
     except TimeoutException:
         return False
+
+
+def end(d) -> None:
+    """Quit the session and make sure the app and its webview processes are gone, so the next
+    session can reuse the WebView2/WebKit profile."""
+    try:
+        d.quit()
+    except Exception:  # noqa: BLE001
+        pass
+    time.sleep(2)
+    if platform.system() == "Windows":
+        subprocess.run(["taskkill", "/F", "/T", "/IM", APP.name], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "msedgewebview2.exe"], capture_output=True)
+    else:
+        subprocess.run(["pkill", "-f", str(APP)], capture_output=True)
+    time.sleep(3)
 
 
 def chord(d, key: str) -> None:
@@ -121,18 +142,17 @@ def native_menu(menu: str, item: str, downs: int) -> bool:
 d = session()
 check("A01 wizard shown on first launch", wait_text(d, "Welcome to EMCOMM LOG"))
 shot(d, "01-wizard")
-check("A01 normal use blocked (no navigation)", "Traffic Log" not in d.find_element(By.TAG_NAME, "body").text)
+check("A01 normal use blocked (no navigation)", "Traffic Log" not in body(d))
 axe(d, "wizard")
 d.find_element(By.XPATH, "//button[normalize-space()='Continue']").click()
 time.sleep(0.4)
-check("A01 empty operator name rejected", "Operator name is required" in d.find_element(By.TAG_NAME, "body").text)
+check("A01 empty operator name rejected", "Operator name is required" in body(d))
 check("A01 invalid field marked aria-invalid", d.find_element(By.ID, "wz-name").get_attribute("aria-invalid") == "true")
 check("A14 focus moved to the invalid field", active_id(d) == "wz-name")
 d.find_element(By.ID, "wz-name").send_keys("E2E Operator")
 d.find_element(By.XPATH, "//button[normalize-space()='Continue']").click()
 check("A01 wizard advances after valid input", wait_text(d, "Time display", 5))
-d.quit()
-time.sleep(2)
+end(d)
 
 # Folder pickers are native OS dialogs that WebDriver cannot drive, so complete setup by writing
 # the same records the wizard writes (profile + settings) into the app's own database.
@@ -212,7 +232,7 @@ check("A03 second entry saved as #2", wait_text(d, "ENTRY SAVED #2", 10))
 d.find_element(By.ID, "ed-new-subject").click()
 chord(d, Keys.ENTER)
 time.sleep(0.6)
-check("Empty summary blocked with message", "Summary is required" in d.find_element(By.TAG_NAME, "body").text)
+check("Empty summary blocked with message", "Summary is required" in body(d))
 check("A14 validation error announced", "Summary is required" in live_text(d), live_text(d))
 shot(d, "03-quick-entry")
 
@@ -229,7 +249,7 @@ axe(d, "entry-detail")
 chord(d, "1")
 time.sleep(0.5)
 check("A14 shortcuts blocked while dialog open", "not available while a dialog is open" in live_text(d), live_text(d))
-check("A14 screen unchanged under dialog", "Entry #0001" in d.find_element(By.TAG_NAME, "body").text)
+check("A14 screen unchanged under dialog", "Entry #0001" in body(d))
 # Void through the UI (A07)
 d.find_element(By.XPATH, "//button[normalize-space()='Void']").click()
 wait_text(d, "Void entry #1?", 5)
@@ -252,10 +272,9 @@ axe(d, "settings")
 
 # Native menu (OS automation, not the webview): View → Traffic Log
 ok = native_menu("View", "Traffic Log", downs=3)
-check("A14 native menu View→Traffic Log works", ok and wait_text(d, "Traffic Log", 6) and "Showing 1–1 of 1 entries" in d.find_element(By.TAG_NAME, "body").text)
+check("A14 native menu View→Traffic Log works", ok and wait_text(d, "Traffic Log", 6) and "Showing 1–1 of 1 entries" in body(d))
 shot(d, "04-after-native-menu")
-d.quit()
-time.sleep(2)
+end(d)
 
 # ---------------- Phase C: restart retains exact data (A03) ----------------
 d = session()
@@ -264,7 +283,7 @@ d.find_element(By.XPATH, "//button[normalize-space()='Open']").click()
 check("Logbook reopens after restart", wait_text(d, "E2E Incident", 10))
 chord(d, "3")
 check("A03 entries survive restart without any save step", wait_text(d, "Welfare check 1247 Pine Rd", 8))
-d.quit()
+end(d)
 
 (WORK / "axe-report.json").write_text(json.dumps(axe_report, indent=2))
 failed = [r for r in results if not r[1]]

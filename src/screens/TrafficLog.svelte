@@ -614,7 +614,7 @@
     text-align: center;
   }
   .dotcount {
-    background: var(--accent);
+    background: var(--fill);
     color: #fff;
     font-size: 11px;
     border-radius: 999px;
