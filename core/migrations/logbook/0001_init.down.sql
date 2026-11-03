@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS entries_fts;
+DROP TABLE IF EXISTS entry_favorites;
+DROP TABLE IF EXISTS entry_templates;
+DROP TABLE IF EXISTS attachments;
+DROP TRIGGER IF EXISTS entry_revisions_immutable_update;
+DROP TRIGGER IF EXISTS entry_revisions_immutable_delete;
+DROP TABLE IF EXISTS entry_revisions;
+DROP TABLE IF EXISTS entry_emergency;
+DROP TABLE IF EXISTS entry_ham;
+DROP TABLE IF EXISTS entries;
+DROP TABLE IF EXISTS logbook_settings;
+DROP TABLE IF EXISTS logbook;
