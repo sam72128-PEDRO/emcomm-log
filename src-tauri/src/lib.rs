@@ -942,6 +942,22 @@ fn handle_close_request(app: &AppHandle) -> bool {
     false
 }
 
+/// The default 1440x900 window can exceed small displays (e.g. 1366x768 laptops); shrink to fit.
+fn fit_window_to_screen(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    let Ok(Some(m)) = w.current_monitor() else { return };
+    let scale = m.scale_factor();
+    let area = m.work_area().size;
+    let (aw, ah) = (area.width as f64 / scale, area.height as f64 / scale);
+    let (cw, ch) = (1440.0_f64, 900.0_f64);
+    if cw > aw * 0.96 || ch > ah * 0.96 {
+        let size = tauri::LogicalSize::new(cw.min(aw * 0.96).max(640.0), ch.min(ah * 0.96).max(480.0));
+        let _ = w.set_min_size(Some(tauri::LogicalSize::new(size.width.min(960.0), size.height.min(620.0))));
+        let _ = w.set_size(size);
+        let _ = w.center();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -967,6 +983,7 @@ pub fn run() {
                 allow_exit: AtomicBool::new(false),
                 reveal_allow: Mutex::new(HashSet::new()),
             });
+            fit_window_to_screen(app.handle());
             let m = menu::build(app.handle())?;
             app.set_menu(m)?;
             app.on_menu_event(|app, event| {
