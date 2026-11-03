@@ -4,8 +4,8 @@ Version 0.1 draft | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical
 
 ## 1. Purpose and release boundary
 
-V2 turns the emergency data V1 already stores into the ICS forms operators are asked to hand in, and adds
-the one planning document that improves logging itself. Everything in V1 remains in force: offline,
+V2 turns the emergency data V1 already stores into the ICS forms operators are asked to hand in, and adds a
+channel plan that improves logging itself. Everything in V1 remains in force: offline,
 single-user, immediate durable saves, revisions and voids, backups, `.emlog` portability, and the V1
 acceptance matrix A01–A15 must keep passing.
 
@@ -15,10 +15,14 @@ V2 adds:
 2. **ICS 213 General Message** export, one form per message entry.
 3. **ICS 214 Activity Log** export per person/unit and operational period.
 4. **ICS 309 Communications Log** export from the Traffic Log.
-5. **Channel plan** per operational period, which drives channel entry in Quick Entry and exports as an
-   **ICS 205 Incident Radio Communications Plan**.
+5. **Channel plan** per operational period, entered by the operator from the ICS 205 they are given, which
+   drives channel entry in Quick Entry. The plan is input only; V2 does not export an ICS 205.
 
-V2 still excludes: ICS 205A Communications List, radio/CAT integration and radio programming exports
+**Platform for this build:** V2 is developed, built and tested on **macOS only**. Windows and Linux builds,
+CI and installer testing resume once V2 is feature-complete (Phase 5); the code stays cross-platform (no
+macOS-only APIs) so that step is a build-and-test pass, not a port.
+
+V2 still excludes: ICS 205 export, ICS 205A Communications List, radio/CAT integration and radio programming exports
 (CHIRP etc.), online lookups, cloud sync, accounts, multi-user editing, incident management (staffing,
 assignments, multiple teams), electronic signatures, and submitting forms anywhere. No network is required
 for any feature.
@@ -63,12 +67,13 @@ them like every other field.
 Table `op_resources`: id, `op_id`, name, ICS position, home agency/unit, sort order. Edited per OP, with
 "Copy from previous OP". The logbook's operator profile is not auto-added (it is the 214's own name block).
 
-### 3.4 Channel plan (ICS 205)
+### 3.4 Channel plan (entered from an ICS 205)
 
 Table `channel_plan`: id, `op_id`, sort order, zone/group, channel number, function, channel name /
 talkgroup, assignment, RX frequency (MHz, decimal text), RX N/W, RX tone/NAC, TX frequency, TX N/W, TX
-tone/NAC, mode (A/D/M), remarks. Per OP: `special_instructions`, `prepared_by` name, `prepared_at_utc`.
-"Copy plan from previous OP" and "Copy plan from another logbook" (local only) are provided.
+tone/NAC, mode (A/D/M), remarks — the columns of the ICS 205 channel table, so a received 205 can be typed
+in row by row. Per OP: `special_instructions` (free text). "Copy plan from previous OP" and "Copy plan from
+another logbook" (local only) are provided. The plan is visible on the Dashboard for the current OP.
 
 **Use in logging:** when the entry's OP has a plan, Quick Entry's Channel / Frequency field becomes a
 combobox listing plan channels ("TAC 2 — 155.475"); choosing one stores the channel name and, on HAM-type
@@ -148,13 +153,6 @@ operator (name, station ID — defaults from profile), prepared-by.
 | Message | summary (details MAY be appended, truncation never silent) |
 | Prepared by | dialog; signature blank |
 
-### 4.5 ICS 205 Incident Radio Communications Plan
-
-From the OP's channel plan: **Export → ICS 205**. Blocks: incident name, date/time prepared, OP from/to,
-basic radio channel use table (all plan columns, in plan order), special instructions, prepared by
-(Communications Unit Leader — name; signature blank). Rows beyond the form's table continue on a
-continuation page.
-
 ## 5. UI
 
 - The emergency Dashboard's incident area (V1's incident details editor) grows into an **Incident** screen
@@ -162,22 +160,25 @@ continuation page.
   Tables are keyboard-editable (Enter to add a row, Tab between cells, Del to remove with confirmation),
   saved immediately with the V1 save contract (Saved / Save Failed, revisions not required for these
   tables but changes are timestamped).
-- Traffic Log and entry detail: **Export ▸ ICS 213 / ICS 214 / ICS 309**; Channel plan tab: **Export ICS
-  205**. Reports & Export screen lists the four forms alongside V1 formats.
+- Traffic Log and entry detail: **Export ▸ ICS 213 / ICS 214 / ICS 309**. Reports & Export screen lists the
+  three forms alongside V1 formats.
 - Quick Entry: current-OP chip in the header; channel combobox as §3.4.
 - All new screens meet V1 accessibility rules (axe clean, labelled cells, focus management).
 
 ## 6. Phased implementation and gates
 
+All phases run on macOS: `npm test`, `cargo test --workspace`, a local release build and a hands-on pass
+of the new screens. Windows/Linux CI runs only on manual dispatch until Phase 5.
+
 1. **Forms groundwork:** bundle official PDFs, confirm AcroForm vs XFA, write `ICS_FIELD_MAP.md`, prototype
    filling one 213 with a Rust PDF library (pinned, offline). Gate: filled 213 opens correctly in macOS
-   Preview, Acrobat Reader, Edge/Chrome and Firefox PDF viewers, fields editable; decision recorded.
+   Preview, Acrobat Reader, Chrome and Firefox PDF viewers, fields editable; decision recorded.
 2. **Operational periods + 213/214:** migrations, OP UI, message approval/reply fields, resources, 213 and
    214 exports. Gate: A16–A19, A22–A24.
 3. **309:** Gate: A20.
-4. **Channel plan + 205:** migrations, plan editor, Quick Entry combobox, 205 export. Gate: A21, A25.
-5. **Release:** docs (operator guide "Forms" chapter), Windows/Linux CI + installer E2E extended to forms,
-   local macOS build, V1 A01–A15 regression.
+4. **Channel plan:** migrations, plan editor, Dashboard display, Quick Entry combobox. Gate: A21, A25.
+5. **Release:** docs (operator guide "Forms" chapter), then re-enable Windows/Linux CI and installer E2E
+   (extended to forms) and build all three platforms; V1 A01–A15 regression on all three.
 
 ## 7. Acceptance matrix (additions)
 
@@ -188,8 +189,8 @@ continuation page.
 | A18 | ICS 213 for a fully populated message fills every mapped block exactly per §4.2; signatures blank; message longer than the box continues on a continuation page with no lost text; multi-select gives one form per message in sequence order. |
 | A19 | ICS 214 includes only non-void entries of the chosen kinds whose event time is inside the OP, ordered by time/sequence; resources block matches the OP; overflow continues on continuation pages with header blocks repeated. |
 | A20 | ICS 309 rows match the Traffic Log scope (OP and filters), with message numbers in the From/To columns per direction; counts in the dialog equal rows exported. |
-| A21 | ICS 205 table matches the channel plan rows and order; special instructions and prepared-by printed; overflow continued. |
-| A22 | Every form PDF opens in Preview, Acrobat Reader and a browser PDF viewer on Windows/macOS/Linux; fields remain editable; Unicode names (accents, ✓) render. |
+| A21 | Channel plan rows can be entered, reordered, edited and removed by keyboard for each OP; copy from previous OP and from another logbook works; plans survive restart, backup/restore and `.emlog` round trip. |
+| A22 | Every form PDF opens in Preview, Acrobat Reader and a browser PDF viewer (macOS during development; Windows/Linux at Phase 5); fields remain editable; Unicode names (accents, ✓) render. |
 | A23 | No form contains a signature or approval that was not entered; the "Prepared with EMCOMM LOG" footer is on every page; voided entries never appear. |
 | A24 | Approval/reply fields persist through revisions, restart, backup/restore and `.emlog` round trip on another OS. |
 | A25 | With a channel plan, Quick Entry offers plan channels; choosing one stores the channel (and fills HAM frequency/mode); later plan edits do not change saved entries; free text still allowed. |
@@ -203,5 +204,5 @@ continuation page.
 
 ## 9. References
 
-- FEMA ICS Forms (ICS 205, 213, 214, 309): https://training.fema.gov/emiweb/is/icsresource/icsforms/
+- FEMA ICS Forms (ICS 213, 214, 309; 205 for the channel plan columns): https://training.fema.gov/emiweb/is/icsresource/icsforms/
 - V1 specification and acceptance matrix A01–A15.

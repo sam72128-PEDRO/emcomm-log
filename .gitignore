@@ -17,3 +17,4 @@ release/e2e/
 e2e/
 __pycache__/
 release/macos/
+release/*.zip

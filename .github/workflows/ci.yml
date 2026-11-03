@@ -1,8 +1,7 @@
 name: CI
 
+# Manual only while V2 is developed on macOS (V2 spec §1); re-enable push/pull_request at V2 Phase 5.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
