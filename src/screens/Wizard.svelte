@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID, DEVICE } from "../lib/platform";
   import { RadioTower, FolderOpen, CircleCheck, CircleAlert, TriangleAlert } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -103,6 +104,23 @@
     return true;
   }
 
+  // Android: logbooks live in the app's private storage; backups default to the microSD card when
+  // one is inserted, otherwise to the tablet. Both can be changed here or later in Settings.
+  if (IS_ANDROID) {
+    void (async () => {
+      const loc = await api.deviceLocations().catch(() => null);
+      if (!loc) return;
+      if (!s.default_logbook_parent) {
+        s.default_logbook_parent = loc.logbooks;
+        liveCheck = await api.checkFolder(loc.logbooks, "live").catch(() => null);
+      }
+      if (!s.backup.destination) {
+        s.backup.destination = loc.sd_backups ?? loc.tablet_backups;
+        backupCheck = await api.checkFolder(s.backup.destination, "backup").catch(() => null);
+      }
+    })();
+  }
+
   // Preview the chosen theme immediately; it is saved with the rest of setup.
   $effect(() => {
     const t = s.theme;
@@ -159,7 +177,7 @@
       <div>
         <h1>Welcome to EMCOMM LOG</h1>
         <p class="muted" style="margin:2px 0 0">
-          First-run setup. Everything stays on this computer; no network is used.
+          First-run setup. Everything stays on this {DEVICE}; no network is used.
         </p>
       </div>
     </header>
@@ -173,7 +191,7 @@
       {#if step === 0}
         <h2>Operator profile</h2>
         <p class="muted">
-          Your profile is stored only on this computer. Callsign and license class can stay blank if you don't
+          Your profile is stored only on this {DEVICE}. Callsign and license class can stay blank if you don't
           operate amateur radio.
         </p>
         <div class="grid-2">
@@ -226,7 +244,7 @@
       {:else if step === 1}
         <h2>Time display</h2>
         <p class="muted">
-          All times are stored in UTC. This only controls how they are shown and entered. Your computer's zone
+          All times are stored in UTC. This only controls how they are shown and entered. Your {DEVICE}'s zone
           is {localZoneName()} ({offsetLabel(localOffsetMinutes())}).
         </p>
         <fieldset>
@@ -259,11 +277,20 @@
         </fieldset>
       {:else if step === 2}
         <h2>Where logbooks are stored</h2>
-        <p class="muted">
-          Each logbook is a folder containing its database and attachments. Every saved entry is written
-          directly to it. Use a local disk or a directly attached drive — not a network share or a
-          cloud-synced folder.
-        </p>
+        {#if IS_ANDROID}
+          <p class="muted">
+            On a tablet, logbooks are kept in EMCOMM LOG's private storage on the tablet — the only place
+            Android lets an app write its database directly. Every saved entry is written straight to it.
+            Copies go to your backup location (next step), and a logbook can be moved to another device as a
+            package from Reports.
+          </p>
+        {:else}
+          <p class="muted">
+            Each logbook is a folder containing its database and attachments. Every saved entry is written
+            directly to it. Use a local disk or a directly attached drive — not a network share or a
+            cloud-synced folder.
+          </p>
+        {/if}
         <div class="field">
           <label for="wz-live">Default logbook folder<span class="req">*</span></label>
           <div class="row">
@@ -275,7 +302,7 @@
               placeholder="No folder chosen"
               aria-invalid={fieldErrors.live ? "true" : undefined}
             />
-            <button onclick={chooseLive}><FolderOpen size={16} />Browse…</button>
+            {#if !IS_ANDROID}<button onclick={chooseLive}><FolderOpen size={16} />Browse…</button>{/if}
           </div>
           {#if liveCheck}
             <span class={liveCheck.ok ? "hint" : "field-error"}
@@ -291,6 +318,12 @@
           Backups are independent, verified copies made every interval while a logbook is open, when you close
           it, and on demand. The backup folder must be outside the live logbook — another drive is best.
         </p>
+        {#if IS_ANDROID}
+          <p class="muted">
+            On this tablet, choose the <strong>microSD card</strong> if one is inserted, so a copy survives a failure
+            of the tablet's internal storage. Backups are also made when EMCOMM LOG leaves the screen.
+          </p>
+        {/if}
         <div class="field">
           <label for="wz-backup">Backup folder</label>
           <div class="row">
@@ -303,7 +336,9 @@
               disabled={skipBackups}
               aria-invalid={fieldErrors.backup ? "true" : undefined}
             />
-            <button onclick={chooseBackup} disabled={skipBackups}><FolderOpen size={16} />Browse…</button>
+            <button onclick={chooseBackup} disabled={skipBackups}
+              ><FolderOpen size={16} />{IS_ANDROID ? "Choose…" : "Browse…"}</button
+            >
           </div>
           {#if backupCheck && !skipBackups}
             <span class={backupCheck.ok ? "hint" : "field-error"}

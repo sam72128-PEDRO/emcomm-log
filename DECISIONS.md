@@ -96,3 +96,29 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     instructions. A chosen channel is stored in the entry as plain text ("TAC 2 (155.4750 MHz)"), not as a
     reference, so editing a plan never rewrites history. Copying a plan from another logbook opens that
     database read-only through the logbook index.
+
+## Android tablet decisions
+
+29. **Tablet only, Android 11+ (API 30), arm64.** The manifest declares large/xlarge screens only
+    (`requiresSmallestWidthDp=600`). Package id `org.emcommlog.tablet` via `tauri.android.conf.json`,
+    so the desktop identifier and its app-data folder are unchanged.
+30. **Live logbooks live in app-private internal storage.** Android gives apps real paths, file locks
+    and atomic renames only there; SAF `content://` documents cannot back a live SQLite database. The
+    lock, location checks and WAL/`synchronous=FULL` behave as on desktop (`fsutil` treats Android as
+    "not a network file system"; no code change needed).
+31. **Backups go to the microSD card's app-specific folder** (`getExternalFilesDirs`) or to internal
+    storage. That folder is a real path, so the existing verified backup code runs unchanged. Android
+    deletes it on uninstall, so copies that must outlive the app are `.emlog` packages saved through SAF.
+32. **Files in and out go through the app cache.** Picked documents are copied into the cache before
+    the core reads them; exports are written to the cache (temp + rename as on desktop) and then copied
+    to the document chosen with "Save to…". Only `cache/shared/` is exposed through the FileProvider.
+33. **No INTERNET permission and `allowBackup=false`:** the app cannot use the network, and Android cloud
+    backup never copies its data.
+34. **Android lifecycle.** Leaving the foreground flushes drafts, checkpoints the WAL and runs an
+    automatic backup (skipped if unchanged), because Android may end the process without a close event.
+    When the activity finishes, the process ends, so a launch never reuses a process without a webview.
+    The last open logbook is reopened on launch (remembered per device in WebView storage).
+35. **Back button** closes the top dialog, then returns to the Dashboard/Logbooks screen, then offers
+    Exit, which runs the normal close workflow. Text inputs keep the system's own Back (hide keyboard).
+36. **Release signing key** is kept outside the repository (`~/.emcomm-android/`), referenced by a
+    git-ignored `keystore.properties`.

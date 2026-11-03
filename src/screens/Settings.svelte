@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID, DEVICE } from "../lib/platform";
   import {
     Settings as SettingsIcon,
     FolderOpen,
@@ -300,6 +301,7 @@
           <label for="st-live">Default folder for new logbooks</label>
           <div class="row">
             <input id="st-live" type="text" readonly value={s.default_logbook_parent ?? ""} /><button
+              hidden={IS_ANDROID}
               onclick={chooseLive}><FolderOpen size={16} />Browse…</button
             >
           </div>
@@ -343,7 +345,7 @@
           >
         </div>
         <p class="muted">
-          Profiles live only on this computer. New entries record a snapshot of the active profile, so editing
+          Profiles live only on this {DEVICE}. New entries record a snapshot of the active profile, so editing
           a profile never changes logged history.
         </p>
         <table class="data">
@@ -436,7 +438,7 @@
                     <button
                       class="small icon-only"
                       aria-label="Delete preset {p.name}"
-                      title={p.in_use ? "Used by a logbook on this computer" : "Delete"}
+                      title={p.in_use ? `Used by a logbook on this ${DEVICE}` : "Delete"}
                       disabled={p.in_use}
                       onclick={() => deletePreset(p)}><Trash2 size={14} /></button
                     >
@@ -462,7 +464,8 @@
               readonly
               value={s.backup.destination ?? ""}
               placeholder="Not configured"
-            /><button onclick={chooseBackup}><FolderOpen size={16} />Browse…</button
+            /><button onclick={chooseBackup}
+              ><FolderOpen size={16} />{IS_ANDROID ? "Choose…" : "Browse…"}</button
             >{#if s.backup.destination}<button onclick={() => (s.backup.destination = null)}>Turn off</button
               >{/if}
           </div>
@@ -540,6 +543,7 @@
               ><RefreshCw size={14} />Refresh</button
             ><button
               class="small"
+              hidden={IS_ANDROID}
               onclick={() =>
                 api
                   .revealPath(app.settings!.backup.destination!)
@@ -582,6 +586,7 @@
             <span class="mono">{app.dataDir}</span>
             <button
               class="small"
+              hidden={IS_ANDROID}
               onclick={() =>
                 api.revealPath(app.dataDir).catch((e) => app.toast("error", toAppError(e).message))}
               ><FolderSearch size={14} />Reveal</button

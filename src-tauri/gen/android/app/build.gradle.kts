@@ -6,6 +6,16 @@ plugins {
     id("rust")
 }
 
+// Release signing: keystore.properties (git-ignored) names a keystore kept outside the repository:
+//   storeFile=/absolute/path/emcomm-release.jks  storePassword=…  keyAlias=…  keyPassword=…
+// EMCOMM_KEYSTORE_PROPERTIES may point at the file instead. Without it, release builds are unsigned.
+val keystoreProperties = Properties().apply {
+    val f = System.getenv("EMCOMM_KEYSTORE_PROPERTIES")?.let { file(it) } ?: rootProject.file("keystore.properties")
+    if (f.exists()) {
+        f.inputStream().use { load(it) }
+    }
+}
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -15,14 +25,24 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 36
-    namespace = "org.emcommlog.desktop"
+    namespace = "org.emcommlog.tablet"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "org.emcommlog.desktop"
-        minSdk = 24
+        applicationId = "org.emcommlog.tablet"
+        minSdk = 30
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (keystoreProperties.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -37,6 +57,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

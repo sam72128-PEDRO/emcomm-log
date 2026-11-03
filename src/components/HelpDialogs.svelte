@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID, DEVICE } from "../lib/platform";
   import Modal from "./Modal.svelte";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -28,7 +29,8 @@
 {:else if app.dialog === "data"}
   <Modal title="Where is my data?" size="lg" onclose={close}>
     <p style="margin:0">
-      <strong>Logbooks</strong> are folders you choose. Each contains <span class="mono">logbook.sqlite</span>
+      <strong>Logbooks</strong> are {#if IS_ANDROID}folders in EMCOMM LOG's private storage on this tablet{:else}folders
+        you choose{/if}. Each contains <span class="mono">logbook.sqlite</span>
       (every entry, revision, template and setting), an <span class="mono">attachments/</span> folder, and a
       small <span class="mono">logbook.json</span> identity file. Save Entry and Save Changes write directly to
       that database — there is no separate "save logbook" step.
@@ -38,7 +40,7 @@
       </p>{/if}
     <p style="margin:0">
       <strong>Drafts</strong> of unfinished entries, operator profiles, presets and app settings are stored on
-      this computer only, in <span class="mono">{app.dataDir}</span>.
+      this {DEVICE} only, in <span class="mono">{app.dataDir}</span>.
     </p>
     <p style="margin:0">
       <strong>Backups</strong> are verified copies in the backup folder set in Settings → Backups{#if app.settings?.backup.destination}:
@@ -57,10 +59,13 @@
       </li>
     </ol>
     {#snippet footer()}
-      <button
-        onclick={() => api.revealPath(app.dataDir).catch((e) => app.toast("error", toAppError(e).message))}
-        >Reveal app data folder</button
-      >
+      {#if !IS_ANDROID}<button
+          onclick={() => api.revealPath(app.dataDir).catch((e) => app.toast("error", toAppError(e).message))}
+          >Reveal app data folder</button
+        >{/if}
+      {#if IS_ANDROID}<button onclick={() => (app.dialog = "shortcuts")}>Keyboard shortcuts</button><button
+          onclick={() => (app.dialog = "about")}>About</button
+        >{/if}
       <button class="primary" onclick={close}>Close</button>
     {/snippet}
   </Modal>

@@ -1,6 +1,40 @@
 # Android tablet spike (Galaxy Tab S7 FE)
 
-Status: **spike / test build**, 2026-11-03, branch `android-tablet-spike`. Not a supported platform yet.
+Status: spike done, and **the port is finished** (same day, same branch). The operator guide, build
+and signing instructions are in [ANDROID_TABLET.md](ANDROID_TABLET.md). The spike findings are kept
+below; the table that follows says how each one was fixed and how the fix was checked.
+
+## Port: how each finding was fixed
+
+Checked on the Tab S7 FE-profile emulator (Android 15 image, WebView 124, virtual microSD card),
+first on the debug build via WebView inspection, then on the **signed, minified release APK** by
+driving the UI through the accessibility tree.
+
+| # | Fix | Checked |
+|---|---|---|
+| F1 white screen after Back | `MainActivity.onDestroy` ends the process when the activity truly finishes (Back/exit, Recents swipe), so every launch is a clean start. Back is routed through the app's own exit flow first. | Back → Exit → relaunch, and Recents swipe → relaunch: app draws normally. |
+| F2 no close workflow | Back → *Exit EMCOMM LOG?* runs the desktop close (unsaved warning, close backup, clean unlock). Leaving the foreground flushes drafts, checkpoints the WAL and takes an automatic backup if anything changed (`app_backgrounded`). Tauri 2.11 never registers its plugin lifecycle observer, so `MainActivity` forwards `onStop`/`onResume` itself. | Home → new verified backup on the SD card, WAL 0 bytes, draft on disk. Exit → `-close` backup, empty lock file, process gone. |
+| F3 folder picker | Live logbooks always in app-private storage (wizard prefills it, Browse/Open Folder/Relink hidden). "Choose…" for backups and restore offers **microSD card** / **Tablet storage**, from `getExternalFilesDirs()` (real paths, no permission). | Wizard chose the card automatically; backups, restore from the card, card removal → "destination is not available", re-insert → backup succeeds. |
+| F4 file picker | Kotlin `pickDocument` copies the `content://` document into the app cache and returns that path, so the core validates a real file. Used for Import package and Attach file. | `.emlog` exported on the tablet imported back as a separate copy; PNG attached to an entry. |
+| F5 Open / Reveal | Exports go through **Save to…** (`ACTION_CREATE_DOCUMENT`): written to the cache, then copied to the chosen document with fsync. **Open** = `ACTION_VIEW` through the FileProvider; **Reveal** becomes **Share** (share sheet). Folder reveals are hidden on Android. | PDF report and ICS 213 saved to Downloads (ICS 213 fields read back with pypdf on the Mac); PDF opened in the PDF viewer; attachment opened in Photos; share sheet shown. |
+| F6 keyboard covers fields | The plugin pads the content view by the IME and system-bar insets, so the WebView shrinks (`innerHeight` 744 → 408 with Gboard up). The sidebar now scrolls on its own and `main` contains absolutely positioned `.sr-only` labels, which had been stretching the page when it got short. | Focused field and dialog buttons stay above the keyboard; top bar stays put. |
+| F7 edge-to-edge | Same insets padding; light status/navigation icons; bar area coloured from the current theme. | Status bar no longer overlaps the top bar; switcher and toasts clear the gesture bar. |
+| F8 menus | Sidebar **Help** (Android only) → *Where is my data?* with *Keyboard shortcuts* and *About*; theme is in Settings. | Opened from the sidebar; Back closes it. |
+| F9 text selection | `@media (pointer: coarse)`: no selection or callout on app chrome, `touch-action: manipulation`, ≥40 px small buttons; fields and monospace values stay selectable. | — |
+| F10 wording | "this computer" → "this tablet" on Android; exported file names shown instead of cache paths. | Wizard, Import, Help. |
+| F11 stale count after a kill | The logbook index is refreshed on every background event. | — |
+| F12 manifest | No `INTERNET` permission, no Android TV, large screens only (`requiresSmallestWidthDp=600`), `allowBackup=false`, `adjustResize`, package id `org.emcommlog.tablet`, minSdk 30. | `aapt2 dump badging`: no permissions requested. |
+| Packaging | Release signing from `keystore.properties` (outside git), R8 keep rule for the reflection-loaded plugin, arm64 only. | `apksigner verify`: v2 signature, CN=EMCOMM LOG; release APK passes the full smoke test. |
+| Portrait | Sidebar collapses to icons below 900 px, so the Traffic Log keeps its Summary column. | `27-portrait-traffic-log.png`. |
+
+Also: launching the app reopens the logbook that was last open, because Android routinely ends
+background apps.
+
+Still open: a pass on the physical tablet (Samsung Keyboard, Book Cover Keyboard, S Pen, DeX, Samsung
+battery management, a real microSD card) and a TalkBack session. The tile-repaint artifact (E1) did
+not appear on the Android 15 image during the port testing.
+
+## Original spike report
 Target: Samsung Galaxy Tab S7 FE only (12.4", 2560×1600, ≈1280×800 CSS px landscape at DPR 2, microSD,
 optional Book Cover Keyboard). Phones are out of scope.
 
