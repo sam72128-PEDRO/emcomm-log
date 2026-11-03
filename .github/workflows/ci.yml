@@ -56,7 +56,7 @@ jobs:
         run: |
           cd target/release/bundle
           find . -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -print0 \
-            | xargs -0 shasum -a 256 > SHA256SUMS.txt
+            | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
