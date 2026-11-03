@@ -73,3 +73,20 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
 23. **`EMCOMM_DATA_DIR`** environment variable relocates app data (testing/portable). Not shown in the UI.
 24. **Emergency entries** snapshot the logbook's incident name/number/operational period at save time when
     not entered, so later changes to the logbook's operational period don't rewrite history.
+
+## V2 decisions
+
+25. **V2 is developed on macOS only** (V2 spec §1). Windows/Linux CI runs on manual dispatch until V2
+    Phase 5; code stays cross-platform.
+26. **ICS forms are FEMA's own fillable PDFs** (Phase 1 gate, passed 2026-11-03): ICS 213 v3 and ICS 214
+    v3.1 are AcroForm (no XFA), unencrypted, bundled in `core/assets/ics/` with hashes in
+    `docs/ICS_FIELD_MAP.md`. Filled with `lopdf` 0.46: EMCOMM LOG writes each field's value and its own
+    appearance stream in the embedded DejaVu Sans (the forms' Helvetica cannot show ✓ or many accented
+    names), and sets the field's default appearance to that font so it stays editable. Verified on this Mac
+    in macOS Preview (renders, edits in place, recognised as a form) and Chrome's PDF viewer (renders,
+    fields editable); Acrobat Reader and Firefox are not installed here and are checked at Phase 5.
+    Instruction pages are dropped; signature fields are never filled; text that does not fit is returned
+    as overflow for a continuation page, never silently cut.
+27. **ICS 309 is drawn by EMCOMM LOG**, not filled: FEMA's NIMS v3 set has no ICS 309, and online copies
+    are older revisions or local ARES variants. The app's PDF writer draws the standard 309 layout.
+28. **No ICS 205 export.** The channel plan is entered from the 205 an operator is given (input only).

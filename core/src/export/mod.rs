@@ -4,6 +4,7 @@
 pub mod adif;
 pub mod csv_out;
 pub mod docx;
+pub mod ics;
 pub mod pdf;
 pub mod txt;
 pub mod xlsx;
