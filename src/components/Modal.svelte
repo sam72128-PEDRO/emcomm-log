@@ -27,6 +27,11 @@
   const FOCUSABLE =
     'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+  const isTop = () => {
+    const all = document.querySelectorAll("[role=dialog]");
+    return all[all.length - 1] === dialogEl;
+  };
+
   onMount(() => {
     returnFocus = document.activeElement as HTMLElement | null;
     app.modalDepth++;
@@ -35,30 +40,38 @@
       const first = auto ?? dialogEl?.querySelector<HTMLElement>(`.modal-body ${FOCUSABLE}`) ?? dialogEl;
       first?.focus();
     });
+    // Window-level so Esc and the focus trap still work if focus was moved outside the dialog.
+    window.addEventListener("keydown", onWindowKey, true);
     return () => {
+      window.removeEventListener("keydown", onWindowKey, true);
       app.modalDepth = Math.max(0, app.modalDepth - 1);
       if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
     };
   });
 
-  function onkeydown(e: KeyboardEvent) {
+  function onWindowKey(e: KeyboardEvent) {
+    if (!dialogEl || !isTop()) return;
     if (e.key === "Escape") {
       e.stopPropagation();
       e.preventDefault();
       if (!busy) onclose();
       return;
     }
-    if (e.key !== "Tab" || !dialogEl) return;
+    if (e.key !== "Tab") return;
     const items = [...dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
       (el) => el.offsetParent !== null,
     );
     if (items.length === 0) return;
     const first = items[0];
     const last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !dialogEl.contains(active)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    } else if (e.shiftKey && active === first) {
       e.preventDefault();
       last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
+    } else if (!e.shiftKey && active === last) {
       e.preventDefault();
       first.focus();
     }
@@ -74,7 +87,6 @@
     aria-busy={busy}
     tabindex="-1"
     bind:this={dialogEl}
-    {onkeydown}
   >
     <header class="modal-head">
       <h2 id={titleId}>{title}</h2>
@@ -127,6 +139,9 @@
     align-items: center;
     padding: 14px 18px;
     border-bottom: 1px solid var(--border);
+  }
+  .modal-body > :global(*) {
+    flex-shrink: 0;
   }
   .modal-body {
     padding: 16px 18px;

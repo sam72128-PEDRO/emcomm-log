@@ -449,16 +449,18 @@
                   >{PRIORITY_LABEL[e.priority]}</span
                 >{/if}</td
             >
-            <td class="summary">
-              <span class="ellipsis">{e.subject}</span>
-              {#if e.attachments.length}<Paperclip
-                  size={13}
-                  aria-label="{e.attachments.length} attachment(s)"
-                />{/if}
-              {#if e.current_revision > 1}<span class="badge neutral" title="Edited"
-                  >rev {e.current_revision}</span
-                >{/if}
-            </td>
+            <td class="summary"
+              ><div class="sumwrap">
+                <span class="ellipsis">{e.subject}</span>
+                {#if e.attachments.length}<Paperclip
+                    size={13}
+                    aria-label="{e.attachments.length} attachment(s)"
+                  />{/if}
+                {#if e.current_revision > 1}<span class="badge neutral" title="Edited"
+                    >rev {e.current_revision}</span
+                  >{/if}
+              </div></td
+            >
             <td class="nowrap">
               {#if e.status === "void"}<span class="badge danger">VOID</span>
               {:else if e.handling}<span
@@ -591,9 +593,12 @@
   }
   .summary {
     max-width: 460px;
+  }
+  .sumwrap {
     display: flex;
     gap: 6px;
     align-items: center;
+    min-width: 0;
   }
   .summary .ellipsis {
     flex: 1;

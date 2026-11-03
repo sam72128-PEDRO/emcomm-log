@@ -57,7 +57,7 @@
   <label for={id}
     >{label}{#if required}<span class="req" aria-hidden="true">*</span>{/if}</label
   >
-  <div class="row" style="gap:6px">
+  <div class="row dt">
     <input
       {id}
       type="datetime-local"
@@ -87,3 +87,14 @@
   >
   {#if error}<span class="field-error" id="{id}-err">{error}</span>{/if}
 </div>
+
+<style>
+  .dt {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .dt input {
+    flex: 1 1 200px;
+    min-width: 200px;
+  }
+</style>

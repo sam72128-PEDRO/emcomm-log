@@ -78,7 +78,15 @@ export function formatInstant(
   const p = parts(d, zone);
   const date = opts.date === false ? "" : `${p.y}-${pad(p.mo)}-${pad(p.da)} `;
   const t = fmtTime(p.h, p.mi, opts.seconds ? p.s : null, clock);
-  const z = opts.zone === false ? "" : zone === "utc" ? "Z" : ` ${zoneShort("local", d)}`;
+  // "Z" reads cleanly after 24-hour times (19:37Z); after AM/PM spell it out (7:37 PM UTC).
+  const z =
+    opts.zone === false
+      ? ""
+      : zone === "utc"
+        ? clock === "12h"
+          ? " UTC"
+          : "Z"
+        : ` ${zoneShort("local", d)}`;
   return `${date}${t}${z}`.trim();
 }
 

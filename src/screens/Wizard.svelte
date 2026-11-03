@@ -40,6 +40,8 @@
     if (!p) return;
     s.default_logbook_parent = p;
     liveCheck = await api.checkFolder(p, "live");
+    delete fieldErrors.live;
+    fieldErrors = { ...fieldErrors };
   }
   async function chooseBackup() {
     const p = await api.pickFolder(
@@ -48,6 +50,8 @@
     );
     if (!p) return;
     s.backup.destination = p;
+    delete fieldErrors.backup;
+    fieldErrors = { ...fieldErrors };
     backupCheck = await api.checkFolder(p, "backup");
     if (
       backupCheck.ok &&
@@ -71,6 +75,9 @@
       if (!profile.name.trim()) fieldErrors.name = "Operator name is required";
       if (profile.callsign && !/^[A-Za-z0-9]+(\/[A-Za-z0-9]+)*$/.test(profile.callsign.trim()))
         fieldErrors.callsign = "Letters, digits and / only";
+      const g = profile.grid.trim();
+      if (g && !/^[A-Ra-r]{2}([0-9]{2}([A-Xa-x]{2}([0-9]{2})?)?)?$/.test(g))
+        fieldErrors.grid = "Use a Maidenhead locator such as EM73 or EM73tu";
     }
     if (step === 2) {
       if (!s.default_logbook_parent) fieldErrors.live = "Choose a folder";
@@ -95,6 +102,13 @@
     }
     return true;
   }
+
+  // Preview the chosen theme immediately; it is saved with the rest of setup.
+  $effect(() => {
+    const t = s.theme;
+    const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  });
 
   function next() {
     if (validateStep()) step = Math.min(step + 1, steps.length - 1);
@@ -121,6 +135,15 @@
       app.screen = "home";
     } catch (e) {
       const err = toAppError(e);
+      // Send the operator straight to the field that needs fixing.
+      const profileFields = ["name", "callsign", "license_class", "organization", "position", "grid"];
+      if (err.field && profileFields.includes(err.field)) {
+        step = 0;
+        fieldErrors = { [err.field]: err.message };
+        error = null;
+        app.announce(err.message, true);
+        return;
+      }
       error = `Settings could not be saved: ${err.message}`;
       app.announce(error, true);
     } finally {
@@ -182,7 +205,14 @@
           </div>
           <div class="field">
             <label for="wz-grid">Grid locator (optional)</label>
-            <input id="wz-grid" type="text" bind:value={profile.grid} placeholder="e.g. EM73" />
+            <input
+              id="wz-grid"
+              type="text"
+              bind:value={profile.grid}
+              placeholder="e.g. EM73"
+              aria-invalid={fieldErrors.grid ? "true" : undefined}
+            />
+            {#if fieldErrors.grid}<span class="field-error">{fieldErrors.grid}</span>{/if}
           </div>
           <div class="field">
             <label for="wz-org">Organization / unit (optional)</label>
@@ -365,7 +395,9 @@
     </section>
 
     <footer class="foot">
-      <button onclick={() => (step = Math.max(0, step - 1))} disabled={step === 0 || busy}>Back</button>
+      <button onclick={() => ((step = Math.max(0, step - 1)), (error = null))} disabled={step === 0 || busy}
+        >Back</button
+      >
       <span class="spacer"></span>
       {#if step < steps.length - 1}
         <button class="primary" onclick={next}>Continue</button>

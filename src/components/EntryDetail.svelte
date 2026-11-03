@@ -185,7 +185,7 @@
   <Modal
     title="Edit entry #{entry.sequence_no}"
     size="xl"
-    onclose={() => app.flushDraft?.().then(() => (editing = false))}
+    onclose={() => app.flushDrafts().then(() => (editing = false))}
   >
     <EntryEditor
       mode="edit"

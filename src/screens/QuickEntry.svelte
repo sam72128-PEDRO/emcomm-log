@@ -64,7 +64,7 @@
           })
           .then(async (a) => {
             if (a.id === "ok") {
-              await app.flushDraft?.();
+              await app.flushDrafts();
               load(r);
             }
           });

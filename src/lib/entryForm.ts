@@ -349,19 +349,19 @@ export function validateForm(f: EntryForm, type: T.LogbookType): FieldErrors {
   if (!f.event_at_utc) e.event_at_utc = "Event time is required";
   if (!f.subject.trim()) e.subject = "Summary is required";
   if (f.subject.length > 300) e.subject = "Summary must be 300 characters or fewer";
-  if (type === "ham") {
+  if (type === "ham" && f.kind === "qso") {
     const fr = parseFrequencyHz(f.freqText, f.freqUnit);
     if (fr.error) e["ham.frequency_hz"] = fr.error;
-    if (f.kind === "qso" && !f.ham.their_call.trim()) e["ham.their_call"] = "Callsign is required for a QSO";
+    if (!f.ham.their_call.trim()) e["ham.their_call"] = "Callsign is required for a QSO";
+    const band = BANDS.find(([b]) => b === f.ham.band);
+    if (fr.hz && band && (fr.hz < band[1] || fr.hz > band[2])) {
+      e["ham.band"] = `${formatFrequency(fr.hz).text} MHz is outside the ${band[0]} band`;
+    }
   }
   if (type === "emergency" && f.kind === "activity" && !f.em.activity_start_utc) {
     e["emergency.activity_start_utc"] = "Activity start time is required";
   }
   return e;
-}
-
-function hamHasData(h: T.HamFields): boolean {
-  return Object.values(h).some((v) => v !== "" && v !== null);
 }
 
 export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.EntryInput {
@@ -370,7 +370,8 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
   if (type === "ham") {
     const h = { ...f.ham, frequency_hz: parseFrequencyHz(f.freqText, f.freqUnit).hz };
     if (f.kind === "qso" && !h.qso_start_utc) h.qso_start_utc = f.event_at_utc;
-    ham = hamHasData(h) || f.kind === "qso" ? h : null;
+    // QSO fields belong only to QSO entries; profile prefills must not turn traffic into a QSO.
+    ham = f.kind === "qso" ? h : null;
   }
   let emergency: T.EmergencyFields | null = null;
   if (type === "emergency") {
@@ -400,7 +401,7 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
 
 export function toTemplateDefaults(f: EntryForm, type: T.LogbookType): T.TemplateDefaults {
   const ham =
-    type === "ham"
+    type === "ham" && f.kind === "qso"
       ? {
           ...f.ham,
           frequency_hz: parseFrequencyHz(f.freqText, f.freqUnit).hz,

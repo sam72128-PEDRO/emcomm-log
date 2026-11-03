@@ -101,7 +101,8 @@
 
   const dirty = $derived(formHasContent(form, baseline) || form.attachments.length > 0);
   $effect(() => {
-    app.editorDirty = dirty;
+    void dirty;
+    app.updateDirty();
   });
 
   const freq = $derived(parseFrequencyHz(form.freqText, form.freqUnit));
@@ -156,11 +157,15 @@
   let mounted = false;
 
   onMount(() => {
-    app.saveHandler = () => save();
-    app.flushDraft = async () => {
-      draftDirty = draftDirty || dirty;
-      await writeDraft();
-    };
+    const unregister = app.registerEditor({
+      save: () => save(),
+      flush: async () => {
+        draftDirty = draftDirty || dirty;
+        await writeDraft();
+      },
+      dirty: () => dirty,
+      root: () => root,
+    });
     const onUnload = () => {
       if (dirty) void writeDraft();
     };
@@ -175,13 +180,15 @@
         clearTimeout(draftTimer);
         void writeDraft();
       }
-      app.saveHandler = null;
-      app.flushDraft = null;
-      app.editorDirty = false;
+      unregister();
     };
   });
 
   function focusFirst() {
+    // Never pull focus out from under an open dialog that this editor is not part of.
+    const dialogs = document.querySelectorAll("[role=dialog]");
+    const top = dialogs[dialogs.length - 1];
+    if (top && !top.contains(root ?? null)) return;
     const target = root?.querySelector<HTMLElement>(
       mode === "edit" ? `#${fid("subject")}` : `#${fid("from")}, #${fid("subject")}`,
     );
@@ -912,10 +919,11 @@
     <div class="banner error" role="alert">
       <CircleAlert size={18} class="icon" />
       <div class="grow">
-        <strong>Save Failed:</strong>
+        <strong>{saveError.code === "VALIDATION" ? "Not saved:" : "Save Failed:"}</strong>
         {saveError.message}
         <div class="hint">
-          Nothing was added to the logbook. Your entry is still here{app.draftStatus.kind === "saved"
+          {saveError.code === "VALIDATION" ? "Correct the highlighted field and save again. " : ""}Nothing was
+          added to the logbook. Your entry is still here{app.draftStatus.kind === "saved"
             ? " and stored as a recovery draft"
             : ""}.
         </div>
@@ -929,6 +937,12 @@
   <div class="bar">
     <div class="status" aria-hidden="true">
       {#if saving}<LoaderCircle size={15} class="spin" /> Saving…
+      {:else if dirty && app.draftStatus.kind === "failed"}<CircleAlert size={15} class="err" /> Draft Save Failed
+        — this entry is not saved
+      {:else if dirty && app.draftStatus.kind === "saved"}<FileClock size={15} class="warn" /> Not saved yet · draft
+        kept
+        {formatInstant(app.draftStatus.at, app.zone, app.clock, { date: false, seconds: true })}
+      {:else if dirty}<FileClock size={15} class="warn" /> Not saved yet
       {:else if app.saveStatus.kind === "saved"}<CircleCheck size={15} class="ok" />
         {app.saveStatus.edit ? "Changes Saved" : "Entry Saved"} #{app.saveStatus.seq} at {formatInstant(
           app.saveStatus.at,
@@ -936,15 +950,7 @@
           app.clock,
           { date: false, seconds: true },
         )}{#if app.saveStatus.duplicate}
-          (already saved){/if}
-      {:else if app.draftStatus.kind === "saved" && dirty}<FileClock size={15} class="warn" /> Draft saved {formatInstant(
-          app.draftStatus.at,
-          app.zone,
-          app.clock,
-          { date: false, seconds: true },
-        )} — not yet a logbook entry
-      {:else if app.draftStatus.kind === "failed"}<CircleAlert size={15} class="err" /> Draft Save Failed
-      {:else if dirty}Unsaved{/if}
+          (already saved){/if}{/if}
     </div>
     <span class="spacer"></span>
     {#if mode === "new"}

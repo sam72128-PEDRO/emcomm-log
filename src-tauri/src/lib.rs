@@ -292,6 +292,10 @@ async fn delete_preset(state: State<'_, AppState>, id: String) -> Cmd<()> {
 
 #[tauri::command]
 async fn list_logbooks(state: State<'_, AppState>) -> Cmd<Vec<LogbookIndexRow>> {
+    // The open logbook's counts change with every save; refresh its row so the list is current.
+    if let Some(lb) = lock(&state.book).as_ref() {
+        let _ = refresh_index(&state, lb);
+    }
     lock(&state.app).list_index()
 }
 

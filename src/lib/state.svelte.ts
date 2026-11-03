@@ -9,7 +9,8 @@ export type SaveStatus =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved"; seq: number; at: string; edit: boolean; duplicate: boolean }
-  | { kind: "failed"; error: T.AppError };
+  | { kind: "failed"; error: T.AppError }
+  | { kind: "invalid"; message: string };
 
 export type DraftStatus =
   | { kind: "idle" }
@@ -28,6 +29,14 @@ export type EditorRequest =
   | { mode: "template"; template: T.EntryTemplate }
   | { mode: "copy"; entry: T.Entry }
   | { mode: "draft"; draft: T.Draft };
+
+export interface EditorHandle {
+  id: number;
+  save: () => void;
+  flush: () => Promise<void>;
+  dirty: () => boolean;
+  root: () => HTMLElement | undefined;
+}
 
 export function defaultQuery(): T.EntryQuery {
   return {
@@ -82,9 +91,9 @@ class AppStore {
   dialog = $state<string | null>(null);
   reportScope = $state<"all" | "range" | "filter">("all");
 
-  /** Registered by the visible entry editor. */
-  saveHandler: (() => void) | null = null;
-  flushDraft: (() => Promise<void>) | null = null;
+  /** Mounted entry editors, innermost (most recently mounted) last. */
+  private editors: EditorHandle[] = [];
+  private editorSeq = 0;
   editorDirty = $state(false);
   focusSearch: (() => void) | null = null;
   private toastSeq = 0;
@@ -168,6 +177,12 @@ class AppStore {
 
   /** Record a final-save failure; storage faults block further final saves until rechecked. */
   noteSaveFailure(err: T.AppError) {
+    if (err.code === "VALIDATION") {
+      // Nothing is wrong with storage: the entry needs correcting, not the drive.
+      this.saveStatus = { kind: "invalid", message: err.message };
+      this.announce(`Not saved: ${err.message}`, true);
+      return;
+    }
     this.saveStatus = { kind: "failed", error: err };
     if (STORAGE_FAULTS.has(err.code)) this.storageBlocked = err;
     this.announce(`Save Failed: ${err.message}`, true);
@@ -193,9 +208,32 @@ class AppStore {
     }
   }
 
+  registerEditor(e: Omit<EditorHandle, "id">): () => void {
+    const id = ++this.editorSeq;
+    this.editors.push({ ...e, id });
+    this.updateDirty();
+    return () => {
+      this.editors = this.editors.filter((x) => x.id !== id);
+      this.updateDirty();
+    };
+  }
+
+  get topEditor(): EditorHandle | null {
+    return this.editors[this.editors.length - 1] ?? null;
+  }
+
+  updateDirty() {
+    this.editorDirty = this.editors.some((e) => e.dirty());
+  }
+
+  /** Persist every open editor's unsaved text as a recovery draft. */
+  async flushDrafts() {
+    await Promise.all(this.editors.map((e) => e.flush()));
+  }
+
   async navigate(screen: Screen) {
     if (screen === this.screen) return;
-    if (this.flushDraft) await this.flushDraft();
+    await this.flushDrafts();
     this.screen = screen;
   }
 
