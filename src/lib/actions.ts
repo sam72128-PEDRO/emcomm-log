@@ -38,13 +38,14 @@ const BOOK_ACTIONS = new Set([
 ]);
 const DIALOG_SAFE = new Set(["save_entry", "help_shortcuts"]);
 
-let lastAction = { id: "", at: 0 };
+let lastAction = { id: "", at: 0, source: "" };
 
 export async function runAction(id: string, source: "menu" | "key" = "key"): Promise<void> {
   const now = performance.now();
-  // A native accelerator may also reach the webview as a keydown; run it once.
-  if (lastAction.id === id && now - lastAction.at < 350) return;
-  lastAction = { id, at: now };
+  // A native accelerator may also reach the webview as a keydown; run it once. Only the echo from
+  // the other source is dropped, so two quick presses of the same shortcut both run.
+  if (lastAction.id === id && lastAction.source !== source && now - lastAction.at < 350) return;
+  lastAction = { id, at: now, source };
 
   if (app.screen === "wizard" && id !== "help_shortcuts" && id !== "quit") {
     app.announce("Finish first-run setup first", true);

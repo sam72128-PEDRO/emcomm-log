@@ -38,7 +38,8 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | `cargo test --workspace` | 64 passed (29 unit + 35 integration) on macOS, Windows and Linux; 5 opt-in helpers ignored |
 | `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` | clean |
 | `npm run check` (svelte-check, fail on warnings), `npm run lint`, `npm run format:check` | clean |
-| `npm test` (vitest) | 13 passed |
+| `npm test` (vitest) | 17 passed |
+| Hands-on macOS pass (release build, 2026-11-03) | Every screen and flow driven by hand: wizard, Quick Entry (QSO + traffic), templates, drafts/restore, edit/void/revisions, Messages handling, Traffic Log, search, reports/exports, backups/restore, `.emlog` export/import, stale-lock recovery, close/quit. 23 issues found (validation shown as save failure, Cmd+Enter in a dialog saving the entry behind it, traffic entries storing QSO fields, no warning for unsaved drafts on close, stale counts, layout/wording) — all fixed and re-verified in the rebuilt app; regressions added to vitest |
 | Scale (`--release --test scale -- --ignored`) | 100,000 entries: worst durable save 104 ms; FTS search 25 ms; filter page 176 ms; CSV 4.4 s, XLSX 6.3 s, DOCX 8.7 s, PDF 23 s, TXT 4.6 s |
 | Migrations | up → down → up test; checksum tamper and newer-schema refusal tests |
 

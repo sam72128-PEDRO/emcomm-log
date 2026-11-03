@@ -26,6 +26,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.options import ArgOptions
 from selenium.webdriver.support.ui import WebDriverWait
 
+# Windows runners default stdout to cp1252, which cannot print the arrows and dashes used below.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 APP, DATA, WORK = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 AXE = (Path(__file__).resolve().parent.parent / "node_modules/axe-core/axe.min.js").read_text(encoding="utf-8")
 SHOTS = WORK / "shots"
@@ -147,11 +149,19 @@ def os_accessibility_tree() -> list[dict]:
         if system == "Windows":
             from pywinauto import Desktop
 
-            win = Desktop(backend="uia").window(title_re="EMCOMM LOG.*")
-            return [
-                {"role": e.element_info.control_type or "", "name": e.element_info.name or ""}
-                for e in win.descendants()
-            ]
+            # Chromium (WebView2) builds the web content's UIA tree only after a client first asks,
+            # so the first walk may stop at the "Web content" pane; walk again until fields appear.
+            nodes: list[dict] = []
+            for _ in range(10):
+                win = Desktop(backend="uia").window(title_re="EMCOMM LOG.*")
+                nodes = [
+                    {"role": e.element_info.control_type or "", "name": e.element_info.name or ""}
+                    for e in win.descendants()
+                ]
+                if any(n["role"] == "Edit" for n in nodes):
+                    break
+                time.sleep(2)
+            return nodes
         if system == "Linux":
             r = subprocess.run(["/usr/bin/python3", str(Path(__file__).with_name("atspi_dump.py"))], capture_output=True, text=True, timeout=60)
             if r.returncode != 0:
@@ -167,7 +177,11 @@ def check_screen_reader_tree(expect: list[tuple[str, str]]) -> None:
     (WORK / f"a11y-tree-{platform.system().lower()}.json").write_text(json.dumps(tree, indent=1))
     check("A14 OS accessibility tree exposed to screen readers", len(tree) > 20, f"{len(tree)} nodes")
     for role_hint, name in expect:
-        found = any(name.lower() in n["name"].lower() and role_hint.lower() in n["role"].lower() for n in tree)
+        # A text field is "Edit" in UIA; WebKitGTK reports it to AT-SPI as "entry" or "embedded".
+        roles = ["edit", "entry", "embedded", "text"] if role_hint == "text field" else [role_hint]
+        found = any(
+            name.lower() in n["name"].lower() and any(r in n["role"].lower() for r in roles) for n in tree
+        )
         check(f"A14 screen reader sees {role_hint} '{name}'", found)
 
 
@@ -254,8 +268,8 @@ for _ in range(4):
     order.append(active_id(d))
 check_screen_reader_tree(
     [
-        ("edit" if platform.system() == "Windows" else "entry", "Summary"),
-        ("edit" if platform.system() == "Windows" else "entry", "From / Station"),
+        ("text field", "Summary"),
+        ("text field", "From / Station"),
         ("button", "Save Entry"),
         ("button", "Attach file"),
         ("combo", "Priority"),
@@ -284,8 +298,8 @@ axe(d, "traffic-log")
 chord(d, "f")
 time.sleep(0.4)
 check("A14 Ctrl+F focuses search", d.execute_script("return document.activeElement.type") == "search")
-rows = d.find_elements(By.CSS_SELECTOR, "tr[data-row]")
-rows[-1].click()
+# Click the summary cell like a person would (WebKitGTK's driver refuses clicks on a bare <tr>).
+d.find_element(By.XPATH, "//tr[@data-row]/td[contains(., 'Bridge on CR-12')]").click()
 check("Entry detail opens", wait_text(d, "Entry #0001", 5))
 axe(d, "entry-detail")
 chord(d, "1")
