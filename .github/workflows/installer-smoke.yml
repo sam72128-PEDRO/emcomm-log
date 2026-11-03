@@ -1,0 +1,113 @@
+name: Installer smoke test
+
+# Installs the installers built by a successful CI run on fresh runners, launches the installed app
+# offline where the OS allows it, checks that it started and created its local data store, and
+# captures a screenshot of the first-run screen.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: CI run id whose installers to test
+        required: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RUN_ID: ${{ github.event.inputs.run_id || github.event.workflow_run.id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download installers from CI run
+        shell: bash
+        run: gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n "emcomm-log-${{ matrix.os }}" -D installers && find installers -type f
+
+      - name: Linux - install .deb, launch with no network
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb imagemagick
+          sudo apt-get install -y ./installers/deb/*.deb
+          test -x /usr/bin/emcomm-log
+          cat > smoke.sh <<'EOF'
+          set -u
+          export EMCOMM_DATA_DIR="$1"
+          /usr/bin/emcomm-log > "$2/app.log" 2>&1 &
+          pid=$!
+          sleep 20
+          import -window root "$2/screenshot.png" || true
+          if kill -0 "$pid" 2>/dev/null; then echo "app running (pid $pid)"; alive=1; else echo "app exited"; alive=0; fi
+          kill "$pid" 2>/dev/null || true
+          [ "$alive" = 1 ]
+          EOF
+          mkdir -p out data
+          # Fresh network namespace: only an isolated loopback, no route to anything.
+          sudo unshare --net -- bash -c 'ip link set lo up; ! ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && echo "network unavailable (expected)"; xvfb-run -a -s "-screen 0 1440x900x24" bash smoke.sh "$PWD/data" "$PWD/out"'
+          sudo chown -R "$USER" out data
+          ls -la data
+          test -f data/app.sqlite
+          cat out/app.log || true
+
+      - name: Windows - install .msi silently, launch with outbound traffic blocked
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem installers -Recurse -Filter *.msi | Select-Object -First 1).FullName
+          $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart /l*v msi.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content msi.log -Tail 50; throw "msiexec failed: $($p.ExitCode)" }
+          $exe = Get-ChildItem "C:\Program Files","C:\Program Files (x86)",$env:LOCALAPPDATA -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1
+          if (-not $exe) { throw "installed executable not found" }
+          Write-Host "Installed: $($exe.FullName)"
+          New-NetFirewallRule -DisplayName "EMCOMM smoke offline" -Direction Outbound -Program $exe.FullName -Action Block | Out-Null
+          New-Item -ItemType Directory -Force out, data | Out-Null
+          $env:EMCOMM_DATA_DIR = (Resolve-Path data).Path
+          $proc = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 25
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path (Resolve-Path out) "screenshot.png"))
+          $alive = -not $proc.HasExited
+          Write-Host "app running: $alive"
+          if ($alive) { Stop-Process -Id $proc.Id -Force }
+          Get-ChildItem data
+          if (-not $alive) { throw "app exited early" }
+          if (-not (Test-Path data\app.sqlite)) { throw "app did not create its data store" }
+
+      - name: macOS - mount .dmg, install app, launch
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          dmg=$(find installers -name '*.dmg' | head -1)
+          mnt=$(hdiutil attach "$dmg" -nobrowse -readonly | tail -1 | awk -F'\t' '{print $NF}')
+          cp -R "$mnt/EMCOMM LOG.app" /Applications/
+          hdiutil detach "$mnt"
+          mkdir -p out data
+          EMCOMM_DATA_DIR="$PWD/data" "/Applications/EMCOMM LOG.app/Contents/MacOS/emcomm-log" > out/app.log 2>&1 &
+          pid=$!
+          sleep 20
+          screencapture -x out/screenshot.png || true
+          kill -0 $pid && echo "app running" || { cat out/app.log; exit 1; }
+          kill $pid
+          ls -la data
+          test -f data/app.sqlite
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: out/
