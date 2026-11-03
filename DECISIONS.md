@@ -92,3 +92,7 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     the same embedded font; cells wrap rather than truncate. A message number goes under FROM unless the
     entry was sent (then TO). Being drawn, the 309 is not a fillable form.
 28. **No ICS 205 export.** The channel plan is entered from the 205 an operator is given (input only).
+    Schema v3 adds `channel_plan` (the 205 channel table, one row per channel) and the period's special
+    instructions. A chosen channel is stored in the entry as plain text ("TAC 2 (155.4750 MHz)"), not as a
+    reference, so editing a plan never rewrites history. Copying a plan from another logbook opens that
+    database read-only through the logbook index.

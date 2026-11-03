@@ -139,6 +139,15 @@ time, FROM call sign/ID, TO call sign/ID, and the message summary. A received me
 FROM, a sent message's under TO. Long text wraps onto extra lines; 44 lines per page, with the header
 repeated.
 
+**Channel plan (from an ICS 205).** Dashboard → period → **Channels** (or **Enter ICS 205…** in the
+*Channel Plan* panel, which shows the current period's plan). Type one row per channel — zone/group,
+channel number, function, channel name or talkgroup, assignment, RX/TX frequency in MHz, N/W, tone/NAC,
+mode (A/D/M) and remarks — plus the special instructions. Enter adds a row. *Copy from* fills the editor
+from another period, or from a period in another emergency logbook on this computer (that logbook is only
+read). While a plan exists, every entry's *Channel / Frequency* field suggests its channels first; picking
+one writes e.g. "TAC 2 (155.4750 MHz)". You can still type anything. Changing the plan later never changes
+entries already saved. EMCOMM LOG does not print an ICS 205.
+
 **Upgrading.** The first time this version opens a logbook made by EMCOMM LOG 1.0 it upgrades the file and
 keeps an untouched copy in the logbook's hidden `.pre-migration` folder (you are told where).
 

@@ -144,13 +144,13 @@ fn a17_v1_logbook_and_package_upgrade_with_a_kept_copy() {
     export_package(&dir, &pkg).unwrap();
 
     let lb = Logbook::open(&dir).unwrap();
-    assert!(lb.notices.iter().any(|n| n.contains("upgraded from schema 1 to 2")), "{:?}", lb.notices);
+    assert!(lb.notices.iter().any(|n| n.contains("upgraded from schema 1 to 3")), "{:?}", lb.notices);
     let copies: Vec<_> = fs::read_dir(dir.join(PRE_MIGRATION_DIR)).unwrap().flatten().collect();
     assert_eq!(copies.len(), 1);
     let old = Connection::open(copies[0].path()).unwrap();
     assert_eq!(migrate::current_version(&old).unwrap(), 1, "the kept copy is the untouched V1 database");
     let info = lb.info().unwrap();
-    assert_eq!(info.schema_version, 2);
+    assert_eq!(info.schema_version, 3);
     assert_eq!(info.incident.operational_period, "OP03 1200-2000", "free-text period preserved, not converted");
     assert!(lb.periods().unwrap().is_empty(), "nothing is guessed from the free text");
     let page = lb.list_entries(&all_query()).unwrap();
@@ -161,7 +161,7 @@ fn a17_v1_logbook_and_package_upgrade_with_a_kept_copy() {
     let other = tempfile::tempdir().unwrap();
     let imp = import_package(&pkg, other.path(), Some("Imported V1"), &[]).unwrap();
     let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
-    assert_eq!(lb2.info().unwrap().schema_version, 2);
+    assert_eq!(lb2.info().unwrap().schema_version, 3);
     assert_eq!(lb2.list_entries(&all_query()).unwrap().items.len(), 1);
 }
 
@@ -445,4 +445,99 @@ fn ics309_sample() {
     };
     let b = build_309(&lb.conn, &lb.info().unwrap(), &req).unwrap();
     fs::write(std::env::var("EMCOMM_FORM_OUT").unwrap(), b.pdf).unwrap();
+}
+
+fn channel(name: &str, rx: &str) -> ChannelRow {
+    ChannelRow {
+        zone_group: "Z1".into(),
+        channel_number: "3".into(),
+        function: "Tactical".into(),
+        channel_name: name.into(),
+        assignment: "Shelters".into(),
+        rx_freq: rx.into(),
+        rx_nw: "n".into(),
+        rx_tone: "100.0".into(),
+        tx_freq: rx.into(),
+        tx_nw: "N".into(),
+        tx_tone: "100.0".into(),
+        mode: "a".into(),
+        remarks: "Simplex".into(),
+    }
+}
+
+#[test]
+fn a21_a25_channel_plan_edit_copy_and_persist_without_rewriting_entries() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = emergency_book(t.path());
+    let mut lb = Logbook::open(&dir).unwrap();
+    let op1 = lb.save_period(None, &period("OP 1", "2026-11-02T12:00:00Z", "2026-11-02T20:00:00Z")).unwrap().period;
+    let op2 = lb.save_period(None, &period("OP 2", "2026-11-02T20:00:00Z", "2026-11-03T08:00:00Z")).unwrap().period;
+    let plan = ChannelPlan {
+        rows: vec![channel("TAC 2", "155.4750 MHz"), ChannelRow::default(), channel("COMMAND", "154.2800")],
+        special_instructions: "Shelters check in on TAC 2 hourly.".into(),
+    };
+    let saved = lb.set_period_plan(&op1.id, &plan).unwrap();
+    assert_eq!(
+        saved.rows.iter().map(|r| r.channel_name.as_str()).collect::<Vec<_>>(),
+        vec!["TAC 2", "COMMAND"],
+        "blank row dropped, order kept"
+    );
+    assert_eq!(
+        (saved.rows[0].rx_freq.as_str(), saved.rows[0].rx_nw.as_str(), saved.rows[0].mode.as_str()),
+        ("155.4750", "N", "A"),
+        "normalised"
+    );
+    assert_eq!(saved.special_instructions, "Shelters check in on TAC 2 hourly.");
+
+    // Validation names the row and field.
+    for (bad, field) in [
+        (ChannelRow { rx_freq: "fast".into(), ..channel("X", "1") }, "plan.0.rx_freq"),
+        (ChannelRow { tx_nw: "Q".into(), ..channel("X", "1") }, "plan.0.tx_nw"),
+        (ChannelRow { mode: "FM".into(), ..channel("X", "1") }, "plan.0.mode"),
+    ] {
+        let e = lb.set_period_plan(&op1.id, &ChannelPlan { rows: vec![bad], ..Default::default() }).unwrap_err();
+        assert_eq!(e.field.as_deref(), Some(field));
+    }
+    assert_eq!(lb.period_plan(&op1.id).unwrap().rows.len(), 2, "a rejected save changes nothing");
+
+    // Reorder by saving rows in a new order; copy to the next period.
+    let mut reordered = lb.period_plan(&op1.id).unwrap();
+    reordered.rows.reverse();
+    lb.set_period_plan(&op1.id, &reordered).unwrap();
+    assert_eq!(lb.period_plan(&op1.id).unwrap().rows[0].channel_name, "COMMAND");
+    let copy = lb.period_plan(&op1.id).unwrap();
+    lb.set_period_plan(&op2.id, &copy).unwrap();
+    assert_eq!(lb.period_plan(&op2.id).unwrap(), copy);
+
+    // A25: entries keep the channel text they were saved with when the plan changes later.
+    let mut i = input("Shelter check-in");
+    i.channel = "TAC 2 (155.4750 MHz)".into();
+    i.op_id = Some(op1.id.clone());
+    let e = lb.save_new(&i, &rid(), &operator()).unwrap().entry;
+    let mut renamed = lb.period_plan(&op1.id).unwrap();
+    renamed.rows[1].channel_name = "TAC 2A".into();
+    lb.set_period_plan(&op1.id, &renamed).unwrap();
+    assert_eq!(lb.get_entry(&e.id).unwrap().channel, "TAC 2 (155.4750 MHz)");
+    drop(lb);
+
+    // Restart and package round trip.
+    let lb = Logbook::open(&dir).unwrap();
+    assert_eq!(lb.period_plan(&op1.id).unwrap().rows[1].channel_name, "TAC 2A");
+    drop(lb);
+    let pkg = t.path().join("plan.emlog");
+    export_package(&dir, &pkg).unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let imp = import_package(&pkg, other.path(), None, &[]).unwrap();
+    let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
+    assert_eq!(lb2.period_plan(&op2.id).unwrap().rows.len(), 2);
+
+    // Copy from another logbook, opened read-only: only periods that have a plan are offered.
+    let ro = Logbook::open_read_only(&dir.join(DB_FILE)).unwrap();
+    let sources = periods::plan_sources(&ro).unwrap();
+    assert_eq!(sources.iter().map(|s| (s.op_name.as_str(), s.rows)).collect::<Vec<_>>(), vec![("OP 2", 2), ("OP 1", 2)]);
+    assert_eq!(periods::read_plan(&ro, &op2.id).unwrap(), copy);
+    let third = tempfile::tempdir().unwrap();
+    let empty = emergency_book(third.path());
+    let ro2 = Logbook::open_read_only(&empty.join(DB_FILE)).unwrap();
+    assert!(periods::plan_sources(&ro2).unwrap().is_empty());
 }

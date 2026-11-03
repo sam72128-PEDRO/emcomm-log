@@ -31,6 +31,7 @@
   import KindBadge from "../components/KindBadge.svelte";
   import Modal from "../components/Modal.svelte";
   import PeriodsPanel from "../components/PeriodsPanel.svelte";
+  import CurrentPlanPanel from "../components/CurrentPlanPanel.svelte";
   import { currentPeriod } from "../lib/periods";
 
   const info = $derived(app.active!.info);
@@ -232,7 +233,7 @@
     </section>
   </div>
 
-  {#if info.logbook_type === "emergency"}<PeriodsPanel />{/if}
+  {#if info.logbook_type === "emergency"}<PeriodsPanel /><CurrentPlanPanel />{/if}
 
   <div class="grid-bottom">
     <section class="panel">

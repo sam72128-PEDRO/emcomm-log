@@ -12,6 +12,7 @@ use emcomm_core::fsutil::{self, now_utc};
 use emcomm_core::logbook::{CreateParams, Logbook, StorageHealth};
 use emcomm_core::models::*;
 use emcomm_core::package::{self, ExportPackageResult, ImportResult, PackagePreview};
+use emcomm_core::periods;
 use emcomm_core::snapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -940,6 +941,38 @@ async fn set_period_resources(state: State<'_, AppState>, op_id: String, rows: V
 }
 
 #[tauri::command]
+async fn period_plan(state: State<'_, AppState>, op_id: String) -> Cmd<ChannelPlan> {
+    with_book(&state, |lb| lb.period_plan(&op_id))
+}
+
+#[tauri::command]
+async fn set_period_plan(state: State<'_, AppState>, op_id: String, plan: ChannelPlan) -> Cmd<ChannelPlan> {
+    with_book(&state, |lb| lb.set_period_plan(&op_id, &plan))
+}
+
+/// Another local logbook's database, opened read-only (never locked, migrated or written).
+fn other_logbook_db(state: &AppState, logbook_id: &str) -> AppResult<emcomm_core::rusqlite::Connection> {
+    let row = lock(&state.app)
+        .list_index()?
+        .into_iter()
+        .find(|r| r.id == logbook_id)
+        .ok_or_else(|| AppError::not_found("Logbook not in list"))?;
+    Logbook::open_read_only(&Path::new(&row.path).join(emcomm_core::logbook::DB_FILE))
+}
+
+#[tauri::command]
+async fn plan_sources(state: State<'_, AppState>, logbook_id: String) -> Cmd<Vec<PlanSource>> {
+    let conn = other_logbook_db(&state, &logbook_id)?;
+    periods::plan_sources(&conn)
+}
+
+#[tauri::command]
+async fn read_plan_from(state: State<'_, AppState>, logbook_id: String, op_id: String) -> Cmd<ChannelPlan> {
+    let conn = other_logbook_db(&state, &logbook_id)?;
+    periods::read_plan(&conn, &op_id)
+}
+
+#[tauri::command]
 async fn form213_preview(state: State<'_, AppState>, req: forms::Form213Request) -> Cmd<forms::FormPreview> {
     with_book(&state, |lb| forms::preview_213(&lb.conn, &lb.info()?, &req))
 }
@@ -1198,6 +1231,10 @@ pub fn run() {
             set_period_void,
             period_resources,
             set_period_resources,
+            period_plan,
+            set_period_plan,
+            plan_sources,
+            read_plan_from,
             form213_preview,
             form214_preview,
             export_form213,

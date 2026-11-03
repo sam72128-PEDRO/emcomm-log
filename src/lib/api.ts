@@ -122,6 +122,12 @@ export const api = {
   periodResources: (opId: string) => call<T.OpResource[]>("period_resources", { opId }),
   setPeriodResources: (opId: string, rows: T.OpResource[]) =>
     call<T.OpResource[]>("set_period_resources", { opId, rows }),
+  periodPlan: (opId: string) => call<T.ChannelPlan>("period_plan", { opId }),
+  setPeriodPlan: (opId: string, plan: T.ChannelPlan) =>
+    call<T.ChannelPlan>("set_period_plan", { opId, plan }),
+  planSources: (logbookId: string) => call<T.PlanSource[]>("plan_sources", { logbookId }),
+  readPlanFrom: (logbookId: string, opId: string) =>
+    call<T.ChannelPlan>("read_plan_from", { logbookId, opId }),
   form213Preview: (req: T.Form213Request) => call<T.FormPreview>("form213_preview", { req }),
   form214Preview: (req: T.Form214Request) => call<T.FormPreview>("form214_preview", { req }),
   exportForm213: (req: T.Form213Request, dest: string) => call<T.FormResult>("export_form213", { req, dest }),

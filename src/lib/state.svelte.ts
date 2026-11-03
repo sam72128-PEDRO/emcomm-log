@@ -92,6 +92,8 @@ class AppStore {
   reportScope = $state<"all" | "range" | "filter">("all");
   /** Operational periods of the open logbook (V2), ordered by start. */
   periods = $state<T.OperationalPeriod[]>([]);
+  /** Channel plans by period id, loaded on demand. */
+  plans = $state<Record<string, T.ChannelPlan>>({});
 
   /** Mounted entry editors, innermost (most recently mounted) last. */
   private editors: EditorHandle[] = [];
@@ -123,7 +125,10 @@ class AppStore {
   setActive(v: T.ActiveView | null) {
     const changed = v?.info.id !== this.active?.info.id;
     this.active = v;
-    if (changed) void this.refreshPeriods();
+    if (changed) {
+      this.plans = {};
+      void this.refreshPeriods();
+    }
     this.backup = v?.backup ?? null;
     this.storageBlocked = v && !v.health.ok && v.health.error ? v.health.error : null;
     this.dataVersion++;
@@ -153,6 +158,17 @@ class AppStore {
       this.periods = await api.listPeriods();
     } catch {
       this.periods = [];
+    }
+  }
+
+  async loadPlan(opId: string): Promise<T.ChannelPlan | null> {
+    if (this.plans[opId]) return this.plans[opId];
+    try {
+      const p = await api.periodPlan(opId);
+      this.plans = { ...this.plans, [opId]: p };
+      return p;
+    } catch {
+      return null;
     }
   }
 
