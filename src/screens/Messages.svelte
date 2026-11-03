@@ -3,7 +3,7 @@
   import { app, defaultQuery } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
   import type * as T from "../lib/types";
-  import { HANDLING_LABEL } from "../lib/entryForm";
+  import { HANDLING_LABEL, PRIORITY_LABEL } from "../lib/entryForm";
   import { changeHandling } from "../lib/handling";
   import { formatInstant } from "../lib/time";
   import KindBadge from "../components/KindBadge.svelte";
@@ -90,10 +90,10 @@
             <td><KindBadge kind={e.kind} /></td>
             <td class="nowrap">{e.from_text || "—"} → {e.to_text || "—"}</td>
             <td class="ellipsis" style="max-width:380px"
-              >{e.subject}{#if e.emergency?.message_number}
+              >{e.subject}{#if e.emergency?.message_number}&nbsp;
                 <span class="muted">(Msg {e.emergency.message_number})</span>{/if}</td
             >
-            <td>{e.priority}</td>
+            <td>{PRIORITY_LABEL[e.priority]}</td>
             <td>
               <select
                 aria-label="Handling status for entry {e.sequence_no}"

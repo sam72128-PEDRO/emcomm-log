@@ -33,7 +33,7 @@ describe("time conversion", () => {
   it("formats with an unambiguous zone indicator", () => {
     expect(formatInstant("2026-11-02T19:37:05.000Z", "utc", "24h")).toBe("2026-11-02 19:37Z");
     expect(formatInstant("2026-11-02T19:37:05.000Z", "utc", "12h", { seconds: true })).toBe(
-      "2026-11-02 7:37:05 PM Z".replace(" Z", "Z"),
+      "2026-11-02 7:37:05 PM UTC",
     );
     expect(formatInstant("2026-11-02T19:37:05.000Z", "local", "24h")).toMatch(/[+-]\d\d:\d\d$/);
     expect(offsetLabel(-300)).toBe("UTC-05:00");
@@ -114,5 +114,43 @@ describe("shortcuts", () => {
     expect(keyToAction(ev("f", m))).toBe("find");
     expect(keyToAction(ev("e", m))).toBe("export");
     expect(keyToAction(ev("n"))).toBeNull();
+  });
+});
+
+describe("regressions from hands-on testing", () => {
+  const ctx = {
+    type: "ham" as const,
+    preset,
+    profile: {
+      id: "p",
+      name: "Op",
+      callsign: "KJ4MRC",
+      license_class: "",
+      organization: "",
+      position: "",
+      grid: "EM73",
+      active: true,
+      created_at_utc: "",
+      updated_at_utc: "",
+    },
+    incident: { incident_name: "", incident_number: "", operational_period: "", agency: "", location: "" },
+  };
+  it("traffic entries in a HAM logbook never store QSO fields from profile prefills", () => {
+    const f = newForm(ctx);
+    f.kind = "traffic";
+    f.subject = "Net check-in";
+    expect(f.ham.station_call).toBe("KJ4MRC");
+    expect(toEntryInput(f, "ham", "utc").ham).toBeNull();
+  });
+  it("flags a frequency outside the chosen band before saving", async () => {
+    const { validateForm } = await import("../lib/entryForm");
+    const f = newForm(ctx);
+    f.subject = "QSO";
+    f.ham.their_call = "W1AW";
+    f.freqText = "14.074";
+    f.ham.band = "40m";
+    expect(validateForm(f, "ham")["ham.band"]).toMatch(/outside the 40m band/);
+    f.ham.band = "20m";
+    expect(validateForm(f, "ham")["ham.band"]).toBeUndefined();
   });
 });

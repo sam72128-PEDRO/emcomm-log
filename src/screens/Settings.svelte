@@ -245,6 +245,17 @@
     if (section === "backups" && app.settings?.backup.destination) loadBackups();
   });
   async function discardDraft(d: T.Draft) {
+    const a = await confirm.ask({
+      title: "Discard draft?",
+      message:
+        "This unfinished entry will be permanently removed from the recovery area. It was never part of the logbook.",
+      buttons: [
+        { id: "discard", label: "Discard", tone: "danger" },
+        { id: "cancel", label: "Keep it", tone: "primary" },
+      ],
+      cancelId: "cancel",
+    });
+    if (a.id !== "discard") return;
     await api.deleteDraft(d.logbook_id, d.draft_id).catch(() => {});
     await loadDrafts();
   }

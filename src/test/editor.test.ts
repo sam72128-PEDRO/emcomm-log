@@ -131,3 +131,43 @@ describe("Quick Entry editor", () => {
     app.modalDepth = 0;
   });
 });
+
+describe("dialogs and save routing", () => {
+  it("Ctrl/Cmd+Enter inside a dialog confirms the dialog instead of saving the form behind it", async () => {
+    const { confirm } = await import("../lib/confirm.svelte");
+    const ConfirmHost = (await import("../components/ConfirmHost.svelte")).default;
+    render(EntryEditor, { mode: "new" });
+    render(ConfirmHost);
+    await fireEvent.input(screen.getByLabelText(/Summary/), { target: { value: "behind the dialog" } });
+    const answer = confirm.ask({
+      title: "Save as template",
+      message: "name?",
+      input: { label: "Template name", value: "T1" },
+      buttons: [
+        { id: "ok", label: "Save template", tone: "primary" },
+        { id: "cancel", label: "Cancel" },
+      ],
+      cancelId: "cancel",
+    });
+    await flush();
+    await runAction("save_entry");
+    const r = await answer;
+    expect(r.id).toBe("ok");
+    expect(saves()).toHaveLength(0);
+  });
+
+  it("a validation rejection is 'not saved', not a storage failure", async () => {
+    handler = (cmd) => {
+      if (cmd === "save_entry") throw { code: "VALIDATION", message: "Bad grid", field: "subject" };
+      if (cmd === "save_draft") return "2026-11-02T19:00:00.000Z";
+      return null;
+    };
+    render(EntryEditor, { mode: "new" });
+    await fireEvent.input(screen.getByLabelText(/Summary/), { target: { value: "x" } });
+    await fireEvent.click(screen.getByRole("button", { name: /Save Entry/ }));
+    await flush();
+    expect(app.saveStatus.kind).toBe("invalid");
+    expect(app.storageBlocked).toBeNull();
+    expect(screen.getByText("Not saved:")).toBeInTheDocument();
+  });
+});

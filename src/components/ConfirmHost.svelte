@@ -23,10 +23,10 @@
       </div>
     {/if}
     {#snippet footer()}
-      {#each c.buttons as b, i (b.id)}
+      {#each c.buttons as b (b.id)}
         <button
           class={b.tone === "primary" ? "primary" : b.tone === "danger" ? "danger" : ""}
-          data-autofocus={!c.input && i === 0 ? true : undefined}
+          data-autofocus={!c.input && b.id === c.cancelId ? true : undefined}
           onclick={() => confirm.answer(b.id, value)}>{b.label}</button
         >
       {/each}

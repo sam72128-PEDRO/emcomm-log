@@ -20,7 +20,7 @@ export const SHORTCUTS: { keys: string; action: string; label: string }[] = [
   { keys: ",", action: "settings", label: "Settings" },
   { keys: "Shift+O", action: "logbooks", label: "Logbooks" },
   { keys: "Shift+B", action: "backup_now", label: "Back Up Now" },
-  { keys: "/", action: "help_shortcuts", label: "Keyboard shortcuts" },
+  { keys: "/", action: "help_shortcuts", label: "Keyboard shortcuts (or F1)" },
 ];
 
 const BOOK_ACTIONS = new Set([
@@ -68,10 +68,27 @@ export async function runAction(id: string, source: "menu" | "key" = "key"): Pro
       app.editorRequest = { mode: "new" };
       await nav("quick");
       return;
-    case "save_entry":
-      if (app.saveHandler) app.saveHandler();
+    case "save_entry": {
+      // Inside a dialog, Ctrl/Cmd+Enter confirms that dialog; it must never save a form behind it.
+      const dialogs = document.querySelectorAll<HTMLElement>("[role=dialog]");
+      const top = dialogs[dialogs.length - 1];
+      const ed = app.topEditor;
+      if (top) {
+        const edRoot = ed?.root();
+        if (ed && edRoot && top.contains(edRoot)) ed.save();
+        else {
+          const primary = top.querySelector<HTMLButtonElement>(
+            "footer button.primary:not(:disabled), footer button.success:not(:disabled)",
+          );
+          if (primary) primary.click();
+          else app.announce("Nothing to save in this dialog", true);
+        }
+        return;
+      }
+      if (ed) ed.save();
       else app.announce("No entry form is open to save", true);
       return;
+    }
     case "find":
       await nav("log");
       setTimeout(() => app.focusSearch?.(), 30);
@@ -148,15 +165,23 @@ export async function backupNow() {
  */
 export async function closeActiveLogbook(): Promise<boolean> {
   if (!app.active) return true;
-  if (app.flushDraft) await app.flushDraft();
-  if (app.editorDirty) {
+  await app.flushDrafts();
+  // Unsaved text may be in an open form or only in drafts left from earlier (after navigating away).
+  const drafts = await api.listDrafts().catch(() => []);
+  if (app.editorDirty || drafts.length > 0) {
+    const n = Math.max(drafts.length, app.editorDirty ? 1 : 0);
     const r = await confirm.ask({
-      title: "Unsaved entry",
-      message: "An entry you were typing has not been saved to the logbook.",
+      title: n === 1 ? "Unsaved entry" : `${n} unsaved entries`,
+      message:
+        n === 1
+          ? "An entry you were typing has not been saved to the logbook."
+          : `${n} entries you were typing have not been saved to the logbook.`,
       detail:
         app.draftStatus.kind === "failed"
           ? `Its recovery draft could NOT be stored: ${app.draftStatus.error.message}. Closing now loses it.`
-          : "It is kept as a recoverable draft and will be offered the next time you open this logbook.",
+          : n === 1
+            ? "It is kept as a recoverable draft and offered the next time you open this logbook."
+            : "They are kept as recoverable drafts and offered the next time you open this logbook.",
       buttons: [
         { id: "cancel", label: "Go back", tone: "primary" },
         {
@@ -199,9 +224,6 @@ export async function closeActiveLogbook(): Promise<boolean> {
       break;
     }
   }
-  app.editorDirty = false;
-  app.saveHandler = null;
-  app.flushDraft = null;
   app.setActive(null);
   app.saveStatus = { kind: "idle" };
   app.draftStatus = { kind: "idle" };
@@ -228,6 +250,7 @@ export async function handleCloseRequested() {
 
 /** Map a keydown to an action id (Ctrl on Windows/Linux, Cmd on macOS). */
 export function keyToAction(e: KeyboardEvent): string | null {
+  if (e.key === "F1" && !e.metaKey && !e.ctrlKey && !e.altKey) return "help_shortcuts";
   const mod = isMac() ? e.metaKey : e.ctrlKey;
   if (!mod || e.altKey) return null;
   const k = e.key;

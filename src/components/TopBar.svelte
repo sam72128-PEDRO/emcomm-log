@@ -42,34 +42,33 @@
       <span class="pill closed"><BookX size={16} aria-hidden="true" />NO LOGBOOK OPEN</span>
     {/if}
     {#if app.active}
+      {@const t = (iso: string) => formatInstant(iso, app.zone, app.clock, { date: false })}
       {#if app.saveStatus.kind === "saving"}
         <span class="pill saving"><LoaderCircle size={16} class="spin" aria-hidden="true" />SAVING…</span>
-      {:else if app.saveStatus.kind === "saved"}
-        <span class="pill saved" title="Committed to the live logbook database"
-          ><CircleCheck size={16} aria-hidden="true" />{app.saveStatus.edit ? "CHANGES SAVED" : "ENTRY SAVED"} #{app
-            .saveStatus.seq}
-          · {formatInstant(app.saveStatus.at, app.zone, app.clock, { date: false, zone: false })}</span
-        >
       {:else if app.saveStatus.kind === "failed"}
         <span class="pill failed" title={app.saveStatus.error.message}
           ><CircleAlert size={16} aria-hidden="true" />SAVE FAILED</span
         >
-      {/if}
-      {#if app.draftStatus.kind === "saved"}
-        <span class="pill draft" title="Unfinished entry stored in local recovery area — not a logbook entry"
-          ><FileClock size={16} aria-hidden="true" />DRAFT SAVED {formatInstant(
-            app.draftStatus.at,
-            app.zone,
-            app.clock,
-            {
-              date: false,
-              zone: false,
-            },
-          )}</span
+      {:else if app.saveStatus.kind === "invalid"}
+        <span class="pill invalid" title={app.saveStatus.message}
+          ><CircleAlert size={16} aria-hidden="true" />NOT SAVED · CHECK FIELDS</span
         >
       {:else if app.draftStatus.kind === "failed"}
         <span class="pill failed" title={app.draftStatus.error.message}
           ><CircleAlert size={16} aria-hidden="true" />DRAFT SAVE FAILED</span
+        >
+      {:else if app.editorDirty && app.draftStatus.kind === "saved"}
+        <span
+          class="pill draft"
+          title="Unfinished entry stored in the local recovery area — not a logbook entry yet"
+          ><FileClock size={16} aria-hidden="true" />DRAFT SAVED {t(app.draftStatus.at)}</span
+        >
+      {:else if app.editorDirty}
+        <span class="pill draft"><FileClock size={16} aria-hidden="true" />UNSAVED ENTRY</span>
+      {:else if app.saveStatus.kind === "saved"}
+        <span class="pill saved" title="Committed to the live logbook database"
+          ><CircleCheck size={16} aria-hidden="true" />{app.saveStatus.edit ? "CHANGES SAVED" : "ENTRY SAVED"} #{app
+            .saveStatus.seq} · {t(app.saveStatus.at)}</span
         >
       {/if}
     {/if}
@@ -118,9 +117,9 @@
     display: flex;
     gap: 10px;
     justify-content: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     overflow: hidden;
-    max-height: 60px;
+    min-width: 0;
     align-items: center;
   }
   .offline {
@@ -151,7 +150,8 @@
     border-color: var(--danger);
     background: var(--danger-bg);
   }
-  .draft {
+  .draft,
+  .invalid {
     color: var(--warn);
     border-color: var(--warn);
   }

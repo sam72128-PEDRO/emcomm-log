@@ -29,7 +29,8 @@
     phase = "Validating package…";
     try {
       preview = await api.previewPackage(p);
-      name = preview.name;
+      // Default to a name that will not collide with the original if it is in the same folder.
+      name = `${preview.name} (imported ${new Date().toISOString().slice(0, 10)})`.slice(0, 120);
     } catch (e) {
       err = toAppError(e).message;
     } finally {
@@ -86,7 +87,10 @@
   {#if phase}<p class="muted" aria-live="polite">{phase}</p>{/if}
   {#if err}<div class="banner error" role="alert">
       <CircleAlert size={18} class="icon" />
-      <div><strong>Package rejected.</strong> {err}<br />No logbook was created.</div>
+      <div>
+        <strong>{preview ? "Not imported." : "Package rejected."}</strong>
+        {err}<br />No logbook was created.
+      </div>
     </div>{/if}
   {#if preview}
     <div class="banner ok">
