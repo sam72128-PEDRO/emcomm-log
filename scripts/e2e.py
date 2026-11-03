@@ -138,6 +138,38 @@ def native_menu(menu: str, item: str, downs: int) -> bool:
     return False
 
 
+def os_accessibility_tree() -> list[dict]:
+    """Accessibility tree exposed to screen readers by the OS: UI Automation on Windows
+    (Narrator/NVDA), AT-SPI on Linux (Orca)."""
+    system = platform.system()
+    try:
+        if system == "Windows":
+            from pywinauto import Desktop
+
+            win = Desktop(backend="uia").window(title_re="EMCOMM LOG.*")
+            return [
+                {"role": e.element_info.control_type or "", "name": e.element_info.name or ""}
+                for e in win.descendants()
+            ]
+        if system == "Linux":
+            r = subprocess.run(["/usr/bin/python3", str(Path(__file__).with_name("atspi_dump.py"))], capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                print(r.stderr[-2000:], flush=True)
+            return json.loads(r.stdout or "[]")
+    except Exception as e:  # noqa: BLE001
+        print(f"accessibility tree error: {e}", flush=True)
+    return []
+
+
+def check_screen_reader_tree(expect: list[tuple[str, str]]) -> None:
+    tree = os_accessibility_tree()
+    (WORK / f"a11y-tree-{platform.system().lower()}.json").write_text(json.dumps(tree, indent=1))
+    check("A14 OS accessibility tree exposed to screen readers", len(tree) > 20, f"{len(tree)} nodes")
+    for role_hint, name in expect:
+        found = any(name.lower() in n["name"].lower() and role_hint.lower() in n["role"].lower() for n in tree)
+        check(f"A14 screen reader sees {role_hint} '{name}'", found)
+
+
 # ---------------- Phase A: fresh install, first-run wizard (A01) ----------------
 d = session()
 check("A01 wizard shown on first launch", wait_text(d, "Welcome to EMCOMM LOG"))
@@ -219,6 +251,15 @@ order = []
 for _ in range(4):
     ActionChains(d).send_keys(Keys.TAB).perform()
     order.append(active_id(d))
+check_screen_reader_tree(
+    [
+        ("edit" if platform.system() == "Windows" else "entry", "Summary"),
+        ("edit" if platform.system() == "Windows" else "entry", "From / Station"),
+        ("button", "Save Entry"),
+        ("button", "Attach file"),
+        ("combo", "Priority"),
+    ]
+)
 check("A14 Tab order From→To→Channel→Handling→Summary", order == ["ed-new-to", "ed-new-channel", "ed-new-handling", "ed-new-subject"], str(order))
 d.find_element(By.ID, "ed-new-subject").send_keys("Bridge on CR-12 blocked")
 chord(d, Keys.ENTER)

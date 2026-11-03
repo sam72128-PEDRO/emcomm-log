@@ -179,10 +179,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool webkit2gtk-driver ./installers/deb/*.deb
+          sudo apt-get install -y xvfb xdotool webkit2gtk-driver at-spi2-core python3-pyatspi dbus-x11 ./installers/deb/*.deb
           mkdir -p e2e/data
           export EMCOMM_DATA_DIR="$PWD/e2e/data"
-          xvfb-run -a -s "-screen 0 1440x900x24" bash -c 'tauri-driver > e2e/driver.log 2>&1 & sleep 3; python scripts/e2e.py /usr/bin/emcomm-log "$EMCOMM_DATA_DIR" "$PWD/e2e"'
+          export NO_AT_BRIDGE=0 GTK_A11Y=atspi
+          # Session bus + AT-SPI registry so the accessibility tree is exported as for Orca.
+          dbus-run-session -- xvfb-run -a -s "-screen 0 1440x900x24" bash -c '/usr/libexec/at-spi-bus-launcher --launch-immediately & sleep 2; gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null; tauri-driver > e2e/driver.log 2>&1 & sleep 3; python scripts/e2e.py /usr/bin/emcomm-log "$EMCOMM_DATA_DIR" "$PWD/e2e"'
 
       - name: Windows - install .msi and run E2E
         if: runner.os == 'Windows'
