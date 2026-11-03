@@ -1,8 +1,8 @@
-# EMCOMM LOG 2.0.0. Windows/Linux: CI run 41700187780 (commit b283bda), native runners, install/E2E-tested in run 41704506511. Unsigned.
-96a56814baf1c58f1c781148a828c1d3e119b5ae3a90e2025ba605e96bd2f4f7  ubuntu-22.04/deb/EMCOMM LOG_2.0.0_amd64.deb
-6bd55e8c8231eddbf6fcb2e6444b7442017d038892f581ce0b6763c745ffbbc4  ubuntu-22.04/appimage/EMCOMM LOG_2.0.0_amd64.AppImage
-e148e84dda77f041626170668649b7a6c3ea35981576b8f65871746bc243cbe0  ubuntu-22.04/rpm/EMCOMM LOG-2.0.0-1.x86_64.rpm
-3cc02a972516a900c4c08061d9e9b0616b3f8ce5e9a2aa88db5704ade4f1fc42  windows-latest/msi/EMCOMM LOG_2.0.0_x64_en-US.msi
-823123d0c45f6827e6955900484fdf94301d9c8b5c980e6381bd493678ec4d4a  windows-latest/nsis/EMCOMM LOG_2.0.0_x64-setup.exe
-# macOS arm64: local build of commit b283bda on macOS 14.6.1. Unsigned. Smoke-tested with scripts/mac_smoke.sh.
-155c0021a4dc3536a0944827dbad1f2994d13ff276f791a1af40a21018ec4055  EMCOMM LOG_2.0.0_aarch64.dmg
+# EMCOMM LOG 2.0.0 (commit 8655fc8). Windows/Linux: CI run 41714457246, install/E2E-tested in run 41718785842 (60/60 on each). Unsigned.
+ec4369eaaa1e5466b8c9d2be860bed9ce4864d28df7022d0242253cf6c87cae3  ubuntu-22.04/deb/EMCOMM LOG_2.0.0_amd64.deb
+b9ef68ffc9565652b717379c527bb51244f103fb6de3d9cab610f90b1041fdef  ubuntu-22.04/appimage/EMCOMM LOG_2.0.0_amd64.AppImage
+82c4cd8aca354ac14fae9e52bc9250c48193aa3caf2b90bf873dc216f279abbd  ubuntu-22.04/rpm/EMCOMM LOG-2.0.0-1.x86_64.rpm
+fe779b17bd026d54430cd3b14db8f8c9c695b0c4145ebfe1913da22af1f83298  windows-latest/msi/EMCOMM LOG_2.0.0_x64_en-US.msi
+3add6e75387132d069568011a1776345070bfe69b52c8a4742ed6dc3c70473d7  windows-latest/nsis/EMCOMM LOG_2.0.0_x64-setup.exe
+# macOS arm64: local build of 8655fc8 on macOS 14.6.1. Unsigned. Smoke-tested with scripts/mac_smoke.sh.
+8b7ce06d5730fe6506551b80bd8d1ce5c0d6af2851d0928e4b088f343f71d454  EMCOMM LOG_2.0.0_aarch64.dmg

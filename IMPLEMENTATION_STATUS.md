@@ -44,10 +44,10 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 ## V2 (2.0.0) — docs/EMCOMM_LOG_V2_Technical_Specification.md
 
 Developed on macOS (Phases 1–4); Phase 5 re-enabled Windows/Linux CI. Final run on all three:
-CI [41700187780](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41700187780) green on Windows
+CI [41714457246](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41714457246) green on Windows
 and Linux, including the new independent ICS form validation (`scripts/validate_forms.py`, pypdf) and
 Linux⇄Windows `.emlog` round trips; installed-app E2E
-[41704506511](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41704506511) **60/60 on Windows
+[41718785842](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41718785842) **60/60 on Windows
 (`.msi`) and 60/60 on Linux (`.deb`)** — the V1 checks (A01, A03, A07, A14) plus periods, channel plan,
 PERIOD chip and Channel-field suggestion, axe on 12 screens/dialogs; installer smoke for all Windows/Linux
 formats offline. macOS: local 2.0.0 `.dmg` passes `scripts/mac_smoke.sh`, all core/frontend tests pass, and
