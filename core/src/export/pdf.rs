@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-static FONT_DATA: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
+pub(crate) static FONT_DATA: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
 
 const PAGE_W: f32 = 792.0;
 const PAGE_H: f32 = 612.0;
@@ -23,30 +23,30 @@ const FONT_SIZE: f32 = 8.0;
 const LINE_H: f32 = 10.0;
 const CELL_PAD: f32 = 3.0;
 
-struct FontMetrics {
-    face: ttf_parser::Face<'static>,
-    upem: f32,
+pub(crate) struct FontMetrics {
+    pub(crate) face: ttf_parser::Face<'static>,
+    pub(crate) upem: f32,
 }
 
 impl FontMetrics {
-    fn load() -> AppResult<FontMetrics> {
+    pub(crate) fn load() -> AppResult<FontMetrics> {
         let face = ttf_parser::Face::parse(FONT_DATA, 0).map_err(|e| AppError::internal(format!("Embedded font invalid: {e}")))?;
         let upem = face.units_per_em() as f32;
         Ok(FontMetrics { face, upem })
     }
-    fn gid(&self, c: char) -> u16 {
+    pub(crate) fn gid(&self, c: char) -> u16 {
         self.face.glyph_index(c).map(|g| g.0).unwrap_or(0)
     }
-    fn advance(&self, gid: u16) -> u16 {
+    pub(crate) fn advance(&self, gid: u16) -> u16 {
         self.face.glyph_hor_advance(ttf_parser::GlyphId(gid)).unwrap_or(0)
     }
-    fn width(&self, s: &str, size: f32) -> f32 {
+    pub(crate) fn width(&self, s: &str, size: f32) -> f32 {
         s.chars().map(|c| self.advance(self.gid(c)) as f32).sum::<f32>() * size / self.upem
     }
 }
 
 /// Wrap text to a width. Never drops characters: overlong words are broken by character.
-fn wrap(fm: &FontMetrics, text: &str, width: f32, size: f32) -> Vec<String> {
+pub(crate) fn wrap(fm: &FontMetrics, text: &str, width: f32, size: f32) -> Vec<String> {
     let mut lines = Vec::new();
     for para in text.replace('\t', "    ").split('\n') {
         let mut cur = String::new();
@@ -326,7 +326,7 @@ impl<'a> Layout<'a> {
     }
 }
 
-fn utf16_hex(s: &str) -> String {
+pub(crate) fn utf16_hex(s: &str) -> String {
     let mut h = String::from("FEFF");
     for u in s.encode_utf16() {
         h.push_str(&format!("{u:04X}"));
