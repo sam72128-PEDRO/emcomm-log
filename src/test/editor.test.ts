@@ -120,6 +120,23 @@ describe("Quick Entry editor", () => {
     expect(saves()).toHaveLength(1);
   });
 
+  it("two quick Ctrl/Cmd+Enter presses both run; only a menu echo of a key press is dropped", async () => {
+    handler = (cmd) =>
+      cmd === "save_entry" ? { entry: savedEntry(1, "x"), duplicate: false, unchanged: false } : null;
+    render(EntryEditor, { mode: "new" });
+    await fireEvent.input(screen.getByLabelText(/Summary/), { target: { value: "first" } });
+    await runAction("save_entry", "key");
+    await flush();
+    await runAction("save_entry", "menu"); // accelerator echo of the same press
+    await flush();
+    expect(saves()).toHaveLength(1);
+    // The form was reset, so the next press validates the empty summary instead of being ignored.
+    await runAction("save_entry", "key");
+    await flush();
+    expect(saves()).toHaveLength(1);
+    expect(app.assertiveMessage).toMatch(/Summary is required/);
+  });
+
   it("ignores incompatible shortcuts while a dialog is open", async () => {
     app.modalDepth = 1;
     app.screen = "dashboard";
