@@ -28,7 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        # The macOS .dmg is smoke-tested locally: scripts/mac_smoke.sh
+        os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download installers from CI run
@@ -120,25 +121,6 @@ jobs:
           $exe2 = Get-ChildItem $env:LOCALAPPDATA, "C:\Program Files" -Recurse -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'EMCOMM' -and $_.Name -notmatch 'unins' } | Select-Object -First 1
           if (-not $exe2) { throw "NSIS executable not found" }
           Test-App $exe2.FullName "nsis"
-
-      - name: macOS .dmg - install, run with all IP traffic denied
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          dmg=$(find installers -name '*.dmg' | head -1)
-          mnt=$(hdiutil attach "$dmg" -nobrowse -readonly | tail -1 | awk -F'\t' '{print $NF}')
-          cp -R "$mnt/EMCOMM LOG.app" /Applications/
-          hdiutil detach "$mnt"
-          mkdir -p out data
-          # Seatbelt profile: everything allowed except IP networking (local IPC still works).
-          EMCOMM_DATA_DIR="$PWD/data" sandbox-exec -p '(version 1)(allow default)(deny network-outbound (remote ip))(deny network-inbound (local ip))' \
-            "/Applications/EMCOMM LOG.app/Contents/MacOS/emcomm-log" > out/dmg.log 2>&1 &
-          pid=$!
-          sleep 20
-          screencapture -x out/dmg.png || true
-          kill -0 $pid && echo "app running with IP networking denied" || { cat out/dmg.log; exit 1; }
-          kill $pid
-          test -f data/app.sqlite
 
       - uses: actions/upload-artifact@v4
         if: always()

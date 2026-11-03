@@ -1,24 +1,25 @@
 # Code signing (optional, credential-gated)
 
-CI builds unsigned installers until signing credentials are added as **repository secrets**
-(GitHub → repo → Settings → Secrets and variables → Actions → New repository secret). Once present,
-the next CI run signs automatically and the *Verify signatures* step fails the build if a signature is
-not valid. Nothing else needs to change.
+Windows installers are built in CI and are unsigned until a certificate is added as **repository
+secrets** (GitHub → repo → Settings → Secrets and variables → Actions → New repository secret). Once
+present, the next CI run signs automatically and the *Verify signatures* step fails the build if a
+signature is not valid. The macOS build is made and signed locally (below).
 
-## macOS (Developer ID + notarization)
+## macOS (Developer ID + notarization) — local
 
-Requires an Apple Developer Program membership.
+The macOS build is made on a Mac, not in CI, so it is signed there. Requires an Apple Developer
+Program membership and the *Developer ID Application* certificate in your login keychain. Tauri signs
+and notarizes during the build when these are set in the shell:
 
-| Secret | Value |
-|---|---|
-| `APPLE_CERTIFICATE` | Base64 of your *Developer ID Application* certificate exported as `.p12` (`base64 -i cert.p12 \| pbcopy`) |
-| `APPLE_CERTIFICATE_PASSWORD` | Password you set when exporting the `.p12` |
-| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` (`security find-identity -v -p codesigning`) |
-| `APPLE_ID` | Apple ID email used for notarization |
-| `APPLE_PASSWORD` | An app-specific password for that Apple ID (appleid.apple.com → Sign-In and Security) |
-| `APPLE_TEAM_ID` | Your 10-character Team ID |
-
-Verification in CI: `codesign --verify --deep --strict` and `spctl --assess` (Gatekeeper).
+```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"  # security find-identity -v -p codesigning
+export APPLE_ID="you@example.com"           # Apple ID used for notarization
+export APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx" # app-specific password (appleid.apple.com → Sign-In and Security)
+export APPLE_TEAM_ID="TEAMID"
+npx tauri build
+codesign --verify --deep --strict --verbose=2 "target/release/bundle/macos/EMCOMM LOG.app"
+spctl --assess --type execute --verbose "target/release/bundle/macos/EMCOMM LOG.app"
+```
 
 ## Windows (Authenticode)
 

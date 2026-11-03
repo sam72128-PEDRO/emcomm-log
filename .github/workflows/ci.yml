@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        # macOS is built and tested locally on the Mac (see README "Building on macOS").
+        os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       HAS_WIN_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
@@ -70,31 +71,16 @@ jobs:
       - name: Build installers
         shell: bash
         env:
-          # macOS signing + notarization (Tauri reads these when present).
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_SIGN_CONFIG: ${{ steps.wincert.outputs.config }}
         run: |
-          # Unconfigured secrets arrive as empty strings; Tauri would treat them as set.
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!v}" ]; then unset "$v"; fi
-          done
           if [ -n "$WIN_SIGN_CONFIG" ]; then npx tauri build --config "$WIN_SIGN_CONFIG"; else npx tauri build; fi
       - name: Verify signatures (when signing is configured)
-        if: runner.os != 'Linux'
+        if: runner.os == 'Windows'
         shell: bash
         env:
-          HAS_APPLE: ${{ secrets.APPLE_CERTIFICATE != '' }}
           HAS_WIN: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
         run: |
-          if [ "$RUNNER_OS" = "macOS" ] && [ "$HAS_APPLE" = "true" ]; then
-            codesign --verify --deep --strict --verbose=2 "target/release/bundle/macos/EMCOMM LOG.app"
-            spctl --assess --type execute --verbose "target/release/bundle/macos/EMCOMM LOG.app"
-          elif [ "$RUNNER_OS" = "Windows" ] && [ "$HAS_WIN" = "true" ]; then
+          if [ "$HAS_WIN" = "true" ]; then
             powershell -Command "Get-ChildItem target/release/bundle -Recurse -Include *.msi,*-setup.exe | ForEach-Object { \$s = Get-AuthenticodeSignature \$_.FullName; Write-Host \$_.Name \$s.Status; if (\$s.Status -ne 'Valid') { exit 1 } }"
           else
             echo "Signing not configured for $RUNNER_OS; installers are unsigned."
@@ -103,14 +89,13 @@ jobs:
         shell: bash
         run: |
           cd target/release/bundle
-          find . -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -print0 \
+          find . -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -print0 \
             | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: emcomm-log-${{ matrix.os }}
           path: |
-            target/release/bundle/**/*.dmg
             target/release/bundle/**/*.msi
             target/release/bundle/**/*-setup.exe
             target/release/bundle/**/*.deb
@@ -126,8 +111,7 @@ jobs:
       matrix:
         pair:
           - { export: ubuntu-22.04, import: windows-latest }
-          - { export: windows-latest, import: macos-latest }
-          - { export: macos-latest, import: ubuntu-22.04 }
+          - { export: windows-latest, import: ubuntu-22.04 }
     runs-on: ${{ matrix.pair.import }}
     steps:
       - uses: actions/checkout@v4
@@ -153,7 +137,7 @@ jobs:
     name: produce .emlog on ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
