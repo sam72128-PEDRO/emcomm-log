@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Linux system packages (Tauri prerequisites)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev build-essential file
+      - run: npm ci
+      - name: Frontend format, lint, typecheck, tests
+        run: |
+          npm run format:check
+          npm run lint
+          npm run check
+          npm test
+      - name: Rust format and clippy
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust unit and integration tests (real SQLite, fault injection, crash tests)
+        run: cargo test --workspace
+      - name: Export fixtures validated by independent parsers
+        shell: bash
+        run: |
+          python -m pip install -r scripts/requirements-validate.txt
+          EMCOMM_FIXTURE_OUT="$RUNNER_TEMP/fixtures" cargo test -p emcomm-core --test exports write_fixture
+          python scripts/validate_exports.py "$RUNNER_TEMP/fixtures"
+      - name: Build installers
+        run: npx tauri build
+      - name: Checksums
+        shell: bash
+        run: |
+          cd target/release/bundle
+          find . -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -print0 \
+            | xargs -0 shasum -a 256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emcomm-log-${{ matrix.os }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*-setup.exe
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.rpm
+            target/release/bundle/SHA256SUMS.txt
+
+  package-round-trip:
+    name: .emlog cross-OS round trip
+    needs: emlog-fixtures
+    strategy:
+      fail-fast: false
+      matrix:
+        pair:
+          - { export: ubuntu-22.04, import: windows-latest }
+          - { export: windows-latest, import: macos-latest }
+          - { export: macos-latest, import: ubuntu-22.04 }
+    runs-on: ${{ matrix.pair.import }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux system packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev
+      - uses: actions/download-artifact@v4
+        with:
+          name: emlog-fixture-${{ matrix.pair.export }}
+          path: ${{ runner.temp }}/in
+        continue-on-error: true
+      - name: Import package produced on ${{ matrix.pair.export }}
+        shell: bash
+        run: |
+          if ls "$RUNNER_TEMP/in"/*.emlog >/dev/null 2>&1; then
+            EMCOMM_IMPORT_PACKAGE="$(ls "$RUNNER_TEMP"/in/*.emlog | head -1)" cargo test -p emcomm-core --test crossos -- --ignored --nocapture
+          else
+            echo "No package artifact from ${{ matrix.pair.export }} yet" && exit 1
+          fi
+
+  emlog-fixtures:
+    name: produce .emlog on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Write package with Unicode names, attachments, revisions
+        shell: bash
+        run: EMCOMM_EXPORT_PACKAGE="$RUNNER_TEMP/out" cargo test -p emcomm-core --test crossos -- --ignored --nocapture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emlog-fixture-${{ matrix.os }}
+          path: ${{ runner.temp }}/out/*.emlog

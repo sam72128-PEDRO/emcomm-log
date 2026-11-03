@@ -9,7 +9,7 @@ use emcomm_core::faults::{self, Fault};
 use emcomm_core::logbook::Logbook;
 use emcomm_core::models::*;
 use emcomm_core::package::{export_package, import_package, preview_package};
-use emcomm_core::snapshot::{self, live_data_marker, BACKUP_FORMAT};
+use emcomm_core::snapshot::{self, BACKUP_FORMAT, live_data_marker};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -31,7 +31,11 @@ fn rich_book(parent: &Path, ty: LogbookType, name: &str) -> (PathBuf, Vec<Entry>
     let src = parent.join("Fotó – 現場.jpg");
     fs::write(&src, "pretend jpeg ✓".repeat(50)).unwrap();
     let staged = lb.stage_attachment(&src).unwrap();
-    let mut first = if ty == LogbookType::Ham { qso("W1AW", "2026-11-02T19:00:00Z", Some(14_074_000), "20m", "FT8") } else { input("Shelter capacity 68/100") };
+    let mut first = if ty == LogbookType::Ham {
+        qso("W1AW", "2026-11-02T19:00:00Z", Some(14_074_000), "20m", "FT8")
+    } else {
+        input("Shelter capacity 68/100")
+    };
     if ty == LogbookType::Emergency {
         first.kind = EntryKind::Message;
         first.handling = Some(Handling::AwaitingAck);
@@ -298,9 +302,13 @@ fn a10_malformed_packages_are_rejected_without_leftovers() {
     let files = read_zip(&good);
     let manifest: serde_json::Value = serde_json::from_slice(&files.iter().find(|(n, _)| n == "manifest.json").unwrap().1).unwrap();
     let with_manifest = |m: &serde_json::Value| -> Vec<(String, Vec<u8>)> {
-        files.iter().map(|(n, b)| if n == "manifest.json" { (n.clone(), serde_json::to_vec(m).unwrap()) } else { (n.clone(), b.clone()) }).collect()
+        files
+            .iter()
+            .map(|(n, b)| if n == "manifest.json" { (n.clone(), serde_json::to_vec(m).unwrap()) } else { (n.clone(), b.clone()) })
+            .collect()
     };
-    let mut cases: Vec<(&str, Vec<(String, Vec<u8>)>, ErrorCode)> = Vec::new();
+    type Case<'a> = (&'a str, Vec<(String, Vec<u8>)>, ErrorCode);
+    let mut cases: Vec<Case> = Vec::new();
     let mut traversal = files.clone();
     traversal.push(("../evil.txt".into(), b"x".to_vec()));
     cases.push(("traversal", traversal, ErrorCode::InvalidPackage));
@@ -329,7 +337,11 @@ fn a10_malformed_packages_are_rejected_without_leftovers() {
     let mut m = manifest.clone();
     m["files"][0]["sha256"] = serde_json::json!("0".repeat(64));
     cases.push(("hash mismatch", with_manifest(&m), ErrorCode::Integrity));
-    cases.push(("malformed manifest", files.iter().map(|(n, b)| if n == "manifest.json" { (n.clone(), b"{not json".to_vec()) } else { (n.clone(), b.clone()) }).collect(), ErrorCode::InvalidPackage));
+    cases.push((
+        "malformed manifest",
+        files.iter().map(|(n, b)| if n == "manifest.json" { (n.clone(), b"{not json".to_vec()) } else { (n.clone(), b.clone()) }).collect(),
+        ErrorCode::InvalidPackage,
+    ));
     let mut not_sqlite = files.clone();
     for (n, b) in not_sqlite.iter_mut() {
         if n == "logbook.sqlite" {
@@ -343,7 +355,8 @@ fn a10_malformed_packages_are_rejected_without_leftovers() {
             f["sha256"] = serde_json::json!(emcomm_core::fsutil::sha256_bytes(b"this is not a database"));
         }
     }
-    let not_sqlite: Vec<_> = not_sqlite.into_iter().map(|(n, b)| if n == "manifest.json" { (n, serde_json::to_vec(&m).unwrap()) } else { (n, b) }).collect();
+    let not_sqlite: Vec<_> =
+        not_sqlite.into_iter().map(|(n, b)| if n == "manifest.json" { (n, serde_json::to_vec(&m).unwrap()) } else { (n, b) }).collect();
     cases.push(("invalid sqlite", not_sqlite, ErrorCode::InvalidPackage));
 
     for (label, contents, code) in cases {

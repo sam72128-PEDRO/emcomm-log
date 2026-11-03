@@ -1,6 +1,6 @@
 //! TXT: UTF-8 human-readable chronological log with full message text.
 
-use super::{detail_lines, heading_line, ReportContext};
+use super::{ReportContext, detail_lines, heading_line};
 use crate::entries::for_each_entry;
 use crate::error::AppResult;
 use crate::models::EntryQuery;
@@ -22,7 +22,11 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
             "Incident: {}{}{}",
             lb.incident.incident_name,
             if lb.incident.incident_number.is_empty() { String::new() } else { format!(" #{}", lb.incident.incident_number) },
-            if lb.incident.operational_period.is_empty() { String::new() } else { format!("  Op period: {}", lb.incident.operational_period) }
+            if lb.incident.operational_period.is_empty() {
+                String::new()
+            } else {
+                format!("  Op period: {}", lb.incident.operational_period)
+            }
         )?;
     }
     writeln!(w, "Generated: {}", ctx.generated)?;

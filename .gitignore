@@ -5,3 +5,9 @@ target/
 *.log
 .DS_Store
 src-tauri/gen/schemas/
+release/*.dmg
+release/*.msi
+release/*.exe
+release/*.deb
+release/*.AppImage
+release/*.rpm

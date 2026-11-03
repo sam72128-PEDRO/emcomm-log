@@ -1,0 +1,1034 @@
+<script lang="ts">
+  import { onMount, tick, untrack } from "svelte";
+  import {
+    CircleAlert,
+    CircleCheck,
+    Paperclip,
+    X,
+    Save,
+    Eraser,
+    LoaderCircle,
+    FileClock,
+    RefreshCw,
+    BookmarkPlus,
+  } from "@lucide/svelte";
+  import { app } from "../lib/state.svelte";
+  import { api, newId, toAppError } from "../lib/api";
+  import { confirm } from "../lib/confirm.svelte";
+  import { modKey } from "../lib/actions";
+  import type * as T from "../lib/types";
+  import {
+    allowedKinds,
+    applyTemplate,
+    bandForHz,
+    BANDS,
+    DIRECTION_LABEL,
+    formFromEntry,
+    formHasContent,
+    HANDLING_LABEL,
+    KIND_LABEL,
+    MODES,
+    newForm,
+    parseFrequencyHz,
+    PRIORITY_LABEL,
+    toEntryInput,
+    toTemplateDefaults,
+    validateForm,
+  } from "../lib/entryForm";
+  import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
+  import { formatInstant } from "../lib/time";
+  import DateTimeInput from "./DateTimeInput.svelte";
+  import TagInput from "./TagInput.svelte";
+
+  let {
+    mode,
+    entry = null,
+    initial = null,
+    initialDraft = null,
+    templates = [],
+    onsaved,
+    oncancel,
+    ontemplatesaved,
+    compact = false,
+  }: {
+    mode: "new" | "edit";
+    entry?: T.Entry | null;
+    initial?: EntryForm | null;
+    initialDraft?: T.Draft | null;
+    templates?: T.EntryTemplate[];
+    onsaved?: (e: T.Entry) => void;
+    oncancel?: () => void;
+    ontemplatesaved?: () => void;
+    compact?: boolean;
+  } = $props();
+
+  const book = app.active!;
+  const type = book.info.logbook_type;
+  const preset = book.settings.preset;
+  const kinds = allowedKinds(type);
+  const hidden = new Set(preset.hidden_fields);
+  const lbl = (field: string, fallback: string) => preset.field_labels[field] ?? fallback;
+  const ctx = (): FormContext => ({
+    type,
+    preset,
+    profile: app.profile,
+    incident: app.active?.info.incident ?? book.info.incident,
+  });
+
+  function startForm(): EntryForm {
+    if (initialDraft) return (initialDraft.content as { form: EntryForm }).form;
+    if (initial) return initial;
+    if (mode === "edit" && entry) return formFromEntry(entry);
+    return newForm(ctx());
+  }
+
+  let form = $state<EntryForm>(startForm());
+  // The editor is remounted for each new target, so capturing the initial props is intended.
+  let baseline = $state<EntryForm>(
+    untrack(() => (mode === "edit" && entry ? formFromEntry(entry) : newForm(ctx()))),
+  );
+  let errors = $state<FieldErrors>({});
+  let saving = $state(false);
+  let saveError = $state<T.AppError | null>(null);
+  let addAnother = $state(true);
+  let reason = $state("");
+  let draftId = untrack(() => initialDraft?.draft_id) ?? newId();
+  let pending: { id: string; hash: string } | null = null;
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let draftDirty = false;
+  let root: HTMLDivElement | undefined = $state();
+  const fid = (s: string) => `ed-${mode}-${s}`;
+
+  const dirty = $derived(formHasContent(form, baseline) || form.attachments.length > 0);
+  $effect(() => {
+    app.editorDirty = dirty;
+  });
+
+  const freq = $derived(parseFrequencyHz(form.freqText, form.freqUnit));
+  const suggestedBand = $derived(freq.hz ? bandForHz(freq.hz) : null);
+  const blocked = $derived(!!app.storageBlocked || app.readOnly);
+
+  // ---------- drafts ----------
+  function draftMeta(): T.DraftMeta {
+    return {
+      draft_id: draftId,
+      logbook_id: book.info.id,
+      logbook_name: book.info.name,
+      editor: mode,
+      entry_id: entry?.id ?? null,
+      entry_sequence: entry?.sequence_no ?? null,
+      base_revision: entry?.current_revision ?? null,
+    };
+  }
+
+  async function writeDraft() {
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = null;
+    if (!draftDirty) return;
+    draftDirty = false;
+    if (!dirty) {
+      await api.deleteDraft(book.info.id, draftId).catch(() => {});
+      app.draftStatus = { kind: "idle" };
+      return;
+    }
+    app.draftStatus = { kind: "pending" };
+    try {
+      const at = await api.saveDraft(draftMeta(), { form: $state.snapshot(form), mode });
+      app.draftStatus = { kind: "saved", at };
+    } catch (e) {
+      app.draftStatus = { kind: "failed", error: toAppError(e) };
+      app.announce(`Draft Save Failed: ${toAppError(e).message}. Your text is still in the form.`, true);
+    }
+  }
+
+  function changed() {
+    draftDirty = true;
+    if (saveError && !app.storageBlocked) saveError = null;
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = setTimeout(writeDraft, 2000);
+  }
+
+  $effect(() => {
+    // Any edit to the form schedules a draft write ~2 s later.
+    JSON.stringify(form);
+    if (mounted) changed();
+  });
+  let mounted = false;
+
+  onMount(() => {
+    app.saveHandler = () => save();
+    app.flushDraft = async () => {
+      draftDirty = draftDirty || dirty;
+      await writeDraft();
+    };
+    const onUnload = () => {
+      if (dirty) void writeDraft();
+    };
+    window.addEventListener("beforeunload", onUnload);
+    tick().then(() => {
+      mounted = true;
+      focusFirst();
+    });
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      if (draftTimer) {
+        clearTimeout(draftTimer);
+        void writeDraft();
+      }
+      app.saveHandler = null;
+      app.flushDraft = null;
+      app.editorDirty = false;
+    };
+  });
+
+  function focusFirst() {
+    const target = root?.querySelector<HTMLElement>(
+      mode === "edit" ? `#${fid("subject")}` : `#${fid("from")}, #${fid("subject")}`,
+    );
+    target?.focus();
+  }
+
+  // ---------- save ----------
+  async function save() {
+    if (saving) return;
+    if (app.readOnly) {
+      app.announce("This logbook is archived and read-only", true);
+      return;
+    }
+    if (app.storageBlocked) {
+      app.announce(`Save blocked: ${app.storageBlocked.message}`, true);
+      return;
+    }
+    errors = validateForm(form, type);
+    const firstErr = Object.keys(errors)[0];
+    if (firstErr) {
+      app.announce(`Cannot save: ${errors[firstErr]}`, true);
+      await tick();
+      root?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
+      return;
+    }
+    const input = toEntryInput($state.snapshot(form) as EntryForm, type, app.zone);
+    const hash = JSON.stringify(input) + reason;
+    if (!pending || pending.hash !== hash) pending = { id: newId(), hash };
+    saving = true;
+    saveError = null;
+    app.saveStatus = { kind: "saving" };
+    try {
+      const res =
+        mode === "edit" && entry
+          ? await api.saveChanges(entry.id, entry.current_revision, input, reason, pending.id, draftId)
+          : await api.saveEntry(input, pending.id, draftId);
+      pending = null;
+      if (draftTimer) clearTimeout(draftTimer);
+      draftDirty = false;
+      app.draftStatus = { kind: "idle" };
+      if (res.unchanged) {
+        app.announce("No changes to save");
+        app.toast("info", "No changes — nothing was written.");
+      } else {
+        app.saveStatus = {
+          kind: "saved",
+          seq: res.entry.sequence_no,
+          at: res.entry.updated_at_utc,
+          edit: mode === "edit",
+          duplicate: res.duplicate,
+        };
+        app.announce(
+          `${mode === "edit" ? "Changes Saved" : "Entry Saved"}: number ${res.entry.sequence_no}, revision ${res.entry.current_revision}`,
+        );
+      }
+      app.bumpData();
+      if (mode === "new") {
+        draftId = newId();
+        form = newForm(ctx());
+        baseline = newForm(ctx());
+        errors = {};
+        await tick();
+        focusFirst();
+      }
+      onsaved?.(res.entry);
+    } catch (e) {
+      const err = toAppError(e);
+      saveError = err;
+      if (err.field) errors = { ...errors, [err.field]: err.message };
+      app.noteSaveFailure(err);
+      draftDirty = true;
+      await writeDraft();
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function clearForm() {
+    if (dirty) {
+      const a = await confirm.ask({
+        title: "Clear the form?",
+        message: "Everything typed in this entry will be discarded, including its recovery draft.",
+        buttons: [
+          { id: "clear", label: "Clear", tone: "danger" },
+          { id: "cancel", label: "Keep editing", tone: "primary" },
+        ],
+        cancelId: "cancel",
+      });
+      if (a.id !== "clear") return;
+    }
+    for (const a of form.attachments) api.discardStaged(a.staging_id).catch(() => {});
+    await api.deleteDraft(book.info.id, draftId).catch(() => {});
+    draftId = newId();
+    form = newForm(ctx());
+    baseline = newForm(ctx());
+    errors = {};
+    saveError = null;
+    pending = null;
+    app.draftStatus = { kind: "idle" };
+    focusFirst();
+  }
+
+  async function cancelEdit() {
+    if (dirty) {
+      const a = await confirm.ask({
+        title: "Discard changes?",
+        message: `Your unsaved changes to entry #${entry?.sequence_no} will be discarded.`,
+        buttons: [
+          { id: "discard", label: "Discard changes", tone: "danger" },
+          { id: "cancel", label: "Keep editing", tone: "primary" },
+        ],
+        cancelId: "cancel",
+      });
+      if (a.id !== "discard") return;
+    }
+    if (draftTimer) clearTimeout(draftTimer);
+    draftDirty = false;
+    await api.deleteDraft(book.info.id, draftId).catch(() => {});
+    app.draftStatus = { kind: "idle" };
+    oncancel?.();
+  }
+
+  async function attach() {
+    try {
+      const s = await api.stageAttachment();
+      if (s) {
+        form.attachments = [...form.attachments, s];
+        app.announce(`Attached ${s.display_name}`);
+      }
+    } catch (e) {
+      app.toast("error", `Attachment failed: ${toAppError(e).message}`);
+    }
+  }
+
+  function removeAttachment(a: T.StagedAttachment) {
+    form.attachments = form.attachments.filter((x) => x.staging_id !== a.staging_id);
+    api.discardStaged(a.staging_id).catch(() => {});
+  }
+
+  function useTemplate(t: T.EntryTemplate) {
+    form = applyTemplate(newForm(ctx()), t.defaults, kinds);
+    app.announce(`Template ${t.name} applied`);
+    tick().then(() => root?.querySelector<HTMLElement>(`#${fid("subject")}`)?.focus());
+  }
+
+  async function saveAsTemplate() {
+    const a = await confirm.ask({
+      title: "Save as template",
+      message: "Saves the current field values (without any times) as a reusable template in this logbook.",
+      input: { label: "Template name", value: form.subject.slice(0, 80), maxLength: 80 },
+      buttons: [
+        { id: "ok", label: "Save template", tone: "primary" },
+        { id: "cancel", label: "Cancel" },
+      ],
+      cancelId: "cancel",
+    });
+    if (a.id !== "ok" || !a.value.trim()) return;
+    try {
+      await api.saveTemplate(
+        null,
+        a.value.trim(),
+        toTemplateDefaults($state.snapshot(form) as EntryForm, type),
+      );
+      app.toast("ok", `Template "${a.value.trim()}" saved`);
+      ontemplatesaved?.();
+    } catch (e) {
+      app.toast("error", toAppError(e).message);
+    }
+  }
+
+  function onKindChange() {
+    if (type === "emergency")
+      form.em.record_type =
+        form.kind === "message" ? "message" : form.kind === "activity" ? "activity" : "general";
+  }
+
+  const err = (k: string) => errors[k] ?? "";
+</script>
+
+<div
+  class="editor"
+  class:compact
+  bind:this={root}
+  role="form"
+  aria-label={mode === "edit" ? `Edit entry ${entry?.sequence_no}` : "New log entry"}
+>
+  {#if app.storageBlocked}
+    <div class="banner error" role="alert">
+      <CircleAlert size={18} class="icon" />
+      <div class="grow">
+        <strong>Live logbook location unavailable — final saves are blocked.</strong>
+        {app.storageBlocked.message} Your text stays here and in a local recovery draft.
+        <div class="row" style="margin-top:8px">
+          <button class="small" onclick={() => app.recheckStorage()}
+            ><RefreshCw size={14} />Recheck storage</button
+          >
+          <button class="small" onclick={() => (app.dialog = "data")}>Recovery options…</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+  {#if app.readOnly}
+    <div class="banner warn">
+      This logbook is archived and read-only. Unarchive it from Logbooks to add or change entries.
+    </div>
+  {/if}
+
+  <div class="grid-4">
+    <DateTimeInput
+      id={fid("time")}
+      label="Date / Time"
+      bind:value={form.event_at_utc}
+      zone={app.zone}
+      required
+      error={err("event_at_utc")}
+    />
+    <div class="field">
+      <label for={fid("kind")}>Type<span class="req">*</span></label>
+      <select id={fid("kind")} bind:value={form.kind} onchange={onKindChange}>
+        {#each kinds as k (k)}<option value={k}>{KIND_LABEL[k]}</option>{/each}
+      </select>
+    </div>
+    <div class="field">
+      <label for={fid("dir")}>Direction</label>
+      <select id={fid("dir")} bind:value={form.direction}>
+        {#each Object.entries(DIRECTION_LABEL) as [v, l] (v)}<option value={v}>{l}</option>{/each}
+      </select>
+    </div>
+    <div class="field">
+      <label for={fid("pri")}>Priority</label>
+      <select id={fid("pri")} bind:value={form.priority}>
+        {#each Object.entries(PRIORITY_LABEL) as [v, l] (v)}<option value={v}>{l}</option>{/each}
+      </select>
+    </div>
+    {#if !hidden.has("from_text")}
+      <div class="field">
+        <label for={fid("from")}>{lbl("from_text", "From / Station")}</label>
+        <input id={fid("from")} type="text" bind:value={form.from_text} maxlength="120" autocomplete="off" />
+      </div>
+    {/if}
+    {#if !hidden.has("to_text")}
+      <div class="field">
+        <label for={fid("to")}>{lbl("to_text", "To")}</label>
+        <input id={fid("to")} type="text" bind:value={form.to_text} maxlength="120" autocomplete="off" />
+      </div>
+    {/if}
+    {#if !hidden.has("channel")}
+      <div class="field">
+        <label for={fid("channel")}>{lbl("channel", "Channel / Frequency")}</label>
+        <input
+          id={fid("channel")}
+          type="text"
+          bind:value={form.channel}
+          maxlength="120"
+          list={fid("channels")}
+          autocomplete="off"
+        />
+        <datalist id={fid("channels")}
+          >{#each preset.channels as c (c)}<option value={c}></option>{/each}</datalist
+        >
+      </div>
+    {/if}
+    {#if !hidden.has("handling") && !compact}
+      <div class="field">
+        <label for={fid("handling")}>Message handling</label>
+        <select id={fid("handling")} bind:value={form.handling}>
+          <option value="">Not tracked</option>
+          {#each Object.entries(HANDLING_LABEL) as [v, l] (v)}<option value={v}>{l}</option>{/each}
+        </select>
+      </div>
+    {/if}
+  </div>
+
+  <div class="field">
+    <label for={fid("subject")}>{lbl("subject", "Summary")}<span class="req">*</span></label>
+    <input
+      id={fid("subject")}
+      type="text"
+      bind:value={form.subject}
+      maxlength="300"
+      required
+      aria-invalid={err("subject") ? "true" : undefined}
+      aria-describedby={err("subject") ? fid("subject-err") : undefined}
+    />
+    {#if err("subject")}<span class="field-error" id={fid("subject-err")}>{err("subject")}</span>{/if}
+  </div>
+  <div class="field">
+    <label for={fid("body")}
+      >{lbl("body", form.kind === "activity" ? "Activity narrative" : "Message / Details")}</label
+    >
+    <textarea id={fid("body")} bind:value={form.body} rows={compact ? 3 : 5} maxlength="100000"></textarea>
+    <span class="hint">{form.body.length.toLocaleString()} / 100,000</span>
+  </div>
+
+  {#if type === "ham" && form.kind === "qso" && compact}
+    <div class="field">
+      <label for={fid("call")}>Their callsign<span class="req">*</span></label>
+      <input
+        id={fid("call")}
+        type="text"
+        bind:value={form.ham.their_call}
+        maxlength="20"
+        class="mono"
+        aria-invalid={err("ham.their_call") ? "true" : undefined}
+      />
+      {#if err("ham.their_call")}<span class="field-error">{err("ham.their_call")}</span>{/if}
+    </div>
+  {/if}
+  {#if type === "ham" && form.kind === "qso" && !compact}
+    <fieldset>
+      <legend>QSO</legend>
+      <div class="grid-4">
+        <div class="field">
+          <label for={fid("call")}>Their callsign<span class="req">*</span></label>
+          <input
+            id={fid("call")}
+            type="text"
+            bind:value={form.ham.their_call}
+            maxlength="20"
+            autocapitalize="characters"
+            class="mono"
+            aria-invalid={err("ham.their_call") ? "true" : undefined}
+          />
+          {#if err("ham.their_call")}<span class="field-error">{err("ham.their_call")}</span>{/if}
+        </div>
+        <DateTimeInput
+          id={fid("qso-start")}
+          label="QSO start (defaults to event time)"
+          bind:value={form.ham.qso_start_utc}
+          zone={app.zone}
+          clearable
+          error={err("ham.qso_start_utc")}
+        />
+        <DateTimeInput
+          id={fid("qso-end")}
+          label="QSO end"
+          bind:value={form.ham.qso_end_utc}
+          zone={app.zone}
+          clearable
+          error={err("ham.qso_end_utc")}
+        />
+        <div class="field">
+          <label for={fid("freq")}>Frequency</label>
+          <div class="row" style="gap:6px">
+            <input
+              id={fid("freq")}
+              type="text"
+              inputmode="decimal"
+              bind:value={form.freqText}
+              class="mono"
+              aria-invalid={err("ham.frequency_hz") || freq.error ? "true" : undefined}
+            />
+            <select aria-label="Frequency unit" bind:value={form.freqUnit} style="width:84px">
+              <option>kHz</option><option>MHz</option><option>GHz</option>
+            </select>
+          </div>
+          {#if freq.error || err("ham.frequency_hz")}<span class="field-error"
+              >{freq.error ?? err("ham.frequency_hz")}</span
+            >{:else if suggestedBand && !form.ham.band}<button
+              type="button"
+              class="link small"
+              onclick={() => (form.ham.band = suggestedBand!)}>Use band {suggestedBand}</button
+            >{/if}
+        </div>
+        <div class="field">
+          <label for={fid("band")}>Band</label>
+          <select
+            id={fid("band")}
+            bind:value={form.ham.band}
+            aria-invalid={err("ham.band") ? "true" : undefined}
+          >
+            <option value="">—</option>
+            {#each BANDS as [b] (b)}<option value={b}>{b}</option>{/each}
+          </select>
+          {#if err("ham.band")}<span class="field-error">{err("ham.band")}</span>{/if}
+        </div>
+        <div class="field">
+          <label for={fid("mode")}>Mode</label>
+          <input
+            id={fid("mode")}
+            type="text"
+            bind:value={form.ham.mode}
+            list={fid("modes")}
+            maxlength="20"
+            class="mono"
+            autocapitalize="characters"
+          />
+          <datalist id={fid("modes")}
+            >{#each MODES as m (m)}<option value={m}></option>{/each}</datalist
+          >
+        </div>
+        <div class="field">
+          <label for={fid("rsts")}>RST sent</label>
+          <input id={fid("rsts")} type="text" bind:value={form.ham.rst_sent} maxlength="10" class="mono" />
+        </div>
+        <div class="field">
+          <label for={fid("rstr")}>RST received</label>
+          <input id={fid("rstr")} type="text" bind:value={form.ham.rst_rcvd} maxlength="10" class="mono" />
+        </div>
+        <div class="field">
+          <label for={fid("tgrid")}>Their grid</label>
+          <input
+            id={fid("tgrid")}
+            type="text"
+            bind:value={form.ham.their_grid}
+            maxlength="8"
+            class="mono"
+            aria-invalid={err("ham.their_grid") ? "true" : undefined}
+          />
+          {#if err("ham.their_grid")}<span class="field-error">{err("ham.their_grid")}</span>{/if}
+        </div>
+        <div class="field">
+          <label for={fid("mgrid")}>My grid</label>
+          <input id={fid("mgrid")} type="text" bind:value={form.ham.my_grid} maxlength="8" class="mono" />
+        </div>
+        <div class="field">
+          <label for={fid("scall")}>Station callsign</label>
+          <input
+            id={fid("scall")}
+            type="text"
+            bind:value={form.ham.station_call}
+            maxlength="20"
+            class="mono"
+          />
+        </div>
+        <div class="field">
+          <label for={fid("ocall")}>Operator callsign</label>
+          <input
+            id={fid("ocall")}
+            type="text"
+            bind:value={form.ham.operator_call}
+            maxlength="20"
+            class="mono"
+          />
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label for={fid("qnotes")}>QSO notes</label>
+        <input id={fid("qnotes")} type="text" bind:value={form.ham.qso_notes} maxlength="10000" />
+      </div>
+    </fieldset>
+  {/if}
+
+  {#if type === "emergency" && !compact}
+    <fieldset>
+      <legend>Incident</legend>
+      <div class="grid-3">
+        <div class="field">
+          <label for={fid("inc")}>Incident</label><input
+            id={fid("inc")}
+            type="text"
+            bind:value={form.em.incident_name}
+            maxlength="200"
+          />
+        </div>
+        <div class="field">
+          <label for={fid("incn")}>Incident number</label><input
+            id={fid("incn")}
+            type="text"
+            bind:value={form.em.incident_number}
+            maxlength="200"
+          />
+        </div>
+        <div class="field">
+          <label for={fid("op")}>Operational period</label><input
+            id={fid("op")}
+            type="text"
+            bind:value={form.em.operational_period}
+            maxlength="200"
+          />
+        </div>
+      </div>
+    </fieldset>
+    {#if form.kind === "message"}
+      <fieldset>
+        <legend>Message details</legend>
+        <p class="hint" style="margin:0 0 8px">
+          Structured fields kept for a future ICS 213 mapping. This is a log record, not an official form.
+        </p>
+        <div class="grid-4">
+          <div class="field">
+            <label for={fid("msgno")}>Message number</label><input
+              id={fid("msgno")}
+              type="text"
+              bind:value={form.em.message_number}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("prec")}>Precedence</label>
+            <input
+              id={fid("prec")}
+              type="text"
+              bind:value={form.em.precedence}
+              list={fid("precs")}
+              maxlength="200"
+            />
+            <datalist id={fid("precs")}
+              ><option value="IMMEDIATE"></option><option value="PRIORITY"></option><option value="ROUTINE"
+              ></option><option value="WELFARE"></option><option value="EMERGENCY"></option></datalist
+            >
+          </div>
+          <DateTimeInput
+            id={fid("sent")}
+            label="Sent time"
+            bind:value={form.em.sent_at_utc}
+            zone={app.zone}
+            clearable
+          />
+          <DateTimeInput
+            id={fid("rcvd")}
+            label="Received time"
+            bind:value={form.em.received_at_utc}
+            zone={app.zone}
+            clearable
+          />
+          <div class="field">
+            <label for={fid("orig")}>Originator (from)</label><input
+              id={fid("orig")}
+              type="text"
+              bind:value={form.em.originator}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("origp")}>Originator position</label><input
+              id={fid("origp")}
+              type="text"
+              bind:value={form.em.originator_position}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("recip")}>Recipient (to)</label><input
+              id={fid("recip")}
+              type="text"
+              bind:value={form.em.recipient}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("recipp")}>Recipient position</label><input
+              id={fid("recipp")}
+              type="text"
+              bind:value={form.em.recipient_position}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("sender")}>Sent by (operator)</label><input
+              id={fid("sender")}
+              type="text"
+              bind:value={form.em.sender}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("receiver")}>Received by (operator)</label><input
+              id={fid("receiver")}
+              type="text"
+              bind:value={form.em.receiver}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("disp")}>Disposition</label><input
+              id={fid("disp")}
+              type="text"
+              bind:value={form.em.disposition}
+              maxlength="200"
+            />
+          </div>
+          <div class="field" style="justify-content:flex-end">
+            <label class="check"
+              ><input type="checkbox" bind:checked={form.em.reply_requested} /> Reply requested</label
+            >
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:10px">
+          <div class="field">
+            <label for={fid("act")}>Requested action / reply</label><textarea
+              id={fid("act")}
+              bind:value={form.em.action_requested}
+              rows="2"></textarea>
+          </div>
+          <div class="field">
+            <label for={fid("resp")}>Response</label><textarea
+              id={fid("resp")}
+              bind:value={form.em.response}
+              rows="2"></textarea>
+          </div>
+        </div>
+      </fieldset>
+    {:else if form.kind === "activity"}
+      <fieldset>
+        <legend>Activity details</legend>
+        <p class="hint" style="margin:0 0 8px">
+          Structured fields kept for a future ICS 214 mapping. This is a log record, not an official form.
+        </p>
+        <div class="grid-4">
+          <div class="field">
+            <label for={fid("unit")}>Resource / unit</label><input
+              id={fid("unit")}
+              type="text"
+              bind:value={form.em.resource_unit}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("assign")}>Assignment</label><input
+              id={fid("assign")}
+              type="text"
+              bind:value={form.em.assignment}
+              maxlength="200"
+            />
+          </div>
+          <DateTimeInput
+            id={fid("astart")}
+            label="Activity start (defaults to event time)"
+            bind:value={form.em.activity_start_utc}
+            zone={app.zone}
+            clearable
+            error={err("emergency.activity_start_utc")}
+          />
+          <DateTimeInput
+            id={fid("aend")}
+            label="Activity end"
+            bind:value={form.em.activity_end_utc}
+            zone={app.zone}
+            clearable
+            error={err("emergency.activity_end_utc")}
+          />
+          <div class="field">
+            <label for={fid("aloc")}>Location</label><input
+              id={fid("aloc")}
+              type="text"
+              bind:value={form.em.location}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("adisp")}>Disposition</label><input
+              id={fid("adisp")}
+              type="text"
+              bind:value={form.em.disposition}
+              maxlength="200"
+            />
+          </div>
+          <div class="field">
+            <label for={fid("prep")}>Prepared by</label><input
+              id={fid("prep")}
+              type="text"
+              bind:value={form.em.preparer}
+              maxlength="200"
+            />
+          </div>
+        </div>
+      </fieldset>
+    {/if}
+  {/if}
+
+  {#if templates.length && mode === "new" && !compact}
+    <div class="row wrap templates" role="group" aria-label="Quick templates">
+      <span class="hint">Quick templates:</span>
+      {#each templates.slice(0, 8) as t (t.id)}
+        <button type="button" class="small" onclick={() => useTemplate(t)}>{t.name}</button>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="grid-3" hidden={compact}>
+    {#if !hidden.has("tags")}
+      <TagInput
+        id={fid("tags")}
+        label={lbl("tags", "Tags")}
+        bind:tags={form.tags}
+        quick={preset.quick_tags}
+      />
+    {/if}
+    {#if !hidden.has("location")}
+      <div class="field">
+        <label for={fid("loc")}>{lbl("location", "Location")}</label>
+        <input id={fid("loc")} type="text" bind:value={form.location} maxlength="200" />
+      </div>
+    {/if}
+    <div class="field">
+      <span class="label">Options</span>
+      {#if !hidden.has("flagged")}<label class="check"
+          ><input type="checkbox" bind:checked={form.flagged} /> Flag for report</label
+        >{/if}
+      {#if !hidden.has("attachments")}
+        <button type="button" class="small" onclick={attach} disabled={blocked}
+          ><Paperclip size={14} />Attach file…</button
+        >
+      {/if}
+    </div>
+  </div>
+  {#if mode === "edit" && entry?.attachments.length}
+    <p class="hint" style="margin:0">
+      Existing attachments: {entry.attachments.map((a) => a.display_name).join(", ")} (kept)
+    </p>
+  {/if}
+  {#if form.attachments.length}
+    <ul class="atts" aria-label="New attachments">
+      {#each form.attachments as a (a.staging_id)}
+        <li class="badge neutral">
+          <Paperclip size={12} />{a.display_name}
+          <span class="muted">({Math.ceil(a.size_bytes / 1024)} KB)</span>
+          <button
+            type="button"
+            class="ghost icon-only small"
+            aria-label="Remove attachment {a.display_name}"
+            onclick={() => removeAttachment(a)}><X size={12} /></button
+          >
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  {#if mode === "edit"}
+    <div class="field">
+      <label for={fid("reason")}>Reason for change (optional, kept in revision history)</label>
+      <input id={fid("reason")} type="text" bind:value={reason} maxlength="500" />
+    </div>
+  {/if}
+
+  {#if saveError}
+    <div class="banner error" role="alert">
+      <CircleAlert size={18} class="icon" />
+      <div class="grow">
+        <strong>Save Failed:</strong>
+        {saveError.message}
+        <div class="hint">
+          Nothing was added to the logbook. Your entry is still here{app.draftStatus.kind === "saved"
+            ? " and stored as a recovery draft"
+            : ""}.
+        </div>
+      </div>
+      {#if !app.storageBlocked}<button class="small" onclick={save} disabled={saving}
+          ><RefreshCw size={14} />Retry</button
+        >{/if}
+    </div>
+  {/if}
+
+  <div class="bar">
+    <div class="status" aria-hidden="true">
+      {#if saving}<LoaderCircle size={15} class="spin" /> Saving…
+      {:else if app.saveStatus.kind === "saved"}<CircleCheck size={15} class="ok" />
+        {app.saveStatus.edit ? "Changes Saved" : "Entry Saved"} #{app.saveStatus.seq} at {formatInstant(
+          app.saveStatus.at,
+          app.zone,
+          app.clock,
+          { date: false, seconds: true },
+        )}{#if app.saveStatus.duplicate}
+          (already saved){/if}
+      {:else if app.draftStatus.kind === "saved" && dirty}<FileClock size={15} class="warn" /> Draft saved {formatInstant(
+          app.draftStatus.at,
+          app.zone,
+          app.clock,
+          { date: false, seconds: true },
+        )} — not yet a logbook entry
+      {:else if app.draftStatus.kind === "failed"}<CircleAlert size={15} class="err" /> Draft Save Failed
+      {:else if dirty}Unsaved{/if}
+    </div>
+    <span class="spacer"></span>
+    {#if mode === "new"}
+      <button type="button" onclick={clearForm} disabled={saving}><Eraser size={16} />Clear</button>
+      {#if !compact}
+        <button type="button" onclick={saveAsTemplate} disabled={saving || app.readOnly}
+          ><BookmarkPlus size={16} />Save as Template</button
+        >
+        <label class="check"><input type="checkbox" bind:checked={addAnother} /> Add another after save</label
+        >
+      {/if}
+      <button
+        type="button"
+        class="success"
+        onclick={async () => {
+          await save();
+          if (!addAnother && !saveError) app.navigate("log");
+        }}
+        disabled={saving || blocked}
+        aria-keyshortcuts={modKey() === "⌘" ? "Meta+Enter" : "Control+Enter"}
+      >
+        <Save size={16} />Save Entry ({modKey()}{modKey() === "⌘" ? "↩" : "Enter"})
+      </button>
+    {:else}
+      <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
+      <button
+        type="button"
+        class="success"
+        onclick={save}
+        disabled={saving || blocked}
+        aria-keyshortcuts={modKey() === "⌘" ? "Meta+Enter" : "Control+Enter"}
+      >
+        <Save size={16} />Save Changes ({modKey()}{modKey() === "⌘" ? "↩" : "Enter"})
+      </button>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .editor.compact :global(.grid-4) {
+    grid-template-columns: 1fr 1fr;
+  }
+  .label {
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .status {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .status :global(.ok) {
+    color: var(--ok);
+  }
+  .status :global(.warn) {
+    color: var(--warn);
+  }
+  .status :global(.err) {
+    color: var(--danger);
+  }
+  .atts {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .templates {
+    gap: 6px;
+  }
+</style>

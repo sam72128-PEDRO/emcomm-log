@@ -1,11 +1,11 @@
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::faults;
 use crate::fsutil::{self, now_utc};
-use crate::logbook::{Logbook, ATTACHMENTS_DIR, STAGING_DIR};
+use crate::logbook::{ATTACHMENTS_DIR, Logbook, STAGING_DIR};
 use crate::models::*;
 use crate::validate::{validate_entry_input, validate_template_defaults};
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params, params_from_iter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -172,10 +172,7 @@ pub fn load_attachments(conn: &Connection, entry_id: &str) -> AppResult<Vec<Atta
 
 pub fn load_entry(conn: &Connection, id: &str) -> AppResult<Entry> {
     let sql = format!("{ENTRY_SELECT} WHERE e.id = ?1");
-    let mut e = conn
-        .query_row(&sql, params![id], row_to_entry)
-        .optional()?
-        .ok_or_else(|| AppError::not_found("Entry not found"))?;
+    let mut e = conn.query_row(&sql, params![id], row_to_entry).optional()?.ok_or_else(|| AppError::not_found("Entry not found"))?;
     e.attachments = load_attachments(conn, id)?;
     Ok(e)
 }
@@ -211,8 +208,21 @@ fn insert_ham(c: &Connection, id: &str, h: &HamFields) -> AppResult<()> {
             mode, submode, rst_sent, rst_rcvd, my_grid, their_grid, qso_notes)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
         params![
-            id, h.their_call, h.station_call, h.operator_call, h.qso_start_utc, h.qso_end_utc, h.frequency_hz, h.band, h.mode,
-            h.submode, h.rst_sent, h.rst_rcvd, h.my_grid, h.their_grid, h.qso_notes
+            id,
+            h.their_call,
+            h.station_call,
+            h.operator_call,
+            h.qso_start_utc,
+            h.qso_end_utc,
+            h.frequency_hz,
+            h.band,
+            h.mode,
+            h.submode,
+            h.rst_sent,
+            h.rst_rcvd,
+            h.my_grid,
+            h.their_grid,
+            h.qso_notes
         ],
     )?;
     Ok(())
@@ -329,12 +339,10 @@ struct FinalizedAttachment {
 fn finalize_attachment(dir: &Path, staged: &StagedAttachment, created: &mut Vec<PathBuf>) -> AppResult<FinalizedAttachment> {
     let staging = dir.join(STAGING_DIR);
     let data = staging.join(&staged.staging_id);
-    let meta: StagedAttachment = fs::read(staging.join(format!("{}.json", staged.staging_id)))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .ok_or_else(|| {
-            AppError::validation("attachments", format!("Attachment '{}' is no longer staged; attach it again", staged.display_name))
-        })?;
+    let meta: StagedAttachment =
+        fs::read(staging.join(format!("{}.json", staged.staging_id))).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or_else(
+            || AppError::validation("attachments", format!("Attachment '{}' is no longer staged; attach it again", staged.display_name)),
+        )?;
     if !data.is_file() {
         return Err(AppError::validation(
             "attachments",
@@ -414,6 +422,7 @@ fn fill_incident_snapshot(c: &Connection, m: &mut EmergencyFields) -> AppResult<
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_revision(
     c: &Connection,
     entry_id: &str,
@@ -719,7 +728,17 @@ impl Logbook {
         }
         tx.execute("UPDATE logbook SET updated_at_utc=?1", params![now])?;
         let after = load_entry(&tx, entry_id)?;
-        insert_revision(&tx, entry_id, new_rev, if to_void { "void" } else { "restore" }, &reason, Some(&before), &after, editor, request_id)?;
+        insert_revision(
+            &tx,
+            entry_id,
+            new_rev,
+            if to_void { "void" } else { "restore" },
+            &reason,
+            Some(&before),
+            &after,
+            editor,
+            request_id,
+        )?;
         faults::check("entry.status.before_commit")?;
         tx.commit()?;
         Ok(SaveResult { entry: after, duplicate: false, unchanged: false })
@@ -774,9 +793,8 @@ impl Logbook {
         let d = validate_template_defaults(defaults, self.logbook_type)?;
         let now = now_utc();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let dup: Option<String> = tx
-            .query_row("SELECT id FROM entry_templates WHERE name=?1 COLLATE NOCASE", params![name], |r| r.get(0))
-            .optional()?;
+        let dup: Option<String> =
+            tx.query_row("SELECT id FROM entry_templates WHERE name=?1 COLLATE NOCASE", params![name], |r| r.get(0)).optional()?;
         let tid = match id {
             Some(existing) => {
                 if dup.as_deref().is_some_and(|d| d != existing) {
@@ -837,8 +855,9 @@ pub fn list_revisions(conn: &Connection, entry_id: &str) -> AppResult<Vec<EntryR
 }
 
 pub fn list_templates(conn: &Connection) -> AppResult<Vec<EntryTemplate>> {
-    let mut stmt =
-        conn.prepare("SELECT id, name, kind, version, defaults_json, created_at_utc, updated_at_utc FROM entry_templates ORDER BY name COLLATE NOCASE")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, kind, version, defaults_json, created_at_utc, updated_at_utc FROM entry_templates ORDER BY name COLLATE NOCASE",
+    )?;
     let rows = stmt.query_map([], |r| {
         Ok(EntryTemplate {
             id: r.get(0)?,
@@ -855,17 +874,9 @@ pub fn list_templates(conn: &Connection) -> AppResult<Vec<EntryTemplate>> {
 
 /// Turn free text into an FTS5 query: each whitespace token becomes a quoted prefix term (AND).
 pub fn fts_query(text: &str) -> Option<String> {
-    let terms: Vec<String> = text
-        .split_whitespace()
-        .map(|t| t.replace('"', ""))
-        .filter(|t| !t.is_empty())
-        .map(|t| format!("\"{t}\"*"))
-        .collect();
-    if terms.is_empty() {
-        None
-    } else {
-        Some(terms.join(" "))
-    }
+    let terms: Vec<String> =
+        text.split_whitespace().map(|t| t.replace('"', "")).filter(|t| !t.is_empty()).map(|t| format!("\"{t}\"*")).collect();
+    if terms.is_empty() { None } else { Some(terms.join(" ")) }
 }
 
 fn like_escape(s: &str) -> String {
@@ -938,6 +949,13 @@ pub fn build_filter(q: &EntryQuery) -> AppResult<(String, Vec<SqlValue>)> {
     }
     if q.flagged_only {
         clauses.push("e.flagged = 1".into());
+    }
+    if !q.ids.is_empty() {
+        if q.ids.len() > 10_000 {
+            return Err(AppError::validation("ids", "Too many entries selected"));
+        }
+        clauses.push(format!("e.id IN ({})", vec!["?"; q.ids.len()].join(",")));
+        p.extend(q.ids.iter().map(|i| SqlValue::Text(i.clone())));
     }
     let w = if clauses.is_empty() { String::new() } else { format!(" WHERE {}", clauses.join(" AND ")) };
     Ok((w, p))

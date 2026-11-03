@@ -52,11 +52,7 @@ impl ErrorCode {
     pub fn is_storage_fault(&self) -> bool {
         matches!(
             self,
-            ErrorCode::StorageUnavailable
-                | ErrorCode::DiskFull
-                | ErrorCode::PermissionDenied
-                | ErrorCode::Io
-                | ErrorCode::Integrity
+            ErrorCode::StorageUnavailable | ErrorCode::DiskFull | ErrorCode::PermissionDenied | ErrorCode::Io | ErrorCode::Integrity
         )
     }
 }
@@ -108,9 +104,7 @@ impl From<rusqlite::Error> for AppError {
                     C::DiskFull => ErrorCode::DiskFull,
                     C::DatabaseBusy | C::DatabaseLocked => ErrorCode::Busy,
                     C::CannotOpen => ErrorCode::StorageUnavailable,
-                    C::ReadOnly | C::PermissionDenied | C::AuthorizationForStatementDenied => {
-                        ErrorCode::PermissionDenied
-                    }
+                    C::ReadOnly | C::PermissionDenied | C::AuthorizationForStatementDenied => ErrorCode::PermissionDenied,
                     C::SystemIoFailure => ErrorCode::Io,
                     C::DatabaseCorrupt | C::NotADatabase => ErrorCode::Integrity,
                     C::ConstraintViolation => ErrorCode::Conflict,

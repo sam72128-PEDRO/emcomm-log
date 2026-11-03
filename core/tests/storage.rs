@@ -8,7 +8,7 @@ use emcomm_core::drafts::{DraftMeta, DraftStore};
 use emcomm_core::error::ErrorCode;
 use emcomm_core::faults::{self, Fault};
 use emcomm_core::fsutil::new_uuid;
-use emcomm_core::logbook::{effective_pragmas, Logbook, DB_FILE};
+use emcomm_core::logbook::{DB_FILE, Logbook, effective_pragmas};
 use emcomm_core::models::*;
 use std::path::Path;
 use std::process::Command;
@@ -144,7 +144,11 @@ fn a04_concurrent_saves_get_unique_monotone_numbers() {
     let hs: Vec<_> = (0..4)
         .map(|_| {
             let lb = lb.clone();
-            std::thread::spawn(move || (0..10).map(|_| lb.lock().unwrap().save_new(&input("x"), &rid(), &operator()).unwrap().entry.sequence_no).collect::<Vec<_>>())
+            std::thread::spawn(move || {
+                (0..10)
+                    .map(|_| lb.lock().unwrap().save_new(&input("x"), &rid(), &operator()).unwrap().entry.sequence_no)
+                    .collect::<Vec<_>>()
+            })
         })
         .collect();
     let mut more: Vec<i64> = hs.into_iter().flat_map(|h| h.join().unwrap()).collect();
@@ -478,7 +482,8 @@ fn creation_is_atomic_and_rejects_collisions() {
     })
     .unwrap_err();
     assert_eq!(e.code, ErrorCode::AlreadyExists);
-    let leftovers: Vec<_> = std::fs::read_dir(parent.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with('.')).collect();
+    let leftovers: Vec<_> =
+        std::fs::read_dir(parent.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with('.')).collect();
     assert!(leftovers.is_empty());
     // Emergency requires an incident name.
     let e = emcomm_core::logbook::Logbook::create(emcomm_core::logbook::CreateParams {

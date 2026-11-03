@@ -3,9 +3,9 @@
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{self, now_utc};
-use crate::logbook::{self, Logbook, ATTACHMENTS_DIR, DB_FILE};
+use crate::logbook::{self, ATTACHMENTS_DIR, DB_FILE, Logbook};
 use crate::models::LogbookType;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -95,7 +95,8 @@ pub fn take_snapshot(live_dir: &Path, out_dir: &Path) -> AppResult<SnapshotInfo>
     fs::create_dir_all(out_dir.join(ATTACHMENTS_DIR))?;
     let snap_db = out_dir.join(DB_FILE);
     {
-        let src = Connection::open_with_flags(&live_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        let src =
+            Connection::open_with_flags(&live_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
         src.busy_timeout(std::time::Duration::from_secs(10))?;
         src.execute("VACUUM INTO ?1", params![snap_db.to_string_lossy()])?;
     }
@@ -103,11 +104,10 @@ pub fn take_snapshot(live_dir: &Path, out_dir: &Path) -> AppResult<SnapshotInfo>
     let conn = Connection::open(&snap_db)?;
     conn.query_row("PRAGMA journal_mode=DELETE", [], |_| Ok(()))?;
     logbook::integrity_check(&conn)?;
-    let (logbook_id, name, ty, schema_version, provenance): (String, String, String, u32, String) = conn.query_row(
-        "SELECT id, name, type, schema_version, provenance_json FROM logbook",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-    )?;
+    let (logbook_id, name, ty, schema_version, provenance): (String, String, String, u32, String) =
+        conn.query_row("SELECT id, name, type, schema_version, provenance_json FROM logbook", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?;
     let (entry_count, max_sequence): (i64, i64) =
         conn.query_row("SELECT COUNT(*), COALESCE(MAX(sequence_no), 0) FROM entries", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let marker = data_marker(&conn)?;
@@ -127,8 +127,7 @@ pub fn take_snapshot(live_dir: &Path, out_dir: &Path) -> AppResult<SnapshotInfo>
         }
         let src = live_dir.join(rel);
         let dst = out_dir.join(rel);
-        let (h, n) = fsutil::copy_synced(&src, &dst)
-            .map_err(|e| e.with_context(&format!("Attachment {rel} could not be copied")))?;
+        let (h, n) = fsutil::copy_synced(&src, &dst).map_err(|e| e.with_context(&format!("Attachment {rel} could not be copied")))?;
         if &h != sha || n != *size {
             return Err(AppError::new(ErrorCode::Integrity, format!("Attachment {rel} does not match its recorded hash")));
         }
@@ -184,7 +183,8 @@ pub fn verify_dir(dir: &Path, expected_format: &str) -> AppResult<Manifest> {
             return Err(AppError::new(ErrorCode::InvalidPackage, format!("Unsafe path in manifest: {}", f.path)));
         }
         let p = dir.join(&f.path);
-        let (h, n) = fsutil::sha256_file(&p).map_err(|_| AppError::new(ErrorCode::Integrity, format!("Backup file missing: {}", f.path)))?;
+        let (h, n) =
+            fsutil::sha256_file(&p).map_err(|_| AppError::new(ErrorCode::Integrity, format!("Backup file missing: {}", f.path)))?;
         if h != f.sha256 || n != f.bytes {
             return Err(AppError::new(ErrorCode::Integrity, format!("Backup file is corrupt: {}", f.path)));
         }

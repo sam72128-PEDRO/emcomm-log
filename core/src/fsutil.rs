@@ -33,11 +33,7 @@ pub fn sync_dir(dir: &Path) -> AppResult<()> {
 /// Write bytes to `path` atomically: temp file in the same directory, fsync, rename, fsync dir.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     let dir = path.parent().ok_or_else(|| AppError::internal("path has no parent"))?;
-    let tmp = dir.join(format!(
-        ".{}.tmp-{}",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or("file"),
-        short_uuid(&new_uuid())
-    ));
+    let tmp = dir.join(format!(".{}.tmp-{}", path.file_name().and_then(|s| s.to_str()).unwrap_or("file"), short_uuid(&new_uuid())));
     let result = (|| -> AppResult<()> {
         let mut f = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
         f.write_all(bytes)?;
@@ -114,8 +110,8 @@ pub fn copy_synced(src: &Path, dst: &Path) -> AppResult<(String, u64)> {
 }
 
 const WINDOWS_RESERVED: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
-    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
+    "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Make a name safe as a single path component on Windows, macOS, and Linux.
@@ -147,11 +143,7 @@ pub fn safe_component(name: &str, max_chars: usize) -> String {
 pub fn safe_extension(name: &str) -> String {
     let ext = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("");
     let ext: String = ext.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase();
-    if ext.len() > 10 {
-        String::new()
-    } else {
-        ext
-    }
+    if ext.len() > 10 { String::new() } else { ext }
 }
 
 pub fn canonical_or_self(p: &Path) -> PathBuf {
@@ -325,9 +317,6 @@ mod tests {
 
     #[test]
     fn cloud_paths_detected() {
-        assert_eq!(
-            classify_location(Path::new("/Users/x/Library/CloudStorage/Dropbox/logs")),
-            LocationKind::CloudSync
-        );
+        assert_eq!(classify_location(Path::new("/Users/x/Library/CloudStorage/Dropbox/logs")), LocationKind::CloudSync);
     }
 }

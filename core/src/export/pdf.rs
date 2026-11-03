@@ -3,12 +3,12 @@
 //! Column headings repeat on every page; rows taller than a page continue on the next page;
 //! "Page X of Y" uses a shared form XObject written after the last page (streaming friendly).
 
-use super::{detail_lines, ReportContext};
+use super::{ReportContext, detail_lines};
 use crate::entries::for_each_entry;
 use crate::error::{AppError, AppResult};
 use crate::models::{Entry, EntryQuery, EntryStatus, LogbookType};
-use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -140,6 +140,7 @@ struct Page {
 }
 
 impl Page {
+    #[allow(clippy::too_many_arguments)]
     fn text(&mut self, fm: &FontMetrics, used: &mut BTreeMap<u16, char>, x: f32, y: f32, size: f32, s: &str, bold: bool) {
         if s.is_empty() {
             return;
@@ -169,7 +170,14 @@ impl Page {
     }
 }
 
-const COLS: &[(&str, f32)] = &[("#", 34.0), ("Event time", 100.0), ("Type / Dir / Pri", 82.0), ("From / To", 112.0), ("Summary, message and details", 344.0), ("Status", 48.0)];
+const COLS: &[(&str, f32)] = &[
+    ("#", 34.0),
+    ("Event time", 100.0),
+    ("Type / Dir / Pri", 82.0),
+    ("From / To", 112.0),
+    ("Summary, message and details", 344.0),
+    ("Status", 48.0),
+];
 
 fn cell_lines(fm: &FontMetrics, e: &Entry, book: LogbookType, ctx: &ReportContext) -> Vec<Vec<Line>> {
     let w = |i: usize| COLS[i].1 - 2.0 * CELL_PAD;
@@ -187,16 +195,23 @@ fn cell_lines(fm: &FontMetrics, e: &Entry, book: LogbookType, ctx: &ReportContex
         msg.extend(plain(4, &details.join("  |  ")));
     }
     let mut status = e.status.as_str().to_uppercase();
-    if e.status == EntryStatus::Void {
-        if let Some(r) = e.void_reason.as_deref().filter(|r| !r.is_empty()) {
-            status = format!("VOID: {r}");
-        }
+    if e.status == EntryStatus::Void
+        && let Some(r) = e.void_reason.as_deref().filter(|r| !r.is_empty())
+    {
+        status = format!("VOID: {r}");
     }
     vec![
         plain(0, &format!("{:04}", e.sequence_no)),
         plain(1, &format!("{}\nRecorded {}", ctx.zone.format(&e.event_at_utc), ctx.zone.format(&e.recorded_at_utc))),
         plain(2, &format!("{}\n{}\n{}", e.kind.as_str(), e.direction.as_str(), e.priority.as_str())),
-        plain(3, &format!("{}\n-> {}", if e.from_text.is_empty() { "-" } else { &e.from_text }, if e.to_text.is_empty() { "-" } else { &e.to_text })),
+        plain(
+            3,
+            &format!(
+                "{}\n-> {}",
+                if e.from_text.is_empty() { "-" } else { &e.from_text },
+                if e.to_text.is_empty() { "-" } else { &e.to_text }
+            ),
+        ),
         msg,
         plain(5, &status),
     ]
@@ -245,7 +260,15 @@ impl<'a> Layout<'a> {
         p.text(self.fm, &mut self.out.used, fx, MARGIN, 7.5, &footer, false);
         let tw = self.fm.width(&footer, 7.5);
         p.ops.push_str(&format!("q 1 0 0 1 {:.2} {:.2} cm /TP Do Q\n", fx + tw, MARGIN));
-        p.text(self.fm, &mut self.out.used, MARGIN, MARGIN, 7.5, &format!("Generated {} - times in {}", self.ctx.generated, self.ctx.zone.label()), false);
+        p.text(
+            self.fm,
+            &mut self.out.used,
+            MARGIN,
+            MARGIN,
+            7.5,
+            &format!("Generated {} - times in {}", self.ctx.generated, self.ctx.zone.label()),
+            false,
+        );
         self.y = top - 13.0 - 2.0;
         self.page = Some(p);
         Ok(())
@@ -277,7 +300,7 @@ impl<'a> Layout<'a> {
             let avail = ((self.y - self.bottom() - CELL_PAD) / LINE_H).floor() as usize;
             let remaining = max_lines - start;
             let full_page = ((self.table_top() - 15.0 - self.bottom() - CELL_PAD) / LINE_H).floor() as usize;
-            if avail < remaining.min(3).max(1) || (avail < remaining && remaining <= full_page && start == 0) {
+            if avail < remaining.clamp(1, 3) || (avail < remaining && remaining <= full_page && start == 0) {
                 self.new_page()?;
                 continue;
             }
@@ -313,7 +336,14 @@ fn utf16_hex(s: &str) -> String {
 
 pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path) -> AppResult<i64> {
     let fm = FontMetrics::load()?;
-    let mut out = PdfOut { w: BufWriter::new(File::create(path)?), pos: 0, offsets: BTreeMap::new(), next_obj: 10, page_ids: vec![], used: BTreeMap::new() };
+    let mut out = PdfOut {
+        w: BufWriter::new(File::create(path)?),
+        pos: 0,
+        offsets: BTreeMap::new(),
+        next_obj: 10,
+        page_ids: vec![],
+        used: BTreeMap::new(),
+    };
     out.raw(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n")?;
     let usable = PAGE_W - 2.0 * MARGIN;
     let mut header_lines = Vec::new();
@@ -359,7 +389,11 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
     let mut tp = Page { ops: String::new() };
     tp.text(&fm, &mut out.used, 0.0, 0.0, 7.5, &total.to_string(), false);
     let tp_ops = tp.ops.clone();
-    out.stream(OBJ_TOTAL, &format!("/Type /XObject /Subtype /Form /BBox [0 -2 60 10] /Resources << /Font << /F1 {OBJ_FONT} 0 R >> >>"), tp_ops.as_bytes())?;
+    out.stream(
+        OBJ_TOTAL,
+        &format!("/Type /XObject /Subtype /Form /BBox [0 -2 60 10] /Resources << /Font << /F1 {OBJ_FONT} 0 R >> >>"),
+        tp_ops.as_bytes(),
+    )?;
 
     let kids: Vec<String> = out.page_ids.iter().map(|id| format!("{id} 0 R")).collect();
     out.object(OBJ_PAGES, &format!("<< /Type /Pages /Kids [{}] /Count {} >>", kids.join(" "), out.page_ids.len()))?;
@@ -433,7 +467,10 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
             None => xref.push_str("0000000000 65535 f \n"),
         }
     }
-    xref.push_str(&format!("trailer\n<< /Size {} /Root {OBJ_CATALOG} 0 R /Info {OBJ_INFO} 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n", max_id + 1));
+    xref.push_str(&format!(
+        "trailer\n<< /Size {} /Root {OBJ_CATALOG} 0 R /Info {OBJ_INFO} 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n",
+        max_id + 1
+    ));
     out.raw(xref.as_bytes())?;
     out.w.flush()?;
     out.w.into_inner().map_err(|e| AppError::from(e.into_error()))?.sync_all()?;

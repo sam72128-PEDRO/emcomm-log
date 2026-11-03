@@ -73,6 +73,8 @@ pub struct GlobalSettings {
     pub default_logbook_parent: Option<String>,
     pub backup: BackupSettings,
     pub active_profile_id: Option<String>,
+    /// Preset chosen per logbook type ("general"/"ham"/"emergency") during first run.
+    pub default_preset_ids: BTreeMap<String, String>,
 }
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -88,6 +90,7 @@ impl Default for GlobalSettings {
             default_logbook_parent: None,
             backup: BackupSettings::default(),
             active_profile_id: None,
+            default_preset_ids: BTreeMap::new(),
         }
     }
 }
@@ -495,6 +498,8 @@ pub struct EntryQuery {
     pub status: String,
     pub favorites_only: bool,
     pub flagged_only: bool,
+    /// Restrict to specific entry ids (Export Selection).
+    pub ids: Vec<String>,
     /// "event" (default) or "recorded"
     pub sort: String,
     pub descending: bool,

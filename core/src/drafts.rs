@@ -104,10 +104,10 @@ impl DraftStore {
             if p.extension().and_then(|x| x.to_str()) != Some("json") {
                 continue;
             }
-            if let Some(d) = Self::read_file(&p) {
-                if d.meta.logbook_id == logbook_id {
-                    out.push(d);
-                }
+            if let Some(d) = Self::read_file(&p)
+                && d.meta.logbook_id == logbook_id
+            {
+                out.push(d);
             }
         }
         out.sort_by(|a, b| b.saved_at_utc.cmp(&a.saved_at_utc));
