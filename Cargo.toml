@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["core", "src-tauri"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+license = "UNLICENSED"
+authors = ["EMCOMM LOG"]
+rust-version = "1.89"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

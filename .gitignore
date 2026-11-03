@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+.venv-validate/
+*.log
+.DS_Store
+src-tauri/gen/schemas/

@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS backup_runs;
+DROP TABLE IF EXISTS logbook_index;
+DROP TABLE IF EXISTS presets;
+DROP TABLE IF EXISTS profiles;
+DROP TABLE IF EXISTS app_settings;
