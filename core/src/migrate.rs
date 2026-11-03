@@ -23,6 +23,12 @@ pub const APP_MIGRATIONS: &[Migration] = &[Migration {
     down: include_str!("../migrations/app/0001_init.down.sql"),
 }];
 
+/// Checksum of a migration script, independent of the checkout's line endings
+/// (Git on Windows may convert LF to CRLF).
+pub fn migration_checksum(sql: &str) -> String {
+    sha256_bytes(sql.replace("\r\n", "\n").as_bytes())
+}
+
 pub fn latest_version(set: &[Migration]) -> u32 {
     set.iter().map(|m| m.version).max().unwrap_or(0)
 }
@@ -67,7 +73,7 @@ pub fn migrate(conn: &mut Connection, set: &[Migration]) -> AppResult<u32> {
         for row in rows {
             let (v, sum) = row?;
             if let Some(m) = set.iter().find(|m| m.version == v)
-                && sha256_bytes(m.up.as_bytes()) != sum
+                && migration_checksum(m.up) != sum
             {
                 return Err(AppError::new(
                     ErrorCode::Integrity,
@@ -81,7 +87,7 @@ pub fn migrate(conn: &mut Connection, set: &[Migration]) -> AppResult<u32> {
         tx.execute_batch(m.up)?;
         tx.execute(
             "INSERT INTO schema_migrations(version, name, checksum, applied_at_utc) VALUES (?1, ?2, ?3, ?4)",
-            params![m.version, m.name, sha256_bytes(m.up.as_bytes()), now_utc()],
+            params![m.version, m.name, migration_checksum(m.up), now_utc()],
         )?;
         tx.commit()?;
     }
@@ -113,6 +119,14 @@ mod tests {
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
         assert_eq!(current_version(&c).unwrap(), 1);
+    }
+
+    #[test]
+    fn checksum_ignores_line_endings() {
+        assert_eq!(
+            migration_checksum("CREATE TABLE a (x);\nCREATE TABLE b (y);\n"),
+            migration_checksum("CREATE TABLE a (x);\r\nCREATE TABLE b (y);\r\n")
+        );
     }
 
     #[test]
