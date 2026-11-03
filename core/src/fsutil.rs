@@ -274,7 +274,9 @@ fn is_network_fs(path: &Path) -> bool {
         root.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
     };
     let t = unsafe { windows_sys::Win32::Storage::FileSystem::GetDriveTypeW(root.as_ptr()) };
-    t == windows_sys::Win32::Storage::FileSystem::DRIVE_REMOTE
+    // DRIVE_REMOTE from WinBase.h (GetDriveTypeW return value for network drives).
+    const DRIVE_REMOTE: u32 = 4;
+    t == DRIVE_REMOTE
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
