@@ -26,7 +26,7 @@
 <header class="topbar">
   <div class="brand">
     <RadioTower size={30} strokeWidth={1.8} aria-hidden="true" />
-    <span class="title">EMCOMM LOG <span class="v">V1</span></span>
+    <span class="title">EMCOMM LOG <span class="v">V2</span></span>
   </div>
   <div class="center">
     <span class="pill offline" title="All features work without a network connection"
