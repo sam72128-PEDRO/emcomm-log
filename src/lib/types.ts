@@ -599,6 +599,19 @@ export interface Form214Request {
   display_zone: "local" | "utc";
 }
 
+export interface Form309Request {
+  op_id: string;
+  entry_ids: string[];
+  kinds: EntryKind[];
+  include_details: boolean;
+  net_name: string;
+  operator_name: string;
+  operator_call: string;
+  prepared_by_name: string;
+  prepared_by_call: string;
+  display_zone: "local" | "utc";
+}
+
 export interface FormPreview {
   count: number;
   skipped: { sequence_no: number; reason: string }[];

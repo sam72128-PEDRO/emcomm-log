@@ -88,5 +88,7 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     Instruction pages are dropped; signature fields are never filled; text that does not fit is returned
     as overflow for a continuation page, never silently cut.
 27. **ICS 309 is drawn by EMCOMM LOG**, not filled: FEMA's NIMS v3 set has no ICS 309, and online copies
-    are older revisions or local ARES variants. The app's PDF writer draws the standard 309 layout.
+    are older revisions or local ARES variants. `export::ics309` draws the standard layout (blocks 1–8) with
+    the same embedded font; cells wrap rather than truncate. A message number goes under FROM unless the
+    entry was sent (then TO). Being drawn, the 309 is not a fillable form.
 28. **No ICS 205 export.** The channel plan is entered from the 205 an operator is given (input only).

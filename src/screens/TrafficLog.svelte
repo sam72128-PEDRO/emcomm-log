@@ -29,10 +29,12 @@
   import { formatInstant, fromInputValue, todayBoundsUtc, zoneLabel } from "../lib/time";
   import KindBadge from "../components/KindBadge.svelte";
   import Form213Dialog from "../components/Form213Dialog.svelte";
+  import Form309Dialog from "../components/Form309Dialog.svelte";
 
   const book = app.active!;
   const kinds = allowedKinds(book.info.logbook_type);
   let form213 = $state(false);
+  let form309 = $state(false);
   let page = $state<T.EntryPage>({ total: 0, items: [] });
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -535,6 +537,11 @@
           ? "Fill an ICS 213 for each selected message"
           : "Select one or more message entries first"}
         ><FileText size={16} />ICS 213{app.selection.length ? ` (${app.selection.length})` : ""}…</button
+      ><button
+        onclick={() => (form309 = true)}
+        title={app.selection.length
+          ? "Communications log of the selected entries"
+          : "Communications log of an operational period"}><FileText size={16} />ICS 309…</button
       >{/if}
     <button onclick={() => exportCurrent(false)}><Download size={16} />Export…</button>
     <button onclick={print}><Printer size={16} />Print</button>
@@ -542,6 +549,11 @@
 </section>
 
 {#if form213}<Form213Dialog entryIds={[...app.selection]} onclose={() => (form213 = false)} />{/if}
+{#if form309}<Form309Dialog
+    entryIds={[...app.selection]}
+    opId={page.items.find((e) => app.selection.includes(e.id) && e.op_id)?.op_id ?? null}
+    onclose={() => (form309 = false)}
+  />{/if}
 
 <style>
   .log {

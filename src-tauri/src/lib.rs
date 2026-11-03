@@ -7,7 +7,7 @@ use emcomm_core::appdb::{AppDb, BackupRun};
 use emcomm_core::backup::{self, BackupListing, BackupPreview};
 use emcomm_core::drafts::{Draft, DraftMeta, DraftStore};
 use emcomm_core::error::{AppError, AppResult, ErrorCode};
-use emcomm_core::export::{self, ExportPreview, ExportRequest, ExportResult, forms};
+use emcomm_core::export::{self, ExportPreview, ExportRequest, ExportResult, forms, ics309};
 use emcomm_core::fsutil::{self, now_utc};
 use emcomm_core::logbook::{CreateParams, Logbook, StorageHealth};
 use emcomm_core::models::*;
@@ -973,6 +973,16 @@ async fn export_form213(state: State<'_, AppState>, req: forms::Form213Request, 
 }
 
 #[tauri::command]
+async fn form309_preview(state: State<'_, AppState>, req: ics309::Form309Request) -> Cmd<forms::FormPreview> {
+    with_book(&state, |lb| ics309::preview_309(&lb.conn, &lb.info()?, &req))
+}
+
+#[tauri::command]
+async fn export_form309(state: State<'_, AppState>, req: ics309::Form309Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&state, dest, move |c, i, p| ics309::export_309(c, i, &req, p)).await
+}
+
+#[tauri::command]
 async fn export_form214(state: State<'_, AppState>, req: forms::Form214Request, dest: String) -> Cmd<forms::FormResult> {
     run_form(&state, dest, move |c, i, p| forms::export_214(c, i, &req, p)).await
 }
@@ -1192,6 +1202,8 @@ pub fn run() {
             form214_preview,
             export_form213,
             export_form214,
+            form309_preview,
+            export_form309,
             quit_app,
             cancel_close,
         ])

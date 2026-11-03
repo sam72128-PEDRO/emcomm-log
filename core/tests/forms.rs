@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use emcomm_core::export::forms::{BuiltForm, Form213Request, Form214Request, build_213, build_214, export_213};
 use emcomm_core::export::ics::{page_count, read_values};
+use emcomm_core::export::ics309::{Form309Request, ROWS_PER_PAGE, build_309, table_lines};
 use emcomm_core::logbook::{DB_FILE, Logbook, PRE_MIGRATION_DIR};
 use emcomm_core::migrate::{self, LOGBOOK_MIGRATIONS};
 use emcomm_core::models::*;
@@ -322,4 +323,126 @@ fn a24_approval_and_reply_fields_survive_revisions_restart_and_packages() {
     let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
     let e2 = &lb2.list_entries(&all_query()).unwrap().items[0];
     assert_eq!(e2.emergency.as_ref().unwrap().replied_by_name, "M. Chen");
+}
+
+fn traffic(subject: &str, at: &str, dir: Direction, from: &str, to: &str, msg_no: &str) -> EntryInput {
+    EntryInput {
+        kind: if msg_no.is_empty() { EntryKind::Traffic } else { EntryKind::Message },
+        event_at_utc: at.into(),
+        direction: dir,
+        from_text: from.into(),
+        to_text: to.into(),
+        subject: subject.into(),
+        emergency: Some(EmergencyFields { message_number: msg_no.into(), ..Default::default() }),
+        ..input(subject)
+    }
+}
+
+#[test]
+fn a20_ics_309_rows_match_scope_and_message_numbers_follow_direction() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = emergency_book(t.path());
+    let mut lb = Logbook::open(&dir).unwrap();
+    let op = lb.save_period(None, &period("OP 5", "2026-11-02T12:00:00Z", "2026-11-02T20:00:00Z")).unwrap().period;
+    let rcvd = lb
+        .save_new(&traffic("Shelter needs cots", "2026-11-02T13:05:00Z", Direction::Received, "SHELTER1", "NCS", "12"), &rid(), &operator())
+        .unwrap()
+        .entry;
+    let sent = lb
+        .save_new(&traffic("Cots dispatched", "2026-11-02T13:40:00Z", Direction::Sent, "NCS", "SHELTER1", "7"), &rid(), &operator())
+        .unwrap()
+        .entry;
+    let check = lb
+        .save_new(&traffic("Radio check", "2026-11-02T12:30:00Z", Direction::Received, "KJ4ABC", "NCS", ""), &rid(), &operator())
+        .unwrap()
+        .entry;
+    let outside =
+        lb.save_new(&traffic("Next shift", "2026-11-02T21:00:00Z", Direction::Received, "A", "B", ""), &rid(), &operator()).unwrap().entry;
+    let gone =
+        lb.save_new(&traffic("Duplicate", "2026-11-02T14:00:00Z", Direction::Received, "A", "B", ""), &rid(), &operator()).unwrap().entry;
+    lb.void_entry(&gone.id, "dup", &rid(), &operator()).unwrap();
+    lb.save_new(&activity("Net opened", "2026-11-02T12:00:00Z"), &rid(), &operator()).unwrap();
+    let info = lb.info().unwrap();
+    let req = Form309Request {
+        op_id: op.id.clone(),
+        net_name: "Lake County ARES Net".into(),
+        operator_name: "Pat Tester".into(),
+        operator_call: "KJ4MRC".into(),
+        prepared_by_name: "Pat Tester".into(),
+        prepared_by_call: "KJ4MRC".into(),
+        display_zone: "utc".into(),
+        ..Default::default()
+    };
+    let rows = table_lines(&lb.conn, &req).unwrap();
+    assert_eq!(rows.len(), 3, "traffic + messages in the period; not voided, not outside, not activities");
+    assert_eq!(rows[0], ["12:30Z", "KJ4ABC", "", "NCS", "", "Radio check"].map(String::from));
+    assert_eq!(rows[1], ["13:05Z", "SHELTER1", "12", "NCS", "", "Shelter needs cots"].map(String::from), "received: msg # under FROM");
+    assert_eq!(rows[2], ["13:40Z", "NCS", "", "SHELTER1", "7", "Cots dispatched"].map(String::from), "sent: msg # under TO");
+    let built = build_309(&lb.conn, &info, &req).unwrap();
+    assert_eq!((built.exported, built.pages), (3, 1));
+    assert_eq!(page_count(&built.pdf).unwrap(), 1);
+
+    // A Traffic Log selection narrows the log; selected entries that cannot appear are explained.
+    let sel = Form309Request { entry_ids: vec![sent.id.clone(), outside.id.clone(), gone.id.clone(), rcvd.id.clone()], ..req.clone() };
+    let b = build_309(&lb.conn, &info, &sel).unwrap();
+    assert_eq!(b.exported, 2);
+    let reasons: Vec<(i64, &str)> = b.skipped.iter().map(|s| (s.sequence_no, s.reason.as_str())).collect();
+    assert!(reasons.contains(&(outside.sequence_no, "not in operational period \u{201c}OP 5\u{201d}")), "{reasons:?}");
+    assert!(reasons.contains(&(gone.sequence_no, "voided")));
+    let _ = check;
+
+    // Long messages wrap onto extra lines (nothing cut); many entries flow onto more pages.
+    let mut long = traffic("x", "2026-11-02T15:00:00Z", Direction::Received, "A-VERY-LONG-TACTICAL-CALL-SIGN-THAT-WRAPS", "NCS", "");
+    long.subject = (1..=60).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ");
+    lb.save_new(&long, &rid(), &operator()).unwrap();
+    let rows = table_lines(&lb.conn, &req).unwrap();
+    let words: String = rows.iter().map(|r| r[5].clone()).collect::<Vec<_>>().join(" ");
+    assert!((1..=60).all(|i| words.split_whitespace().any(|w| w == format!("w{i}"))), "every word is printed");
+    let call: String = rows.iter().map(|r| r[1].as_str()).collect();
+    assert!(call.contains("A-VERY-LONG-TACTICAL") && call.contains("WRAPS"));
+    for i in 0..ROWS_PER_PAGE {
+        let at = format!("2026-11-02T16:{:02}:{:02}Z", i / 60, i % 60);
+        lb.save_new(&traffic(&format!("Check-in {i}"), &at, Direction::Received, "X", "NCS", ""), &rid(), &operator()).unwrap();
+    }
+    let big = build_309(&lb.conn, &info, &req).unwrap();
+    assert_eq!(big.pages, 2);
+    assert_eq!(page_count(&big.pdf).unwrap(), 2);
+}
+
+/// EMCOMM_FORM_OUT=/path/309.pdf cargo test -p emcomm-core --test forms ics309_sample -- --ignored
+#[test]
+#[ignore]
+fn ics309_sample() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = emergency_book(t.path());
+    let mut lb = Logbook::open(&dir).unwrap();
+    let op = lb.save_period(None, &period("OP 5", "2026-11-02T12:00:00Z", "2026-11-03T00:00:00Z")).unwrap().period;
+    lb.save_new(
+        &traffic("Shelter needs 40 cots and 80 blankets ✓", "2026-11-02T13:05:00Z", Direction::Received, "SHELTER1", "NCS", "12"),
+        &rid(),
+        &operator(),
+    )
+    .unwrap();
+    lb.save_new(
+        &traffic("Cots dispatched on truck 12, ETA 16:30", "2026-11-02T13:40:00Z", Direction::Sent, "NCS", "SHELTER1", "7"),
+        &rid(),
+        &operator(),
+    )
+    .unwrap();
+    let mut long = traffic("x", "2026-11-02T15:00:00Z", Direction::Received, "José Núñez / EOC-LOGISTICS", "NCS", "");
+    long.subject =
+        "Road closure on CR-12 between Pine Rd and the county line; detour via SR-40. Expect delays of 30 minutes for supply runs.".into();
+    lb.save_new(&long, &rid(), &operator()).unwrap();
+    let req = Form309Request {
+        op_id: op.id,
+        net_name: "Lake County ARES Net".into(),
+        operator_name: "Pat Tester".into(),
+        operator_call: "KJ4MRC".into(),
+        prepared_by_name: "Pat Tester".into(),
+        prepared_by_call: "KJ4MRC".into(),
+        display_zone: "utc".into(),
+        ..Default::default()
+    };
+    let b = build_309(&lb.conn, &lb.info().unwrap(), &req).unwrap();
+    fs::write(std::env::var("EMCOMM_FORM_OUT").unwrap(), b.pdf).unwrap();
 }

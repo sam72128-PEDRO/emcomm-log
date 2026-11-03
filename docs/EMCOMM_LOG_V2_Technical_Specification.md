@@ -1,6 +1,6 @@
 # EMCOMM LOG V2 Technical Specification
 
-Version 0.2 | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
+Version 0.3 | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
 
 ## 1. Purpose and release boundary
 
@@ -140,9 +140,14 @@ Rows beyond page 1 continue on the form's continuation page(s) with blocks 1–3
 
 ### 4.4 ICS 309 Communications Log
 
-Source: Traffic Log entries in an OP (default all non-void traffic/message entries; respects current
-Traffic Log filters when exported from there). Dialog: OP, radio net name or position/tactical call, radio
-operator (name, station ID — defaults from profile), prepared-by.
+Source: entries of an OP — assigned to it or unassigned with event time inside it — of the chosen kinds
+(default Traffic and Message), in event-time order; voided entries never appear. When started from the
+Traffic Log with entries selected, only those entries are logged and any selected entry that cannot appear
+is listed with the reason. Dialog: OP, radio net name or position/tactical call, radio operator (name, call
+sign — defaults from profile), entry kinds, include details, prepared-by. FEMA publishes no fillable ICS 309,
+so the form is drawn by EMCOMM LOG in the standard layout (blocks 1–4 repeated on every page; a 44-line
+log per page; blocks 6–8 at the bottom). Every cell wraps onto extra lines instead of being cut; the date is
+shown with each time when the OP spans more than one day.
 
 | 309 block | Source |
 |---|---|
@@ -150,10 +155,12 @@ operator (name, station ID — defaults from profile), prepared-by.
 | Radio net name / position / tactical call | dialog |
 | Radio operator (name, station ID) | dialog / profile callsign |
 | Time | event time |
-| From (call sign/ID, message #) | `from` field; `message_number` when direction is received |
+| From (call sign/ID, message #) | `from` field; `message_number` unless direction is sent |
 | To (call sign/ID, message #) | `to` field; `message_number` when direction is sent |
-| Message | summary (details MAY be appended, truncation never silent) |
-| Prepared by | dialog; signature blank |
+| Message | summary, plus details when chosen (wrapped, never cut) |
+| 6. Prepared by (name, call sign) | dialog |
+| 7. Date & time prepared | time of export |
+| 8. Page | page n of N |
 
 ## 5. UI
 
@@ -190,7 +197,7 @@ of the new screens. Windows/Linux CI runs only on manual dispatch until Phase 5.
 | A17 | V1 logbook and V1 `.emlog` open/import in V2 with a pre-migration backup; free-text operational period preserved and never auto-converted. |
 | A18 | ICS 213 for a fully populated message fills every mapped block exactly per §4.2; signatures blank; message longer than the box continues on a continuation page with no lost text; multi-select gives one form per message in sequence order. |
 | A19 | ICS 214 includes only non-void entries of the chosen kinds that are assigned to the OP or unassigned with event time inside it, ordered by time/sequence; resources block matches the OP; overflow continues on continuation pages with header blocks repeated. |
-| A20 | ICS 309 rows match the Traffic Log scope (OP and filters), with message numbers in the From/To columns per direction; counts in the dialog equal rows exported. |
+| A20 | ICS 309 rows match the scope (OP, kinds, Traffic Log selection), with message numbers in the From/To columns per direction; selected entries left out are explained; long cells wrap without loss; counts in the dialog equal entries exported. |
 | A21 | Channel plan rows can be entered, reordered, edited and removed by keyboard for each OP; copy from previous OP and from another logbook works; plans survive restart, backup/restore and `.emlog` round trip. |
 | A22 | Every form PDF opens in Preview, Acrobat Reader and a browser PDF viewer (macOS during development; Windows/Linux at Phase 5); fields remain editable; Unicode names (accents, ✓) render. |
 | A23 | No form contains a signature or approval that was not entered; the "Prepared with EMCOMM LOG" footer is on every page; voided entries never appear. |

@@ -6,6 +6,7 @@ pub mod csv_out;
 pub mod docx;
 pub mod forms;
 pub mod ics;
+pub mod ics309;
 pub mod pdf;
 pub mod txt;
 pub mod xlsx;
