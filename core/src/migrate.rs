@@ -22,6 +22,12 @@ pub const LOGBOOK_MIGRATIONS: &[Migration] = &[
         up: include_str!("../migrations/logbook/0002_ics_forms.up.sql"),
         down: include_str!("../migrations/logbook/0002_ics_forms.down.sql"),
     },
+    Migration {
+        version: 3,
+        name: "channel_plan",
+        up: include_str!("../migrations/logbook/0003_channel_plan.up.sql"),
+        down: include_str!("../migrations/logbook/0003_channel_plan.down.sql"),
+    },
 ];
 
 pub const APP_MIGRATIONS: &[Migration] = &[Migration {
@@ -121,7 +127,10 @@ mod tests {
     #[test]
     fn logbook_migrations_up_down_up() {
         let mut c = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 2);
+        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 3);
+        rollback(&mut c, LOGBOOK_MIGRATIONS, 2).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='channel_plan'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
         rollback(&mut c, LOGBOOK_MIGRATIONS, 1).unwrap();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='operational_periods'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
@@ -131,7 +140,7 @@ mod tests {
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
-        assert_eq!(current_version(&c).unwrap(), 2);
+        assert_eq!(current_version(&c).unwrap(), 3);
     }
 
     #[test]

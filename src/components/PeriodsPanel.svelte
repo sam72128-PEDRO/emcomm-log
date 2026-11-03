@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { CalendarClock, Plus, PencilLine, Users, FileText, Ban, RotateCcw } from "@lucide/svelte";
+  import {
+    CalendarClock,
+    RadioTower,
+    Plus,
+    PencilLine,
+    Users,
+    FileText,
+    Ban,
+    RotateCcw,
+  } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
   import { confirm } from "../lib/confirm.svelte";
@@ -10,12 +19,14 @@
   import ResourcesDialog from "./ResourcesDialog.svelte";
   import Form214Dialog from "./Form214Dialog.svelte";
   import Form309Dialog from "./Form309Dialog.svelte";
+  import ChannelPlanDialog from "./ChannelPlanDialog.svelte";
 
   let showVoided = $state(false);
   let editing = $state<{ period: T.OperationalPeriod | null; start: string | null } | null>(null);
   let resourcesFor = $state<T.OperationalPeriod | null>(null);
   let form214For = $state<string | null | undefined>(undefined);
   let form309For = $state<string | null | undefined>(undefined);
+  let planFor = $state<T.OperationalPeriod | null>(null);
   // Re-evaluated each minute so "current" follows the clock.
   let now = $state(Date.now());
   $effect(() => {
@@ -91,6 +102,9 @@
             {#if p.notes}<div class="muted small ellipsis">{p.notes}</div>{/if}
           </div>
           {#if p.status === "active"}
+            <button class="small ghost" onclick={() => (planFor = p)} title="Channel plan (from the ICS 205)"
+              ><RadioTower size={14} />Channels</button
+            >
             <button
               class="small ghost"
               onclick={() => (resourcesFor = p)}
@@ -152,6 +166,7 @@
     opId={form214For}
     onclose={() => (form214For = undefined)}
   />{/if}
+{#if planFor}<ChannelPlanDialog period={planFor} onclose={() => (planFor = null)} />{/if}
 {#if form309For !== undefined}<Form309Dialog
     opId={form309For}
     onclose={() => (form309For = undefined)}

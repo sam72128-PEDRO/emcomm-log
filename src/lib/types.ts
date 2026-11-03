@@ -626,3 +626,31 @@ export interface FormResult {
   warnings: string[];
   bytes: number;
 }
+
+export interface ChannelRow {
+  zone_group: string;
+  channel_number: string;
+  function: string;
+  channel_name: string;
+  assignment: string;
+  rx_freq: string;
+  rx_nw: string;
+  rx_tone: string;
+  tx_freq: string;
+  tx_nw: string;
+  tx_tone: string;
+  mode: string;
+  remarks: string;
+}
+
+export interface ChannelPlan {
+  rows: ChannelRow[];
+  special_instructions: string;
+}
+
+export interface PlanSource {
+  op_id: string;
+  op_name: string;
+  start_utc: string;
+  rows: number;
+}

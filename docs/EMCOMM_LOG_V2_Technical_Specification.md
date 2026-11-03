@@ -1,6 +1,6 @@
 # EMCOMM LOG V2 Technical Specification
 
-Version 0.3 | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
+Version 0.4 | 3 November 2026 | Builds on V1 1.0 (`EMCOMM_LOG_V1_Technical_Specification.md`)
 
 ## 1. Purpose and release boundary
 
@@ -77,10 +77,14 @@ tone/NAC, mode (A/D/M), remarks — the columns of the ICS 205 channel table, so
 in row by row. Per OP: `special_instructions` (free text). "Copy plan from previous OP" and "Copy plan from
 another logbook" (local only) are provided. The plan is visible on the Dashboard for the current OP.
 
-**Use in logging:** when the entry's OP has a plan, Quick Entry's Channel / Frequency field becomes a
-combobox listing plan channels ("TAC 2 — 155.475"); choosing one stores the channel name and, on HAM-type
-fields, fills frequency/mode. Free text remains allowed (unplanned channels happen). The entry stores the
-channel text it was saved with; later plan edits never rewrite saved entries.
+**Use in logging:** when the entry's OP has a plan, the Channel / Frequency field suggests the plan's
+channels first (with function, assignment and mode as hints); choosing one stores "TAC 2 (155.4750 MHz)" —
+the channel name and receive frequency. Free text remains allowed (unplanned channels happen). The entry
+stores the channel text it was saved with; later plan edits never rewrite saved entries. (HAM logbooks
+have no operational periods, so there is no HAM frequency/mode fill.) Plan rows are validated: frequencies
+are MHz decimals (a trailing "MHz" is accepted), N/W is N or W, mode is A, D or M; blank rows are dropped.
+"Copy from" offers other periods of this logbook and periods with a plan in other local emergency
+logbooks, which are opened read-only.
 
 ## 4. Form exports
 
@@ -202,7 +206,7 @@ of the new screens. Windows/Linux CI runs only on manual dispatch until Phase 5.
 | A22 | Every form PDF opens in Preview, Acrobat Reader and a browser PDF viewer (macOS during development; Windows/Linux at Phase 5); fields remain editable; Unicode names (accents, ✓) render. |
 | A23 | No form contains a signature or approval that was not entered; the "Prepared with EMCOMM LOG" footer is on every page; voided entries never appear. |
 | A24 | Approval/reply fields persist through revisions, restart, backup/restore and `.emlog` round trip on another OS. |
-| A25 | With a channel plan, Quick Entry offers plan channels; choosing one stores the channel (and fills HAM frequency/mode); later plan edits do not change saved entries; free text still allowed. |
+| A25 | With a channel plan, the Channel field offers plan channels; choosing one stores the channel name and receive frequency; later plan edits do not change saved entries; free text still allowed. |
 
 ## 8. Open questions
 

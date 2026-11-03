@@ -596,3 +596,41 @@ pub struct EntryTemplate {
     pub created_at_utc: String,
     pub updated_at_utc: String,
 }
+
+// ---------- Channel plan (schema v3), entered from an ICS 205 ----------
+
+/// One row of an ICS 205 channel table. Frequencies are MHz as typed (decimal text).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct ChannelRow {
+    pub zone_group: String,
+    pub channel_number: String,
+    pub function: String,
+    pub channel_name: String,
+    pub assignment: String,
+    pub rx_freq: String,
+    pub rx_nw: String,
+    pub rx_tone: String,
+    pub tx_freq: String,
+    pub tx_nw: String,
+    pub tx_tone: String,
+    pub mode: String,
+    pub remarks: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct ChannelPlan {
+    pub rows: Vec<ChannelRow>,
+    /// ICS 205 special instructions.
+    pub special_instructions: String,
+}
+
+/// A period in another local logbook that has a channel plan to copy from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanSource {
+    pub op_id: String,
+    pub op_name: String,
+    pub start_utc: String,
+    pub rows: i64,
+}

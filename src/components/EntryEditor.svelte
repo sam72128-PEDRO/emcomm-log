@@ -38,6 +38,7 @@
   import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
   import { currentPeriod } from "../lib/periods";
+  import { channelHint, channelValue } from "../lib/plan";
   import DateTimeInput from "./DateTimeInput.svelte";
   import TagInput from "./TagInput.svelte";
 
@@ -101,6 +102,19 @@
         form.op_id = id;
         baseline.op_id = id;
       }
+    });
+  });
+  // Channels from the entry's period plan (ICS 205), offered first in the Channel field.
+  let planChannels = $state<T.ChannelRow[]>([]);
+  $effect(() => {
+    const id = form.op_id;
+    void app.plans;
+    if (!id) {
+      planChannels = [];
+      return;
+    }
+    app.loadPlan(id).then((p) => {
+      if (form.op_id === id) planChannels = (p?.rows ?? []).filter((r) => channelValue(r));
     });
   });
   const periodChoices = $derived(app.periods.filter((p) => p.status === "active" || p.id === form.op_id));
@@ -464,8 +478,12 @@
           autocomplete="off"
         />
         <datalist id={fid("channels")}
-          >{#each preset.channels as c (c)}<option value={c}></option>{/each}</datalist
+          >{#each planChannels as r, i (i)}<option value={channelValue(r)}>{channelHint(r)}</option
+            >{/each}{#each preset.channels as c (c)}<option value={c}></option>{/each}</datalist
         >
+        {#if planChannels.length}<span class="hint"
+            >{planChannels.length} channel{planChannels.length === 1 ? "" : "s"} in this period's plan</span
+          >{/if}
       </div>
     {/if}
     {#if !hidden.has("handling") && !compact}

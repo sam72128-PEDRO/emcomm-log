@@ -12,6 +12,7 @@ import { fromInputValue, toInputValue, formatInstant, todayBoundsUtc, offsetLabe
 import { keyToAction } from "../lib/actions";
 import { preset } from "./fixtures";
 import { currentPeriod } from "../lib/periods";
+import { blankChannel, channelHint, channelValue } from "../lib/plan";
 
 describe("frequency parsing", () => {
   it("parses exact decimals without floating point error", () => {
@@ -224,5 +225,22 @@ describe("activity start defaults to the event time", () => {
     f.subject = "Net opened";
     expect(validateForm(f, "emergency")).toEqual({});
     expect(toEntryInput(f, "emergency", "utc").emergency?.activity_start_utc).toBe(f.event_at_utc);
+  });
+});
+
+describe("channel plan", () => {
+  it("writes a planned channel as name plus receive frequency", () => {
+    const r = {
+      ...blankChannel(),
+      channel_name: "TAC 2",
+      rx_freq: "155.4750",
+      function: "Tactical",
+      mode: "A",
+    };
+    expect(channelValue(r)).toBe("TAC 2 (155.4750 MHz)");
+    expect(channelHint(r)).toBe("Tactical · analog");
+    expect(channelValue({ ...blankChannel(), rx_freq: "146.520" })).toBe("146.520 MHz");
+    expect(channelValue({ ...blankChannel(), zone_group: "Z1", channel_number: "3" })).toBe("Z1 ch 3");
+    expect(channelValue(blankChannel())).toBe("");
   });
 });
