@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{self, now_utc, short_uuid};
 use crate::migrate::{self, LOGBOOK_MIGRATIONS};
 use crate::models::*;
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
@@ -115,10 +115,7 @@ impl LockGuard {
         match file.try_lock() {
             Ok(()) => {}
             Err(fs::TryLockError::WouldBlock) => {
-                return Err(AppError::new(
-                    ErrorCode::Locked,
-                    "This logbook is already open in another EMCOMM LOG window or process",
-                ))
+                return Err(AppError::new(ErrorCode::Locked, "This logbook is already open in another EMCOMM LOG window or process"));
             }
             Err(fs::TryLockError::Error(e)) => return Err(e.into()),
         }
@@ -217,12 +214,7 @@ pub fn read_descriptor(dir: &Path) -> Option<Descriptor> {
 }
 
 /// Insert the logbook identity, settings snapshot and preset templates into a freshly migrated DB.
-pub(crate) fn seed_new_logbook(
-    conn: &mut Connection,
-    id: &str,
-    p: &CreateParams,
-    name: &str,
-) -> AppResult<()> {
+pub(crate) fn seed_new_logbook(conn: &mut Connection, id: &str, p: &CreateParams, name: &str) -> AppResult<()> {
     let now = now_utc();
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let inc = &p.incident;
@@ -374,7 +366,11 @@ impl Logbook {
             app_version: APP_VERSION.into(),
         };
         match read_descriptor(dir) {
-            Some(d) if d.logbook_id == expected.logbook_id && d.name == expected.name && d.logbook_type == expected.logbook_type && d.schema_version == expected.schema_version => {}
+            Some(d)
+                if d.logbook_id == expected.logbook_id
+                    && d.name == expected.name
+                    && d.logbook_type == expected.logbook_type
+                    && d.schema_version == expected.schema_version => {}
             Some(d) => {
                 if d.logbook_id != id {
                     notices.push("logbook.json did not match the database identity and was rewritten from the database.".into());
@@ -440,13 +436,13 @@ impl Logbook {
                 "The logbook location is unavailable (drive disconnected or folder moved). Final saves are blocked until it is reconnected.",
             ));
         }
-        if let (Some(a), Some(b)) = (self.db_identity, file_identity(&db)) {
-            if a != b {
-                return Err(AppError::new(
-                    ErrorCode::StorageUnavailable,
-                    "The logbook file at the live path was replaced or moved. Final saves are blocked; reopen the logbook.",
-                ));
-            }
+        if let (Some(a), Some(b)) = (self.db_identity, file_identity(&db))
+            && a != b
+        {
+            return Err(AppError::new(
+                ErrorCode::StorageUnavailable,
+                "The logbook file at the live path was replaced or moved. Final saves are blocked; reopen the logbook.",
+            ));
         }
         if !self.dir.join(ATTACHMENTS_DIR).is_dir() {
             return Err(AppError::new(ErrorCode::StorageUnavailable, "The logbook attachments folder is missing"));
@@ -527,10 +523,11 @@ impl Logbook {
 
     pub fn update_settings(&mut self, time_display_override: Option<String>, operational_notes: String) -> AppResult<LogbookSettings> {
         self.ensure_writable()?;
-        if let Some(t) = &time_display_override {
-            if t != "local" && t != "utc" {
-                return Err(AppError::validation("time_display_override", "Use local or utc"));
-            }
+        if let Some(t) = &time_display_override
+            && t != "local"
+            && t != "utc"
+        {
+            return Err(AppError::validation("time_display_override", "Use local or utc"));
         }
         if operational_notes.chars().count() > 10_000 {
             return Err(AppError::validation("operational_notes", "Notes must be at most 10,000 characters"));
@@ -760,15 +757,14 @@ pub fn read_settings(conn: &Connection) -> AppResult<LogbookSettings> {
 
 pub fn compute_stats(conn: &Connection, day_start_utc: Option<&str>, day_end_utc: Option<&str>) -> AppResult<LogbookStats> {
     let mut s = LogbookStats::default();
-    (s.total_active, s.total_void, s.flagged, s.first_event_utc, s.last_event_utc, s.last_recorded_utc, s.last_sequence) = conn
-        .query_row(
-            "SELECT COALESCE(SUM(status='active'),0), COALESCE(SUM(status='void'),0), COALESCE(SUM(status='active' AND flagged=1),0),
+    (s.total_active, s.total_void, s.flagged, s.first_event_utc, s.last_event_utc, s.last_recorded_utc, s.last_sequence) = conn.query_row(
+        "SELECT COALESCE(SUM(status='active'),0), COALESCE(SUM(status='void'),0), COALESCE(SUM(status='active' AND flagged=1),0),
                     MIN(CASE WHEN status='active' THEN event_at_utc END), MAX(CASE WHEN status='active' THEN event_at_utc END),
                     MAX(recorded_at_utc), COALESCE(MAX(sequence_no),0)
              FROM entries",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
-        )?;
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+    )?;
     if let (Some(a), Some(b)) = (day_start_utc, day_end_utc) {
         s.today = conn.query_row(
             "SELECT COUNT(*) FROM entries WHERE status='active' AND event_at_utc >= ?1 AND event_at_utc < ?2",
@@ -776,11 +772,10 @@ pub fn compute_stats(conn: &Connection, day_start_utc: Option<&str>, day_end_utc
             |r| r.get(0),
         )?;
     }
-    s.favorites = conn.query_row(
-        "SELECT COUNT(*) FROM entry_favorites f JOIN entries e ON e.id=f.entry_id WHERE e.status='active'",
-        [],
-        |r| r.get(0),
-    )?;
+    s.favorites =
+        conn.query_row("SELECT COUNT(*) FROM entry_favorites f JOIN entries e ON e.id=f.entry_id WHERE e.status='active'", [], |r| {
+            r.get(0)
+        })?;
     s.stations = conn.query_row(
         "SELECT COUNT(DISTINCT upper(v)) FROM (
             SELECT from_text v FROM entries WHERE status='active' UNION ALL
@@ -790,7 +785,8 @@ pub fn compute_stats(conn: &Connection, day_start_utc: Option<&str>, day_end_utc
         [],
         |r| r.get(0),
     )?;
-    let mut stmt = conn.prepare("SELECT handling, COUNT(*) FROM entries WHERE status='active' AND handling IS NOT NULL GROUP BY handling")?;
+    let mut stmt =
+        conn.prepare("SELECT handling, COUNT(*) FROM entries WHERE status='active' AND handling IS NOT NULL GROUP BY handling")?;
     for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
         let (k, v) = row?;
         s.handling.insert(k, v);

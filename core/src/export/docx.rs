@@ -2,7 +2,7 @@
 //! One section per entry with a heading kept with its content, labeled fields, full message
 //! text, attachment names, and a footer with page numbers.
 
-use super::{detail_lines, heading_line, ReportContext};
+use super::{ReportContext, detail_lines, heading_line};
 use crate::entries::for_each_entry;
 use crate::error::{AppError, AppResult};
 use crate::models::{EntryQuery, EntryStatus};
@@ -143,7 +143,11 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
             "Incident: {}{}{}",
             lb.incident.incident_name,
             if lb.incident.incident_number.is_empty() { String::new() } else { format!(" #{}", lb.incident.incident_number) },
-            if lb.incident.operational_period.is_empty() { String::new() } else { format!(" - Operational period {}", lb.incident.operational_period) }
+            if lb.incident.operational_period.is_empty() {
+                String::new()
+            } else {
+                format!(" - Operational period {}", lb.incident.operational_period)
+            }
         );
         head.push_str(&para(Some("Meta"), false, &runs(&inc, false)));
     }

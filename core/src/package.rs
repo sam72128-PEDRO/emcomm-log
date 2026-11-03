@@ -2,12 +2,12 @@
 //! `attachments/<sha256>.<ext>`. Export never mutates the live logbook; import always creates a
 //! new local logbook identity and never overwrites or merges.
 
-use crate::backup::{finalize_install, InstallOutcome};
+use crate::backup::{InstallOutcome, finalize_install};
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{self, short_uuid};
-use crate::logbook::{self, is_attachment_name, ATTACHMENTS_DIR, DB_FILE};
+use crate::logbook::{self, ATTACHMENTS_DIR, DB_FILE, is_attachment_name};
 use crate::migrate::{self, LOGBOOK_MIGRATIONS};
-use crate::snapshot::{self, Manifest, FORMAT_VERSION, MANIFEST_FILE, PACKAGE_FORMAT};
+use crate::snapshot::{self, FORMAT_VERSION, MANIFEST_FILE, Manifest, PACKAGE_FORMAT};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -63,7 +63,11 @@ pub fn export_package(live_dir: &Path, dest_file: &Path) -> AppResult<ExportPack
         return Err(AppError::validation("path", "Save the package outside the live logbook folder"));
     }
     let work = parent.join(format!(".emcomm-export-{}", short_uuid(&fsutil::new_uuid())));
-    let tmp_zip = parent.join(format!(".{}.tmp-{}", dest_file.file_name().and_then(|n| n.to_str()).unwrap_or("export.emlog"), short_uuid(&fsutil::new_uuid())));
+    let tmp_zip = parent.join(format!(
+        ".{}.tmp-{}",
+        dest_file.file_name().and_then(|n| n.to_str()).unwrap_or("export.emlog"),
+        short_uuid(&fsutil::new_uuid())
+    ));
     let result = (|| -> AppResult<ExportPackageResult> {
         fs::create_dir(&work)?;
         let snap = snapshot::take_snapshot(live_dir, &work)?;

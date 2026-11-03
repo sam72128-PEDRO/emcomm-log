@@ -1,0 +1,87 @@
+# EMCOMM LOG V1
+
+Offline, single-user desktop communications log for routine logging, amateur radio (HAM), and emergency
+activations. Windows, macOS, and Linux. Tauri 2 + Svelte 5/TypeScript UI, Rust core, SQLite storage.
+
+- Every **Save Entry / Save Changes** commits directly to the logbook's SQLite database in the folder you
+  chose (WAL + `synchronous=FULL`, verified on open). There is no "Save Logbook" step.
+- Unfinished entries are autosaved as **drafts** (~2 s after typing stops) in the local app-data folder and
+  offered for recovery after a crash.
+- Independent, verified **backups** (automatic interval, on close, manual) with retention, and **restore**
+  as a separate logbook.
+- Portable **`.emlog`** packages for moving a complete logbook between computers.
+- **Reports**: DOCX, XLSX, PDF, CSV, TXT, and ADIF 3.1.4 (qualifying HAM QSOs). No Office required.
+- No network use, accounts, cloud sync, or telemetry.
+
+Documentation: [Operator guide](docs/OPERATOR_GUIDE.md) · [Export formats](docs/EXPORT_FORMATS.md) ·
+[Decisions](DECISIONS.md) · [Implementation status / acceptance matrix](IMPLEMENTATION_STATUS.md)
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `core/` | `emcomm-core` Rust crate: schema/migrations, live logbook + lock, entries/revisions, drafts, backups/restore, `.emlog`, exports, validation. All authoritative logic. |
+| `core/migrations/` | Versioned SQL migrations (`*.up.sql` / `*.down.sql`), checksummed at apply time. |
+| `core/tests/` | Integration tests against real SQLite: durability, process-kill, concurrency, fault injection, backups, packages (incl. malicious archives), exports, scale. |
+| `src-tauri/` | Tauri shell: typed commands, native menus, Rust-side file dialogs, backup scheduler, close workflow. |
+| `src/` | Svelte UI (`screens/`, `components/`, `lib/`), frontend tests in `src/test/`. |
+| `scripts/validate_exports.py` | Independent validation of export fixtures with python-docx, openpyxl, pypdf, adif-io. |
+| `.github/workflows/ci.yml` | Native Windows/macOS/Linux CI: lint, typecheck, tests, fixture validation, installers, cross-OS `.emlog` round trip. |
+
+## Prerequisites
+
+All platforms: **Node.js 22+**, **Rust stable (1.89+; built with 1.99.1)** via [rustup](https://rustup.rs).
+
+| OS | Additional prerequisites |
+|---|---|
+| macOS 11+ | Xcode Command Line Tools (`xcode-select --install`). |
+| Windows 10/11 | Microsoft C++ Build Tools ("Desktop development with C++"), WebView2 runtime (preinstalled on Windows 11). |
+| Linux (Debian/Ubuntu 22.04+) | `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev build-essential file` |
+
+Dependency versions are pinned in `package-lock.json` and `Cargo.lock`. The Tauri npm packages
+(`@tauri-apps/api`, `@tauri-apps/cli`) must stay on the same minor version as the `tauri` crate.
+
+## Develop, test, build
+
+```bash
+npm ci
+npm run tauri dev          # run the app with hot reload
+```
+
+```bash
+npm run format:check && npm run lint && npm run check && npm test     # frontend
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace                                                 # Rust unit + integration
+```
+
+Independent export validation:
+
+```bash
+python3 -m venv .venv-validate && .venv-validate/bin/pip install -r scripts/requirements-validate.txt
+EMCOMM_FIXTURE_OUT=/tmp/emcomm-fixtures cargo test -p emcomm-core --test exports write_fixture
+.venv-validate/bin/python scripts/validate_exports.py /tmp/emcomm-fixtures
+```
+
+100,000-entry scale test (several minutes):
+
+```bash
+cargo test -p emcomm-core --release --test scale -- --ignored --nocapture
+```
+
+Installers (built on each target OS; cross-compiling installers is not supported):
+
+```bash
+npx tauri build
+```
+
+Output goes to `target/release/bundle/` — macOS `.app` + `.dmg`, Windows `.msi` + NSIS `-setup.exe`,
+Linux `.deb`, `.rpm`, `.AppImage`.
+
+`EMCOMM_DATA_DIR=<folder>` relocates the local app-data folder (settings, profiles, presets, drafts),
+for testing or portable use.
+
+## Signing
+
+Builds are **unsigned**. macOS will require right-click → Open the first time (Gatekeeper); Windows
+SmartScreen may warn. Code signing and macOS notarization need credentials that were not provided; see
+Tauri's signing guides to add them to CI.

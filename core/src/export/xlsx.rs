@@ -3,14 +3,14 @@
 //! quote-prefix style, so editing the cell cannot turn it into a formula. A "Report" sheet holds
 //! the export metadata.
 
-use super::{columns, is_formula_like, ReportContext};
+use super::{ReportContext, columns, is_formula_like};
 use crate::entries::for_each_entry;
 use crate::error::{AppError, AppResult};
 use crate::models::EntryQuery;
 use crate::validate::parse_utc;
 use chrono::{Datelike, Timelike};
-use rust_xlsxwriter::{ExcelDateTime, Format, FormatAlign, Workbook, XlsxError};
 use rusqlite::Connection;
+use rust_xlsxwriter::{ExcelDateTime, Format, FormatAlign, Workbook, XlsxError};
 use std::path::Path;
 
 pub const MAX_CELL_CHARS: usize = 32_000;
@@ -25,10 +25,7 @@ fn xerr(e: XlsxError) -> AppError {
 fn excel_dt(iso: &str) -> Option<ExcelDateTime> {
     let t = parse_utc(iso)?;
     let secs = t.second() as f64 + t.nanosecond() as f64 / 1e9;
-    ExcelDateTime::from_ymd(t.year() as u16, t.month() as u8, t.day() as u8)
-        .ok()?
-        .and_hms(t.hour() as u16, t.minute() as u8, secs)
-        .ok()
+    ExcelDateTime::from_ymd(t.year() as u16, t.month() as u8, t.day() as u8).ok()?.and_hms(t.hour() as u16, t.minute() as u8, secs).ok()
 }
 
 pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path) -> AppResult<(i64, Vec<String>)> {
@@ -58,11 +55,11 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
         for_each_entry(conn, q, |e| {
             for (i, (h, f)) in cols.iter().enumerate() {
                 let c = i as u16;
-                if c == utc_col {
-                    if let Some(d) = excel_dt(&e.event_at_utc) {
-                        ws.write_datetime_with_format(row, c, &d, &dt).map_err(xerr)?;
-                        continue;
-                    }
+                if c == utc_col
+                    && let Some(d) = excel_dt(&e.event_at_utc)
+                {
+                    ws.write_datetime_with_format(row, c, &d, &dt).map_err(xerr)?;
+                    continue;
                 }
                 let mut v = f(e, ctx.zone);
                 if v.is_empty() {
@@ -83,7 +80,7 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
             n += 1;
             Ok(())
         })?;
-        ws.autofilter(0, 0, row.saturating_sub(1).max(0), (cols.len() - 1) as u16).map_err(xerr)?;
+        ws.autofilter(0, 0, row.saturating_sub(1), (cols.len() - 1) as u16).map_err(xerr)?;
     }
     {
         let ws = wb.add_worksheet_with_constant_memory().map_err(xerr)?;
@@ -100,7 +97,10 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
             ("Scope", ctx.description.clone()),
             ("Records", ctx.count.to_string()),
             ("Event Time UTC", "Typed Excel date/time cells in UTC (no time zone stored by Excel).".into()),
-            ("Text cells", "All values are stored as text. Text beginning with = + - @ uses Excel's quote-prefix so it is never evaluated.".into()),
+            (
+                "Text cells",
+                "All values are stored as text. Text beginning with = + - @ uses Excel's quote-prefix so it is never evaluated.".into(),
+            ),
         ];
         for (i, (k, v)) in rows.iter().enumerate() {
             ws.write_string_with_format(i as u32, 0, *k, &header).map_err(xerr)?;

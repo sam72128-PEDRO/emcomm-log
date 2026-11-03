@@ -16,8 +16,8 @@ pub const MAX_ATTACHMENTS_PER_SAVE: usize = 20;
 
 /// Parse any RFC 3339 instant and return the canonical stored form: UTC, millisecond precision, `Z`.
 pub fn normalize_utc(field: &str, s: &str) -> AppResult<String> {
-    let dt = DateTime::parse_from_rfc3339(s.trim())
-        .map_err(|_| AppError::validation(field, format!("'{s}' is not a valid date and time")))?;
+    let dt =
+        DateTime::parse_from_rfc3339(s.trim()).map_err(|_| AppError::validation(field, format!("'{s}' is not a valid date and time")))?;
     let utc = dt.with_timezone(&Utc);
     let year = chrono::Datelike::year(&utc);
     if !(1970..=2200).contains(&year) {
@@ -92,7 +92,15 @@ pub fn normalize_grid(field: &str, s: &str) -> AppResult<String> {
     Ok(chars
         .iter()
         .enumerate()
-        .map(|(i, c)| if i < 2 { c.to_ascii_uppercase() } else if i < 4 || i > 5 { *c } else { c.to_ascii_lowercase() })
+        .map(|(i, c)| {
+            if i < 2 {
+                c.to_ascii_uppercase()
+            } else if !(4..=5).contains(&i) {
+                *c
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
         .collect())
 }
 
@@ -195,10 +203,10 @@ fn normalize_tags(tags: &[String]) -> AppResult<Vec<String>> {
 }
 
 fn check_order(field: &str, start: &Option<String>, end: &Option<String>) -> AppResult<()> {
-    if let (Some(s), Some(e)) = (start, end) {
-        if e < s {
-            return Err(AppError::validation(field, "End time is before start time"));
-        }
+    if let (Some(s), Some(e)) = (start, end)
+        && e < s
+    {
+        return Err(AppError::validation(field, "End time is before start time"));
     }
     Ok(())
 }
@@ -228,10 +236,7 @@ pub fn validate_ham(h: &HamFields, require_qso: bool) -> AppResult<HamFields> {
     if let (Some(hz), false) = (out.frequency_hz, out.band.is_empty()) {
         let (_, lo, hi) = BANDS.iter().find(|(n, _, _)| *n == out.band).copied().unwrap();
         if hz < lo || hz > hi {
-            return Err(AppError::validation(
-                "ham.band",
-                format!("{} MHz is outside the {} band", format_mhz(hz), out.band),
-            ));
+            return Err(AppError::validation("ham.band", format!("{} MHz is outside the {} band", format_mhz(hz), out.band)));
         }
     }
     if require_qso {
@@ -318,18 +323,12 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
     let ham = match (&input.ham, book) {
         (Some(h), LogbookType::Ham) => {
             let v = validate_ham(h, input.kind == EntryKind::Qso)?;
-            if ham_is_empty(&v) {
-                None
-            } else {
-                Some(v)
-            }
+            if ham_is_empty(&v) { None } else { Some(v) }
         }
         (None, LogbookType::Ham) if input.kind == EntryKind::Qso => {
-            return Err(AppError::validation("ham.their_call", "A QSO needs the other station's callsign"))
+            return Err(AppError::validation("ham.their_call", "A QSO needs the other station's callsign"));
         }
-        (Some(h), _) if !ham_is_empty(h) => {
-            return Err(AppError::validation("ham", "HAM fields are only available in HAM logbooks"))
-        }
+        (Some(h), _) if !ham_is_empty(h) => return Err(AppError::validation("ham", "HAM fields are only available in HAM logbooks")),
         _ => None,
     };
     let emergency = match (&input.emergency, book) {
@@ -373,10 +372,10 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
 
 /// Template defaults never carry timestamps; strip them and validate formats only.
 pub fn validate_template_defaults(d: &TemplateDefaults, book: LogbookType) -> AppResult<TemplateDefaults> {
-    if let Some(k) = d.kind {
-        if !book.allowed_kinds().contains(&k) {
-            return Err(AppError::validation("kind", "Entry type not available in this logbook"));
-        }
+    if let Some(k) = d.kind
+        && !book.allowed_kinds().contains(&k)
+    {
+        return Err(AppError::validation("kind", "Entry type not available in this logbook"));
     }
     let ham = match &d.ham {
         Some(h) if book == LogbookType::Ham => {
@@ -443,10 +442,10 @@ pub fn validate_preset_config(c: &PresetConfig, book: LogbookType) -> AppResult<
             return Err(AppError::validation("field_labels", "Labels must be 1-40 characters"));
         }
     }
-    if let Some(k) = c.default_kind {
-        if !book.allowed_kinds().contains(&k) {
-            return Err(AppError::validation("default_kind", "Default entry type not available for this logbook type"));
-        }
+    if let Some(k) = c.default_kind
+        && !book.allowed_kinds().contains(&k)
+    {
+        return Err(AppError::validation("default_kind", "Default entry type not available for this logbook type"));
     }
     let mut templates = Vec::new();
     for t in &c.templates {

@@ -2,12 +2,12 @@
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{self, now_utc, short_uuid};
-use crate::logbook::{self, Descriptor, ATTACHMENTS_DIR, DB_FILE, DESCRIPTOR_FILE};
+use crate::logbook::{self, ATTACHMENTS_DIR, DB_FILE, DESCRIPTOR_FILE, Descriptor};
 use crate::migrate::{self, LOGBOOK_MIGRATIONS};
 use crate::models::{BackupSettings, LogbookType};
-use crate::snapshot::{self, Manifest, BACKUP_FORMAT, MANIFEST_FILE};
+use crate::snapshot::{self, BACKUP_FORMAT, MANIFEST_FILE, Manifest};
 use chrono::{DateTime, Datelike, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -115,9 +115,11 @@ pub fn run_backup(live_dir: &Path, dest_root: &Path, kind: &str, retention: &Bac
 
 fn find_existing_book_dir(dest_root: &Path, logbook_id: &str) -> Option<PathBuf> {
     let suffix = format!("--{}", short_uuid(logbook_id));
-    fs::read_dir(dest_root).ok()?.flatten().map(|e| e.path()).find(|p| {
-        p.is_dir() && p.file_name().map(|n| n.to_string_lossy().ends_with(&suffix)).unwrap_or(false)
-    })
+    fs::read_dir(dest_root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.is_dir() && p.file_name().map(|n| n.to_string_lossy().ends_with(&suffix)).unwrap_or(false))
 }
 
 fn read_manifest(dir: &Path) -> Option<Manifest> {
@@ -128,7 +130,7 @@ fn read_manifest(dir: &Path) -> Option<Manifest> {
 /// Decide which backups to keep: the newest `keep_recent`, the newest of each of the last
 /// `keep_daily` days, and the newest of each of the last `keep_weekly` ISO weeks.
 pub fn retention_keep(mut items: Vec<(DateTime<Utc>, PathBuf)>, s: &BackupSettings) -> HashSet<PathBuf> {
-    items.sort_by(|a, b| b.0.cmp(&a.0));
+    items.sort_by_key(|i| std::cmp::Reverse(i.0));
     let mut keep = HashSet::new();
     for (_, p) in items.iter().take(s.keep_recent.max(1) as usize) {
         keep.insert(p.clone());
@@ -160,16 +162,17 @@ pub fn apply_retention(book_dir: &Path, s: &BackupSettings, just_created: &Path)
         let p = e.path();
         let name = e.file_name().to_string_lossy().to_string();
         if name.starts_with(".tmp-") {
-            let old = e.metadata().and_then(|m| m.modified()).map(|t| t.elapsed().map(|d| d.as_secs() > 3600).unwrap_or(false)).unwrap_or(false);
+            let old =
+                e.metadata().and_then(|m| m.modified()).map(|t| t.elapsed().map(|d| d.as_secs() > 3600).unwrap_or(false)).unwrap_or(false);
             if old && fs::remove_dir_all(&p).is_ok() {
                 removed += 1;
             }
             continue;
         }
-        if let Some(m) = read_manifest(&p) {
-            if let Some(t) = crate::validate::parse_utc(&m.created_at_utc) {
-                items.push((t, p));
-            }
+        if let Some(m) = read_manifest(&p)
+            && let Some(t) = crate::validate::parse_utc(&m.created_at_utc)
+        {
+            items.push((t, p));
         }
     }
     let keep = retention_keep(items.clone(), s);
@@ -215,7 +218,9 @@ pub fn preview_backup(dir: &Path) -> AppResult<BackupPreview> {
     let m = snapshot::verify_dir(dir, BACKUP_FORMAT)?;
     let conn = logbook::Logbook::open_read_only(&dir.join(DB_FILE))?;
     let (first, last): (Option<String>, Option<String>) =
-        conn.query_row("SELECT MIN(event_at_utc), MAX(event_at_utc) FROM entries WHERE status='active'", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        conn.query_row("SELECT MIN(event_at_utc), MAX(event_at_utc) FROM entries WHERE status='active'", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
     Ok(BackupPreview {
         path: dir.to_string_lossy().to_string(),
         logbook_id: m.source.logbook_id,
@@ -259,11 +264,10 @@ pub fn finalize_install(
         if n != 1 {
             return Err(AppError::new(ErrorCode::InvalidPackage, "Database must contain exactly one logbook"));
         }
-        let (source_id, src_name, ty, created, prov): (String, String, String, String, String) = conn.query_row(
-            "SELECT id, name, type, created_at_utc, provenance_json FROM logbook",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-        )?;
+        let (source_id, src_name, ty, created, prov): (String, String, String, String, String) =
+            conn.query_row("SELECT id, name, type, created_at_utc, provenance_json FROM logbook", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?;
         let logbook_type = LogbookType::parse(&ty).ok_or_else(|| AppError::new(ErrorCode::InvalidPackage, "Unknown logbook type"))?;
         let name = logbook::validate_name(name_override.unwrap_or(&src_name))?;
         let safe = fsutil::safe_component(&name, 60);

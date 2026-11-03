@@ -99,11 +99,7 @@ pub enum DisplayZone {
 
 impl DisplayZone {
     pub fn parse(s: &str) -> DisplayZone {
-        if s == "utc" {
-            DisplayZone::Utc
-        } else {
-            DisplayZone::Local
-        }
+        if s == "utc" { DisplayZone::Utc } else { DisplayZone::Local }
     }
 
     pub fn offset_at(&self, t: DateTime<Utc>) -> FixedOffset {
@@ -141,7 +137,8 @@ pub fn fmt_opt(zone: DisplayZone, v: &Option<String>) -> String {
 }
 
 fn day_start_utc(date: &str, zone: DisplayZone) -> AppResult<DateTime<Utc>> {
-    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| AppError::validation("range", format!("'{date}' is not a date (YYYY-MM-DD)")))?;
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| AppError::validation("range", format!("'{date}' is not a date (YYYY-MM-DD)")))?;
     let naive = d.and_hms_opt(0, 0, 0).unwrap();
     Ok(match zone {
         DisplayZone::Utc => Utc.from_utc_datetime(&naive),
@@ -238,11 +235,10 @@ pub fn describe_filter(q: &EntryQuery) -> String {
     if q.flagged_only {
         parts.push("flagged only".into());
     }
-    if parts.is_empty() {
-        "no criteria".into()
-    } else {
-        parts.join("; ")
+    if !q.ids.is_empty() {
+        parts.push(format!("{} selected entries", q.ids.len()));
     }
+    if parts.is_empty() { "no criteria".into() } else { parts.join("; ") }
 }
 
 pub fn preview(conn: &Connection, book: LogbookType, req: &ExportRequest) -> AppResult<ExportPreview> {
@@ -336,7 +332,9 @@ pub fn columns(book: LogbookType) -> Vec<Col> {
             ("Receiver", |e, _| e.emergency.as_ref().map(|m| m.receiver.clone()).unwrap_or_default()),
             ("Sent Time", |e, z| e.emergency.as_ref().map(|m| fmt_opt(z, &m.sent_at_utc)).unwrap_or_default()),
             ("Received Time", |e, z| e.emergency.as_ref().map(|m| fmt_opt(z, &m.received_at_utc)).unwrap_or_default()),
-            ("Reply Requested", |e, _| e.emergency.as_ref().map(|m| if m.reply_requested { "yes".into() } else { String::new() }).unwrap_or_default()),
+            ("Reply Requested", |e, _| {
+                e.emergency.as_ref().map(|m| if m.reply_requested { "yes".into() } else { String::new() }).unwrap_or_default()
+            }),
             ("Action Requested", |e, _| e.emergency.as_ref().map(|m| m.action_requested.clone()).unwrap_or_default()),
             ("Response", |e, _| e.emergency.as_ref().map(|m| m.response.clone()).unwrap_or_default()),
             ("Resource / Unit", |e, _| e.emergency.as_ref().map(|m| m.resource_unit.clone()).unwrap_or_default()),
@@ -398,22 +396,13 @@ pub fn run_export(conn: &Connection, info: &LogbookInfo, req: &ExportRequest, de
     let (q, description) = resolve_query(req)?;
     let count = count_entries(conn, &q)?;
     let zone = DisplayZone::parse(&req.display_zone);
-    let ctx = ReportContext {
-        logbook: info.clone(),
-        generated: zone.format(&fsutil::now_utc()),
-        zone,
-        description,
-        count,
-    };
+    let ctx = ReportContext { logbook: info.clone(), generated: zone.format(&fsutil::now_utc()), zone, description, count };
     let parent = dest.parent().ok_or_else(|| AppError::validation("path", "Choose a file location"))?;
     if !parent.is_dir() {
         return Err(AppError::new(ErrorCode::StorageUnavailable, "Export folder is not available"));
     }
-    let tmp: PathBuf = parent.join(format!(
-        ".{}.tmp-{}",
-        dest.file_name().and_then(|n| n.to_str()).unwrap_or("export"),
-        short_uuid(&fsutil::new_uuid())
-    ));
+    let tmp: PathBuf =
+        parent.join(format!(".{}.tmp-{}", dest.file_name().and_then(|n| n.to_str()).unwrap_or("export"), short_uuid(&fsutil::new_uuid())));
     let res = (|| -> AppResult<(i64, Vec<SkippedRecord>, Vec<String>)> {
         let out = match req.format {
             ExportFormat::Csv => csv_out::write(conn, &q, &ctx, &tmp).map(|n| (n, vec![], vec![])),

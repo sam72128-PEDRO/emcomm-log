@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use emcomm_core::export::{self, adif, csv_out, ExportFormat, ExportRequest};
+use emcomm_core::export::{self, ExportFormat, ExportRequest, adif, csv_out};
 use emcomm_core::logbook::Logbook;
 use emcomm_core::models::*;
 use std::io::Read;
@@ -66,7 +66,15 @@ fn ham_fixture(parent: &Path) -> (PathBuf, Logbook) {
 }
 
 fn req(format: ExportFormat, scope: &str) -> ExportRequest {
-    ExportRequest { format, scope: scope.into(), range_from: None, range_to: None, filter: None, include_voided: false, display_zone: "utc".into() }
+    ExportRequest {
+        format,
+        scope: scope.into(),
+        range_from: None,
+        range_to: None,
+        filter: None,
+        include_voided: false,
+        display_zone: "utc".into(),
+    }
 }
 
 fn unzip_text(path: &Path, member: &str) -> String {
@@ -238,7 +246,8 @@ fn export_failure_leaves_no_partial_output() {
     assert!(export::run_export(&lb.conn, &info, &req(ExportFormat::Pdf, "all"), &dest).is_err());
     emcomm_core::faults::clear();
     assert!(!dest.exists());
-    let leftovers: Vec<_> = std::fs::read_dir(parent.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains(".tmp-")).collect();
+    let leftovers: Vec<_> =
+        std::fs::read_dir(parent.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains(".tmp-")).collect();
     assert!(leftovers.is_empty());
 }
 
@@ -255,7 +264,8 @@ fn emergency_exports_do_not_claim_official_forms() {
     for f in [ExportFormat::Txt, ExportFormat::Csv, ExportFormat::Docx] {
         let dest = parent.path().join(format!("em.{}", f.extension()));
         export::run_export(&lb.conn, &info, &req(f, "all"), &dest).unwrap();
-        let content = if f == ExportFormat::Docx { unzip_text(&dest, "word/document.xml") } else { std::fs::read_to_string(&dest).unwrap() };
+        let content =
+            if f == ExportFormat::Docx { unzip_text(&dest, "word/document.xml") } else { std::fs::read_to_string(&dest).unwrap() };
         assert!(content.contains("Shelter-1") && content.contains("Message Number"));
         assert!(!content.to_uppercase().contains("ICS 213") && !content.to_uppercase().contains("ICS-213"));
     }

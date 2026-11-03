@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import {
+  parseFrequencyHz,
+  bandForHz,
+  newForm,
+  toEntryInput,
+  applyTemplate,
+  allowedKinds,
+} from "../lib/entryForm";
+import { fromInputValue, toInputValue, formatInstant, todayBoundsUtc, offsetLabel } from "../lib/time";
+import { keyToAction } from "../lib/actions";
+import { preset } from "./fixtures";
+
+describe("frequency parsing", () => {
+  it("parses exact decimals without floating point error", () => {
+    expect(parseFrequencyHz("146.52", "MHz").hz).toBe(146_520_000);
+    expect(parseFrequencyHz("14.074", "MHz").hz).toBe(14_074_000);
+    expect(parseFrequencyHz("7200", "kHz").hz).toBe(7_200_000);
+    expect(parseFrequencyHz("1.2965", "GHz").hz).toBe(1_296_500_000);
+    expect(parseFrequencyHz("", "MHz").hz).toBeNull();
+    expect(parseFrequencyHz("abc", "MHz").error).toBeTruthy();
+    expect(parseFrequencyHz("146.5200001", "MHz").error).toBeTruthy();
+    expect(bandForHz(146_520_000)).toBe("2m");
+  });
+});
+
+describe("time conversion", () => {
+  it("round-trips UTC input values exactly", () => {
+    const iso = fromInputValue("2026-11-02T19:37:05", "utc");
+    expect(iso).toBe("2026-11-02T19:37:05.000Z");
+    expect(toInputValue(iso, "utc")).toBe("2026-11-02T19:37:05");
+  });
+  it("formats with an unambiguous zone indicator", () => {
+    expect(formatInstant("2026-11-02T19:37:05.000Z", "utc", "24h")).toBe("2026-11-02 19:37Z");
+    expect(formatInstant("2026-11-02T19:37:05.000Z", "utc", "12h", { seconds: true })).toBe(
+      "2026-11-02 7:37:05 PM Z".replace(" Z", "Z"),
+    );
+    expect(formatInstant("2026-11-02T19:37:05.000Z", "local", "24h")).toMatch(/[+-]\d\d:\d\d$/);
+    expect(offsetLabel(-300)).toBe("UTC-05:00");
+  });
+  it("computes today's UTC bounds", () => {
+    const [a, b] = todayBoundsUtc("utc", new Date("2026-11-02T23:59:00Z"));
+    expect(a).toBe("2026-11-02T00:00:00.000Z");
+    expect(b).toBe("2026-11-03T00:00:00.000Z");
+  });
+});
+
+describe("entry form", () => {
+  const ctx = (type: "general" | "ham" | "emergency") => ({
+    type,
+    preset,
+    profile: null,
+    incident: {
+      incident_name: "Storm",
+      incident_number: "",
+      operational_period: "OP1",
+      agency: "",
+      location: "",
+    },
+  });
+  it("only sends type-specific sections for that logbook type", () => {
+    const g = newForm(ctx("general"));
+    g.subject = "x";
+    const gi = toEntryInput(g, "general", "utc");
+    expect(gi.ham).toBeNull();
+    expect(gi.emergency).toBeNull();
+    expect(gi.event_timezone).toBe("UTC");
+    const h = newForm(ctx("ham"));
+    h.ham.their_call = "W1AW";
+    h.freqText = "14.074";
+    const hi = toEntryInput(h, "ham", "utc");
+    expect(hi.ham?.frequency_hz).toBe(14_074_000);
+    expect(hi.ham?.qso_start_utc).toBe(h.event_at_utc);
+    const e = newForm(ctx("emergency"));
+    expect(toEntryInput(e, "emergency", "utc").emergency?.incident_name).toBe("Storm");
+  });
+  it("templates never carry timestamps", () => {
+    const f = newForm(ctx("emergency"));
+    const before = f.event_at_utc;
+    const t = applyTemplate(
+      f,
+      {
+        kind: "message",
+        direction: "sent",
+        priority: "priority",
+        handling: "pending",
+        flagged: false,
+        from_text: "",
+        to_text: "EOC",
+        subject: "Shelter update",
+        body: "",
+        channel: "",
+        location: "",
+        tags: ["STATUS"],
+        ham: null,
+        emergency: null,
+      },
+      allowedKinds("emergency"),
+    );
+    expect(t.event_at_utc).toBe(before);
+    expect(t.subject).toBe("Shelter update");
+    expect(t.handling).toBe("pending");
+  });
+});
+
+describe("shortcuts", () => {
+  const ev = (key: string, mods: Partial<KeyboardEvent> = {}) =>
+    ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods }) as KeyboardEvent;
+  it("maps Ctrl/Cmd chords to actions", () => {
+    const mac = /mac/i.test(navigator.platform);
+    const m = mac ? { metaKey: true } : { ctrlKey: true };
+    expect(keyToAction(ev("n", m))).toBe("new_entry");
+    expect(keyToAction(ev("Enter", m))).toBe("save_entry");
+    expect(keyToAction(ev("f", m))).toBe("find");
+    expect(keyToAction(ev("e", m))).toBe("export");
+    expect(keyToAction(ev("n"))).toBeNull();
+  });
+});

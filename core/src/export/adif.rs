@@ -15,9 +15,53 @@ pub const ADIF_VERSION: &str = "3.1.4";
 
 /// ADIF 3.1.4 Mode enumeration.
 pub const MODES: &[&str] = &[
-    "AM", "ARDOP", "ATV", "CHIP", "CLO", "CONTESTI", "CW", "DIGITALVOICE", "DOMINO", "DSTAR", "DYNAMIC", "FAX", "FM", "FSK441", "FT8", "HELL",
-    "ISCAT", "JT4", "JT6M", "JT9", "JT44", "JT65", "MFSK", "MSK144", "MT63", "OLIVIA", "OPERA", "PAC", "PAX", "PKT", "PSK", "PSK2K", "Q15",
-    "QRA64", "ROS", "RTTY", "RTTYM", "SSB", "SSTV", "T10", "THOR", "THRB", "TOR", "V4", "VOI", "WINMOR", "WSPR",
+    "AM",
+    "ARDOP",
+    "ATV",
+    "CHIP",
+    "CLO",
+    "CONTESTI",
+    "CW",
+    "DIGITALVOICE",
+    "DOMINO",
+    "DSTAR",
+    "DYNAMIC",
+    "FAX",
+    "FM",
+    "FSK441",
+    "FT8",
+    "HELL",
+    "ISCAT",
+    "JT4",
+    "JT6M",
+    "JT9",
+    "JT44",
+    "JT65",
+    "MFSK",
+    "MSK144",
+    "MT63",
+    "OLIVIA",
+    "OPERA",
+    "PAC",
+    "PAX",
+    "PKT",
+    "PSK",
+    "PSK2K",
+    "Q15",
+    "QRA64",
+    "ROS",
+    "RTTY",
+    "RTTYM",
+    "SSB",
+    "SSTV",
+    "T10",
+    "THOR",
+    "THRB",
+    "TOR",
+    "V4",
+    "VOI",
+    "WINMOR",
+    "WSPR",
 ];
 
 /// Common submodes and their parent mode.
@@ -97,11 +141,7 @@ fn field(out: &mut String, name: &str, value: &str) {
 fn ascii_line(s: &str) -> Option<String> {
     let flat = s.replace(['\r', '\n', '\t'], " ");
     let t = flat.trim();
-    if t.chars().all(|c| (' '..='~').contains(&c)) {
-        Some(t.to_string())
-    } else {
-        None
-    }
+    if t.chars().all(|c| (' '..='~').contains(&c)) { Some(t.to_string()) } else { None }
 }
 
 pub fn record(e: &Entry, warnings: &mut Vec<String>) -> String {

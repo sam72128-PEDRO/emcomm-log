@@ -3,7 +3,7 @@
 //! Escape policy: any cell beginning with = + - @ TAB or CR gets a leading apostrophe; remove
 //! exactly one leading apostrophe from such cells to recover the original value.
 
-use super::{columns, is_formula_like, ReportContext};
+use super::{ReportContext, columns, is_formula_like};
 use crate::entries::for_each_entry;
 use crate::error::{AppError, AppResult};
 use crate::models::EntryQuery;
@@ -16,11 +16,7 @@ pub const PREAMBLE_LINES: usize = 7;
 
 pub fn escape_cell(s: &str) -> String {
     let normalized = s.replace("\r\n", "\n").replace('\r', "\n");
-    if is_formula_like(s) {
-        format!("'{normalized}")
-    } else {
-        normalized
-    }
+    if is_formula_like(s) { format!("'{normalized}") } else { normalized }
 }
 
 fn csv_err(e: csv::Error) -> AppError {
@@ -33,11 +29,8 @@ fn csv_err(e: csv::Error) -> AppError {
 pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path) -> AppResult<i64> {
     let mut f = BufWriter::new(File::create(path)?);
     f.write_all(b"\xEF\xBB\xBF")?;
-    let mut w = csv::WriterBuilder::new()
-        .terminator(csv::Terminator::CRLF)
-        .quote_style(csv::QuoteStyle::Necessary)
-        .flexible(true)
-        .from_writer(f);
+    let mut w =
+        csv::WriterBuilder::new().terminator(csv::Terminator::CRLF).quote_style(csv::QuoteStyle::Necessary).flexible(true).from_writer(f);
     let meta = [
         vec!["EMCOMM LOG Export".to_string()],
         vec!["Logbook".into(), escape_cell(&ctx.logbook.name)],

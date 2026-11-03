@@ -6,7 +6,7 @@ use crate::fsutil::{self, now_utc};
 use crate::migrate::{self, APP_MIGRATIONS};
 use crate::models::*;
 use crate::validate;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
 pub const APP_DB_FILE: &str = "app.sqlite";
@@ -79,9 +79,18 @@ pub fn builtin_presets() -> Vec<(String, LogbookType, PresetConfig)> {
         default_priority: Some(Priority::Routine),
         quick_tags: vec!["INFO".into(), "MSG".into(), "TX".into(), "RX".into(), "RELAY".into(), "STATUS".into()],
         templates: vec![
-            seed_template("Shelter Update", msg("Shelter status update", "Occupants: \nPets: \nCapacity: \nNeeds: \nIssues: ", &["STATUS"], Priority::Routine)),
-            seed_template("Welfare Check", msg("Welfare check request", "Name: \nAddress: \nLast contact: \nRequested by: ", &["MSG"], Priority::Priority)),
-            seed_template("Resource Request", msg("Resource request", "Item / quantity: \nDeliver to: \nNeeded by: \nPoint of contact: ", &["MSG"], Priority::Priority)),
+            seed_template(
+                "Shelter Update",
+                msg("Shelter status update", "Occupants: \nPets: \nCapacity: \nNeeds: \nIssues: ", &["STATUS"], Priority::Routine),
+            ),
+            seed_template(
+                "Welfare Check",
+                msg("Welfare check request", "Name: \nAddress: \nLast contact: \nRequested by: ", &["MSG"], Priority::Priority),
+            ),
+            seed_template(
+                "Resource Request",
+                msg("Resource request", "Item / quantity: \nDeliver to: \nNeeded by: \nPoint of contact: ", &["MSG"], Priority::Priority),
+            ),
             seed_template(
                 "Situation Report",
                 TemplateDefaults {
@@ -135,8 +144,7 @@ impl AppDb {
     // ---------- settings ----------
 
     pub fn settings(&self) -> AppResult<GlobalSettings> {
-        let raw: Option<String> =
-            self.conn.query_row("SELECT settings_json FROM app_settings WHERE id=1", [], |r| r.get(0)).optional()?;
+        let raw: Option<String> = self.conn.query_row("SELECT settings_json FROM app_settings WHERE id=1", [], |r| r.get(0)).optional()?;
         match raw {
             None => Ok(GlobalSettings::default()),
             Some(s) => {
@@ -383,7 +391,10 @@ impl AppDb {
     pub fn delete_preset(&mut self, id: &str) -> AppResult<()> {
         let p = self.get_preset(id)?;
         if p.in_use {
-            return Err(AppError::new(ErrorCode::Conflict, "This preset was used to create a logbook on this computer and cannot be deleted"));
+            return Err(AppError::new(
+                ErrorCode::Conflict,
+                "This preset was used to create a logbook on this computer and cannot be deleted",
+            ));
         }
         self.conn.execute("DELETE FROM presets WHERE id=?1", params![id])?;
         Ok(())

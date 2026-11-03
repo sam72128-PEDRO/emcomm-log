@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{now_utc, sha256_bytes};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub struct Migration {
     pub version: u32,
@@ -40,9 +40,8 @@ fn ensure_table(conn: &Connection) -> AppResult<()> {
 }
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {
-    let exists: Option<String> = conn
-        .query_row("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'", [], |r| r.get(0))
-        .optional()?;
+    let exists: Option<String> =
+        conn.query_row("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'", [], |r| r.get(0)).optional()?;
     if exists.is_none() {
         return Ok(0);
     }
@@ -67,13 +66,13 @@ pub fn migrate(conn: &mut Connection, set: &[Migration]) -> AppResult<u32> {
         let rows = stmt.query_map([], |r| Ok((r.get::<_, u32>(0)?, r.get::<_, String>(1)?)))?;
         for row in rows {
             let (v, sum) = row?;
-            if let Some(m) = set.iter().find(|m| m.version == v) {
-                if sha256_bytes(m.up.as_bytes()) != sum {
-                    return Err(AppError::new(
-                        ErrorCode::Integrity,
-                        format!("Schema migration {v} checksum mismatch; the database was modified by an incompatible build"),
-                    ));
-                }
+            if let Some(m) = set.iter().find(|m| m.version == v)
+                && sha256_bytes(m.up.as_bytes()) != sum
+            {
+                return Err(AppError::new(
+                    ErrorCode::Integrity,
+                    format!("Schema migration {v} checksum mismatch; the database was modified by an incompatible build"),
+                ));
             }
         }
     }
@@ -110,9 +109,7 @@ mod tests {
         let mut c = Connection::open_in_memory().unwrap();
         assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 1);
         rollback(&mut c, LOGBOOK_MIGRATIONS, 0).unwrap();
-        let n: i64 = c
-            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0))
-            .unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
         assert_eq!(current_version(&c).unwrap(), 1);
