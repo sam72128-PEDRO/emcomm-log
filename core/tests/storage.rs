@@ -245,8 +245,14 @@ fn a05_missing_drive_blocks_final_saves_and_draft_survives() {
     let dir = create_book(parent.path(), LogbookType::General, "Unplugged");
     let mut lb = Logbook::open(&dir).unwrap();
     lb.save_new(&input("before unplug"), &rid(), &operator()).unwrap();
+    // Unix: move the whole live folder away. Windows forbids renaming a folder with open
+    // files, so there the attachments folder disappears instead; both trip the live check.
     let moved = parent.path().join("moved-away");
+    #[cfg(not(windows))]
     std::fs::rename(&dir, &moved).unwrap();
+    #[cfg(windows)]
+    std::fs::remove_dir(dir.join("attachments")).unwrap();
+    let db_now = if cfg!(windows) { dir.join(DB_FILE) } else { moved.join(DB_FILE) };
     let drafts = DraftStore::new(app.path());
     let meta = DraftMeta {
         draft_id: new_uuid(),
@@ -265,12 +271,16 @@ fn a05_missing_drive_blocks_final_saves_and_draft_survives() {
     drafts.save(&meta, &content).unwrap();
     assert_eq!(drafts.list(&lb.id).unwrap()[0].content["subject"], "typed while unplugged");
     // Nothing was written to the moved database by the blocked save.
-    let raw = rusqlite::Connection::open(moved.join(DB_FILE)).unwrap();
+    let raw = rusqlite::Connection::open(&db_now).unwrap();
     let n: i64 = raw.query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0)).unwrap();
     assert_eq!(n, 1);
+    drop(raw);
     drop(lb);
     // Reconnect ("plug back in") and retry the same request: it succeeds once.
+    #[cfg(not(windows))]
     std::fs::rename(&moved, &dir).unwrap();
+    #[cfg(windows)]
+    std::fs::create_dir(dir.join("attachments")).unwrap();
     let mut lb = Logbook::open(&dir).unwrap();
     lb.save_new(&input("typed while unplugged"), &rid(), &operator()).unwrap();
     assert_eq!(lb.list_entries(&all_query()).unwrap().total, 2);
