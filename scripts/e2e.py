@@ -73,7 +73,8 @@ def end(d) -> None:
         subprocess.run(["taskkill", "/F", "/T", "/IM", APP.name], capture_output=True)
         subprocess.run(["taskkill", "/F", "/IM", "msedgewebview2.exe"], capture_output=True)
     else:
-        subprocess.run(["pkill", "-f", str(APP)], capture_output=True)
+        # Match the process name exactly; -f would also match this script (APP is an argument).
+        subprocess.run(["pkill", "-x", APP.name[:15]], capture_output=True)
     time.sleep(3)
 
 
