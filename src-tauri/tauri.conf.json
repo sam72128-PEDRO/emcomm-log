@@ -17,8 +17,8 @@
         "title": "EMCOMM LOG",
         "width": 1440,
         "height": 900,
-        "minWidth": 1100,
-        "minHeight": 680,
+        "minWidth": 960,
+        "minHeight": 620,
         "center": true
       }
     ],
