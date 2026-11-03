@@ -30,6 +30,12 @@ pub fn sync_dir(dir: &Path) -> AppResult<()> {
     Ok(())
 }
 
+/// fsync an existing file. Windows requires a writable handle for FlushFileBuffers.
+pub fn sync_file(path: &Path) -> AppResult<()> {
+    OpenOptions::new().write(true).open(path)?.sync_all()?;
+    Ok(())
+}
+
 /// Write bytes to `path` atomically: temp file in the same directory, fsync, rename, fsync dir.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
     let dir = path.parent().ok_or_else(|| AppError::internal("path has no parent"))?;

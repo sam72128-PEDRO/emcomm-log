@@ -413,7 +413,7 @@ pub fn run_export(conn: &Connection, info: &LogbookInfo, req: &ExportRequest, de
             ExportFormat::Adif => adif::write(conn, &q, &ctx, &tmp),
         }?;
         crate::faults::check("export.before_publish")?;
-        fs::File::open(&tmp)?.sync_all()?;
+        fsutil::sync_file(&tmp)?;
         fs::rename(&tmp, dest)?;
         fsutil::sync_dir(parent)?;
         Ok(out)

@@ -112,6 +112,6 @@ pub fn write(conn: &Connection, q: &EntryQuery, ctx: &ReportContext, path: &Path
         }
     }
     wb.save(path).map_err(xerr)?;
-    std::fs::File::open(path)?.sync_all()?;
+    crate::fsutil::sync_file(path)?;
     Ok((n, warnings))
 }
