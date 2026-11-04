@@ -47,6 +47,17 @@ for the next entry (untick *Add another after save* to jump to the Traffic Log i
 - **Message handling** (Pending, Sent, Awaiting ACK, Acknowledged, …) tracks traffic on the **Messages**
   screen and the dashboard's *Pending Traffic*. Changing the status saves a new revision.
 - **Flag for report**, **Tags** (with preset quick tags), **Location**, **Attach file…**.
+- **HAM activations**: *My POTA park* / *My SOTA summit* for your own activation, *Their POTA park* /
+  *Their SOTA summit* for park-to-park, summit-to-summit or chasing. References are checked and written in
+  capitals (`US-0005`, `K-1234`, `W4C/CM-001`). The station's activation (Station dialog) fills *My* fields
+  on new QSOs.
+- **Suggestions**: callsign, station (From/To), channel, frequency, mode and park/summit fields offer values
+  you have already used in *this* logbook, newest first. Nothing is filled in until you pick one; nothing is
+  looked up online.
+- **Save & Add Another** (*Add another after save*) keeps what belongs to the session — entry type,
+  channel, frequency, band, mode/submode, station and operator callsigns, your grid, your park/summit and the
+  station position — and starts the rest fresh, including their callsign, reports, their grid/park/summit,
+  summary, message text, notes and the reported location.
 - **Templates**: click a quick template, or use the *Templates* tab. *Save as Template* stores the current
   fields (never times) in this logbook. **Favorites**: star entries in the Traffic Log; the *Favorites* tab
   can start a new entry from one.
@@ -64,6 +75,38 @@ in the form and in a local draft, and nothing is added to the logbook. If the lo
 problem, further final saves are blocked: reconnect the drive or fix the folder, then **Recheck storage** and
 save again. If the drive is lost, close the logbook and **Restore Backup** (section 5); re-enter or restore
 your drafts there.
+
+### Operator, station and shifts (2.1)
+
+The **operator** is the person at the radio (a profile in *Settings → Operator Profiles*: name, callsign,
+license class and country, organization, unit). The **station** is the desk, position or portable setup —
+**Logbook → Station / assignment** in the operator bar: tactical identifier (e.g. `MARC-5 COMMS`), position
+label, licensed station callsign (e.g. a club call), agency, default station position, and for HAM the park
+or summit being activated. A tactical identifier is not a licensed callsign. In HAM logbooks the QSO's
+*Station callsign* comes from the station, and *Operator* from the person on duty — never one from the other.
+
+The operator bar (Dashboard and Quick Entry) shows **ON DUTY: name** and the station. **Switch operator…**
+records a handover at one instant (now, or an earlier time in the current shift) with an optional note.
+It does not end the operational period, change ICS forms, or change entries already saved — each entry keeps
+the operator and station it was logged with. If an entry is half-typed, you choose: save it now under the
+outgoing operator, or leave it open for the incoming operator to finish (it is then recorded under them).
+The Traffic Log can filter by operator and shows each shift change as a divider row.
+
+### Locations and privacy (2.1)
+
+Each entry can carry two separate locations, in the collapsible *Location* section:
+
+- **Station position** — where the logging station is. *Capture GPS…* takes one fix (see
+  [GPS_SETUP.md](GPS_SETUP.md)), *Use default* copies the station's default position, or type it.
+- **Reported location** — a place mentioned in the traffic (a road closure, a shelter). Never filled from GPS.
+
+Each keeps its source (USB/Bluetooth receiver, gpsd, internal GNSS, OS position, logbook default, manual,
+reported), fix time, satellites and reported accuracy. Typing over a captured position makes it *manual*.
+Coordinates are WGS84 decimal degrees; both or neither.
+
+Exports leave out precise latitude/longitude by default and shorten grids to 6 characters; place names
+stay. Tick **Include precise coordinates** on the Reports screen to include them. `.emlog` packages and
+backups are full copies and always contain them.
 
 ## 4. Traffic Log, corrections, void
 
@@ -105,8 +148,20 @@ or overwrites.
 
 `Ctrl/Cmd+E`. Choose **PDF, DOCX, XLSX, CSV, TXT**, or **ADIF** (HAM logbooks). Scope: entire logbook, an
 inclusive date range, or the current Traffic Log filter/selection. Voided entries are excluded unless you tick
-*Include voided*. The record count is shown before you export. ADIF exports only qualifying QSOs and lists
-every skipped entry with the reason. See [EXPORT_FORMATS.md](EXPORT_FORMATS.md).
+*Include voided*. The record count is shown before you export. See [EXPORT_FORMATS.md](EXPORT_FORMATS.md).
+
+**ADIF presets** (HAM): one standard ADIF 3.1.8 file; the preset chooses which QSOs qualify.
+
+| Preset | Includes | Adds |
+|---|---|---|
+| General / QRZ | every QSO with a callsign, UTC start and band or frequency | — (for QRZ, LoTW via TQSL, Club Log…) |
+| POTA activator | QSOs with *My POTA park*, a station or operator callsign, and a mode | `MY_SIG=POTA`, `MY_SIG_INFO`; `SIG`/`SIG_INFO` for park-to-park |
+| SOTA activator | QSOs with *My SOTA summit*, a callsign and a mode | — |
+| SOTA chaser | QSOs with *Their SOTA summit* and a mode | — |
+
+Before exporting you see the station callsign(s), operators, references and UTC span, and **every entry that
+will be left out with its reason**; tick *Export without these* to go ahead. EMCOMM LOG never uploads: import
+the file on the service's website.
 
 ### Operational periods and ICS forms (Emergency logbooks)
 
@@ -149,7 +204,10 @@ one writes e.g. "TAC 2 (155.4750 MHz)". You can still type anything. Changing th
 entries already saved. EMCOMM LOG does not print an ICS 205.
 
 **Upgrading.** The first time this version opens a logbook made by EMCOMM LOG 1.0 it upgrades the file and
-keeps an untouched copy in the logbook's hidden `.pre-migration` folder (you are told where).
+keeps an untouched copy in the logbook's hidden `.pre-migration` folder (you are told where). 2.1 does the
+same for 2.0 logbooks (schema 4: station, shifts, locations, park/summit references). An **archived** logbook
+is not changed when you view it — you see an upgraded temporary copy — and is upgraded only when you
+unarchive it.
 
 ## 8. Where your data lives
 

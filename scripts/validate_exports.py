@@ -83,13 +83,30 @@ def main(d: Path):
 
     # ADIF (adif-io)
     qsos, header = adif_io.read_from_file(str(d / "fixture.adi"))
-    check(header.get("ADIF_VER") == "3.1.4", f"adif: version header {header.get('ADIF_VER')}")
+    check(header.get("ADIF_VER") == "3.1.8", f"adif: version header {header.get('ADIF_VER')}")
     check(len(qsos) == 4, f"adif: 4 eligible QSOs (got {len(qsos)})")
     calls = sorted(q["CALL"] for q in qsos)
     check(calls == ["JA1AAA", "K1ABC/P", "VE3XYZ", "W1AW"], f"adif: calls {calls}")
     for q in qsos:
         t = adif_io.time_on(q)
         check(t.tzinfo is not None and t.year == 2026, f"adif: {q['CALL']} time_on parses as UTC {t.isoformat()}")
+
+    # 2.1: POTA activator preset (with precise coordinates) and the default privacy policy.
+    qsos, header = adif_io.read_from_file(str(d / "pota.adi"))
+    check(len(qsos) == 2, f"pota: 2 activation QSOs (got {len(qsos)})")
+    by = {q["CALL"]: q for q in qsos}
+    w = by.get("W1AW", {})
+    check(w.get("MY_SIG") == "POTA" and w.get("MY_SIG_INFO") == "US-0005", "pota: MY_SIG/MY_SIG_INFO")
+    check(w.get("SIG") == "POTA" and w.get("SIG_INFO") == "K-1234", "pota: park-to-park SIG/SIG_INFO")
+    check(w.get("MY_POTA_REF") == "US-0005" and w.get("POTA_REF") == "K-1234", "pota: MY_POTA_REF/POTA_REF")
+    check(w.get("MY_LAT") == "N033 48.726" and w.get("MY_LON") == "W084 24.066", "pota: MY_LAT/MY_LON location format")
+    dl = by.get("DL1ABC", {})
+    check(dl.get("QSO_DATE") == "20261103" and dl.get("TIME_ON") == "000001", "pota: after-midnight QSO keeps its UTC date")
+    check(adif_io.time_on(w).isoformat() == "2026-11-02T23:59:59+00:00", "pota: before-midnight QSO time_on")
+    with open(d / "private.csv", newline="", encoding="utf-8-sig") as f:
+        text = f.read()
+    check("33.812100" not in text and "-84.401100" not in text, "privacy: CSV withholds coordinates by default")
+    check("EM73wv12" not in text and "EM73wv" in text, "privacy: CSV grid cut to 6 characters")
 
     print(f"\n{len(failures)} failure(s)")
     return 1 if failures else 0
