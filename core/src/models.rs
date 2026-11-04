@@ -24,6 +24,25 @@ str_enum!(Handling {
 });
 str_enum!(EntryStatus { Active => "active", Void => "void" });
 str_enum!(EmergencyRecordType { Message => "message", Activity => "activity", General => "general" });
+str_enum!(FollowUpState { None => "none", Open => "open", Resolved => "resolved" });
+
+impl Default for FollowUpState {
+    fn default() -> Self {
+        FollowUpState::None
+    }
+}
+
+/// A follow-up is a property of the entry (2.2 FLAG-*): no task record, no notification, no timer. It is
+/// independent of message handling (Pending/Sent/Acknowledged) and of Flag for Report.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct FollowUp {
+    pub state: FollowUpState,
+    pub due_utc: Option<String>,
+    pub note: String,
+    /// Set by the core when the state becomes `resolved`; cleared if it is reopened.
+    pub resolved_utc: Option<String>,
+}
 
 impl LogbookType {
     pub fn allowed_kinds(&self) -> &'static [EntryKind] {
@@ -453,6 +472,10 @@ pub struct EntryInput {
     pub operator_location: Option<Location>,
     /// A place reported in the traffic, kept apart from the station's own position.
     pub reported_location: Option<Location>,
+    /// 2.2: Important (separate from Flag for Report and Favorite).
+    pub important: bool,
+    /// 2.2: follow-up state on the entry itself.
+    pub follow_up: FollowUp,
 }
 
 impl Default for EntryInput {
@@ -479,6 +502,8 @@ impl Default for EntryInput {
             op_id: None,
             operator_location: None,
             reported_location: None,
+            important: false,
+            follow_up: FollowUp::default(),
         }
     }
 }
@@ -533,6 +558,10 @@ pub struct Entry {
     pub operator_location: Option<Location>,
     #[serde(default)]
     pub reported_location: Option<Location>,
+    #[serde(default)]
+    pub important: bool,
+    #[serde(default)]
+    pub follow_up: FollowUp,
 }
 
 // ---------- Station, operator shifts, locations (schema v4) ----------
@@ -693,6 +722,10 @@ pub struct EntryQuery {
     pub status: String,
     pub favorites_only: bool,
     pub flagged_only: bool,
+    /// 2.2: only entries marked Important.
+    pub important_only: bool,
+    /// 2.2: "" (any), "open", "resolved" or "any" (open or resolved).
+    pub follow_up: String,
     /// Restrict to specific entry ids (Export Selection).
     pub ids: Vec<String>,
     /// Operator: a profile id, or a name for entries whose profile is not on this computer.

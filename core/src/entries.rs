@@ -15,6 +15,7 @@ const ENTRY_SELECT: &str = "SELECT e.id, e.sequence_no, e.kind, e.event_at_utc, 
     e.recorded_at_utc, e.updated_at_utc, e.status, e.voided_at_utc, e.void_reason, e.direction, e.priority, e.handling,
     e.flagged, e.from_text, e.to_text, e.subject, e.body, e.channel, e.location, e.operator_snapshot_json, e.tags_json,
     e.current_revision, e.op_id, e.station_snapshot_json, e.operator_location_json, e.reported_location_json,
+    e.important, e.follow_up_state, e.follow_up_due_utc, e.follow_up_note, e.follow_up_resolved_utc,
     (f.entry_id IS NOT NULL),
     h.entry_id, h.their_call, h.station_call, h.operator_call, h.qso_start_utc, h.qso_end_utc, h.frequency_hz, h.band,
     h.mode, h.submode, h.rst_sent, h.rst_rcvd, h.my_grid, h.their_grid, h.qso_notes,
@@ -70,6 +71,9 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
     let station_json: String = g!();
     let op_loc_json: Option<String> = g!();
     let rep_loc_json: Option<String> = g!();
+    let important: bool = g!();
+    let fu_state: String = g!();
+    let follow_up = FollowUp { state: FollowUpState::parse(&fu_state).unwrap_or_default(), due_utc: g!(), note: g!(), resolved_utc: g!() };
     let favorite: bool = g!();
     let ham_id: Option<String> = g!();
     let ham = if ham_id.is_some() {
@@ -167,7 +171,32 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
         station_snapshot: serde_json::from_str(&station_json).unwrap_or_default(),
         operator_location: op_loc_json.and_then(|j| serde_json::from_str(&j).ok()),
         reported_location: rep_loc_json.and_then(|j| serde_json::from_str(&j).ok()),
+        important,
+        follow_up,
     })
+}
+
+/// Important + follow-up columns (schema v5). `resolved_utc` is set by the core when an entry becomes
+/// resolved (kept if it was already resolved) and cleared when it is reopened or cleared.
+fn write_flags(tx: &rusqlite::Transaction, id: &str, v: &EntryInput, before: Option<&FollowUp>, now: &str) -> AppResult<()> {
+    let f = &v.follow_up;
+    let resolved = match f.state {
+        FollowUpState::Resolved => match before {
+            Some(b) if b.state == FollowUpState::Resolved && b.resolved_utc.is_some() => b.resolved_utc.clone(),
+            _ => Some(now.to_string()),
+        },
+        _ => None,
+    };
+    let (due, note) = match f.state {
+        FollowUpState::None => (None, String::new()),
+        _ => (f.due_utc.clone(), f.note.clone()),
+    };
+    tx.execute(
+        "UPDATE entries SET important=?2, follow_up_state=?3, follow_up_due_utc=?4, follow_up_note=?5, follow_up_resolved_utc=?6
+         WHERE id=?1",
+        params![id, v.important, f.state.as_str(), due, note, resolved],
+    )?;
+    Ok(())
 }
 
 fn location_json(l: &Option<Location>) -> AppResult<Option<String>> {
@@ -583,6 +612,7 @@ impl Logbook {
                     location_json(&v.reported_location)?
                 ],
             )?;
+            write_flags(&tx, &id, &v, None, &now)?;
             if let Some(h) = &v.ham {
                 insert_ham(&tx, &id, h)?;
             }
@@ -703,6 +733,7 @@ impl Logbook {
                     location_json(&v.reported_location)?
                 ],
             )?;
+            write_flags(&tx, entry_id, &v, Some(&before.follow_up), &now)?;
             tx.execute("DELETE FROM entry_ham WHERE entry_id=?1", params![entry_id])?;
             tx.execute("DELETE FROM entry_emergency WHERE entry_id=?1", params![entry_id])?;
             if let Some(h) = &v.ham {
@@ -1020,6 +1051,15 @@ pub fn build_filter(q: &EntryQuery) -> AppResult<(String, Vec<SqlValue>)> {
     }
     if q.favorites_only {
         clauses.push("f.entry_id IS NOT NULL".into());
+    }
+    if q.important_only {
+        clauses.push("e.important = 1".into());
+    }
+    match q.follow_up.as_str() {
+        "open" => clauses.push("e.follow_up_state = 'open'".into()),
+        "resolved" => clauses.push("e.follow_up_state = 'resolved'".into()),
+        "any" => clauses.push("e.follow_up_state <> 'none'".into()),
+        _ => {}
     }
     if q.flagged_only {
         clauses.push("e.flagged = 1".into());

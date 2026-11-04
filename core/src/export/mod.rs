@@ -374,6 +374,15 @@ pub fn columns(book: LogbookType) -> Vec<Col> {
         }),
         ("Station Position", |e, _| location_text(&e.operator_location)),
         ("Reported Location", |e, _| location_text(&e.reported_location)),
+        // 2.2 FLAG-08: Important and follow-up are shown as recorded; ICS forms never use them.
+        ("Important", |e, _| if e.important { "Yes".into() } else { String::new() }),
+        ("Follow-up", |e, _| match e.follow_up.state {
+            crate::models::FollowUpState::None => String::new(),
+            crate::models::FollowUpState::Open => "Open".into(),
+            crate::models::FollowUpState::Resolved => "Resolved".into(),
+        }),
+        ("Follow-up Due", |e, z| fmt_opt(z, &e.follow_up.due_utc)),
+        ("Follow-up Note", |e, _| e.follow_up.note.clone()),
     ]);
     cols
 }
