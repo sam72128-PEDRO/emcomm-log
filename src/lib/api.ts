@@ -124,6 +124,24 @@ export const api = {
   addLink: (sourceId: string, targetId: string, relation: T.Relation, note: string) =>
     call<T.LinkView>("add_link", { sourceId, targetId, relation, note }),
   removeLink: (linkId: string) => call<void>("remove_link", { linkId }),
+  pickAttachments: () => call<T.PickedFile[]>("pick_attachments"),
+  describeFiles: (paths: string[]) => call<T.PickedFile[]>("describe_files", { paths }),
+  stageAttachmentPath: (path: string, source: T.AttachmentSource, token: string) =>
+    call<T.StagedAttachment>("stage_attachment_path", { path, source, token }),
+  cancelAttach: () => call<void>("cancel_attach"),
+  /** Pasted image: raw bytes in the request body, never base64 in JSON. */
+  stageAttachmentBytes: async (bytes: Uint8Array, name: string, source: T.AttachmentSource) => {
+    try {
+      return await invoke<T.StagedAttachment>("stage_attachment_bytes", bytes, {
+        headers: { "x-name": encodeURIComponent(name), "x-source": source },
+      });
+    } catch (e) {
+      throw toAppError(e);
+    }
+  },
+  attachmentThumbnail: (attachmentId: string | null, stagingId: string | null) =>
+    call<string | null>("attachment_thumbnail", { attachmentId, stagingId }),
+  saveAttachmentAs: (attachmentId: string) => call<string | null>("save_attachment_as", { attachmentId }),
   listDirectory: (query: string) => call<T.DirectoryEntry[]>("list_directory", { query }),
   saveDirectory: (id: string | null, input: T.DirectoryInput) =>
     call<T.DirectorySaveResult>("save_directory", { id, input }),

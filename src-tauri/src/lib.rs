@@ -38,6 +38,8 @@ pub struct AppState {
     /// One foreground GPS acquisition at a time; `gps_cancel` stops it and releases the device.
     gps_busy: Arc<AtomicBool>,
     gps_cancel: Arc<AtomicBool>,
+    /// 2.2: cancels the attachment copy in progress.
+    attach_cancel: Arc<AtomicBool>,
 }
 
 type Cmd<T> = Result<T, AppError>;
@@ -651,6 +653,14 @@ async fn open_export(state: State<'_, AppState>, path: String) -> Cmd<()> {
 #[tauri::command]
 async fn open_attachment(state: State<'_, AppState>, attachment_id: String) -> Cmd<()> {
     let p = with_book(&state, |lb| lb.attachment_path(&attachment_id))?;
+    let (name, _) = with_book(&state, |lb| lb.attachment_meta(&attachment_id))?;
+    // 2.2 ATT-06: never hand a program or script to the OS to run, whatever it is called.
+    if emcomm_core::attach::is_risky(&name, emcomm_core::attach::sniff_file(&p)?) {
+        return Err(AppError::validation(
+            "attachments",
+            "EMCOMM LOG does not open programs or scripts. Use Save As… to copy it somewhere if you need it.",
+        ));
+    }
     os_open(&p, false)
 }
 
@@ -733,6 +743,141 @@ async fn stage_attachment(app: AppHandle, state: State<'_, AppState>) -> Cmd<Opt
     with_book(&state, |lb| lb.ensure_writable())?;
     let Some(path) = file_dialog(&app, "Attach a file", &[], None).blocking_pick_file().and_then(to_path) else { return Ok(None) };
     with_book(&state, |lb| lb.stage_attachment(Path::new(&path))).map(Some)
+}
+
+/// 2.2: choose one or more files to attach (native dialog). Returns paths with sizes so the UI can warn
+/// about large files before anything is copied.
+#[derive(Serialize)]
+struct PickedFile {
+    path: String,
+    name: String,
+    size_bytes: u64,
+}
+
+fn picked(paths: Vec<String>) -> Vec<PickedFile> {
+    paths
+        .into_iter()
+        .filter_map(|p| {
+            let m = std::fs::metadata(&p).ok()?;
+            m.is_file().then(|| PickedFile {
+                name: Path::new(&p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                size_bytes: m.len(),
+                path: p,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+async fn pick_attachments(app: AppHandle, state: State<'_, AppState>) -> Cmd<Vec<PickedFile>> {
+    with_book(&state, |lb| lb.ensure_writable())?;
+    let paths: Vec<String> =
+        file_dialog(&app, "Attach files", &[], None).blocking_pick_files().unwrap_or_default().into_iter().filter_map(to_path).collect();
+    Ok(picked(paths))
+}
+
+/// Sizes of dropped files (drag and drop gives paths only).
+#[tauri::command]
+async fn describe_files(paths: Vec<String>) -> Cmd<Vec<PickedFile>> {
+    Ok(picked(paths))
+}
+
+#[derive(Clone, Serialize)]
+struct AttachProgress {
+    token: String,
+    done: u64,
+    total: u64,
+}
+
+/// Copy one file into staging (streamed, hashed). Progress is emitted as `attach-progress`.
+#[tauri::command]
+async fn stage_attachment_path(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    source: String,
+    token: String,
+) -> Cmd<StagedAttachment> {
+    state.attach_cancel.store(false, Ordering::SeqCst);
+    let cancel = state.attach_cancel.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app2.state::<AppState>();
+        with_book(&st, |lb| {
+            lb.stage_attachment_from(Path::new(&path), &source, Some(&cancel), &mut |done, total| {
+                let _ = app2.emit("attach-progress", AttachProgress { token: token.clone(), done, total });
+            })
+        })
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::Io, format!("Attachment copy stopped: {e}")))?
+}
+
+#[tauri::command]
+async fn cancel_attach(state: State<'_, AppState>) -> Cmd<()> {
+    state.attach_cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Undo `encodeURIComponent` (header values are ASCII); invalid sequences are kept as typed.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A pasted image: raw bytes in the request body (never base64 in JSON); name and source in headers.
+#[tauri::command]
+async fn stage_attachment_bytes(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Cmd<StagedAttachment> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(AppError::validation("attachments", "Expected the image bytes"));
+    };
+    let h = |k: &str| request.headers().get(k).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let (name, source) = (percent_decode(&h("x-name")), h("x-source"));
+    with_book(&state, |lb| lb.stage_attachment_bytes(if name.is_empty() { "pasted image.png" } else { &name }, bytes, &source))
+}
+
+/// A small PNG thumbnail (data URL) of a saved or staged image; None for other files.
+#[tauri::command]
+async fn attachment_thumbnail(
+    state: State<'_, AppState>,
+    attachment_id: Option<String>,
+    staging_id: Option<String>,
+) -> Cmd<Option<String>> {
+    use base64::Engine;
+    let path = with_book(&state, |lb| match (&attachment_id, &staging_id) {
+        (Some(id), _) => lb.attachment_path(id),
+        (None, Some(sid)) => lb.staged_path(sid),
+        _ => Err(AppError::validation("attachments", "No attachment given")),
+    })?;
+    let png = tauri::async_runtime::spawn_blocking(move || emcomm_core::attach::thumbnail_png(&path))
+        .await
+        .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))??;
+    Ok(png.map(|b| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(b))))
+}
+
+#[tauri::command]
+async fn save_attachment_as(app: AppHandle, state: State<'_, AppState>, attachment_id: String) -> Cmd<Option<String>> {
+    let (name, _) = with_book(&state, |lb| lb.attachment_meta(&attachment_id))?;
+    let safe = fsutil::safe_component(&name, 120);
+    let Some(dest) = file_dialog(&app, "Save attachment as", &[], None).set_file_name(safe).blocking_save_file().and_then(to_path) else {
+        return Ok(None);
+    };
+    with_book(&state, |lb| lb.save_attachment_as(&attachment_id, Path::new(&dest)))?;
+    Ok(Some(dest))
 }
 
 #[tauri::command]
@@ -1310,6 +1455,7 @@ pub fn run() {
                 reveal_allow: Mutex::new(HashSet::new()),
                 gps_busy: Arc::new(AtomicBool::new(false)),
                 gps_cancel: Arc::new(AtomicBool::new(false)),
+                attach_cancel: Arc::new(AtomicBool::new(false)),
             });
             create_main_window(app)?;
             fit_window_to_screen(app.handle());
@@ -1378,6 +1524,13 @@ pub fn run() {
             set_favorite,
             stage_attachment,
             discard_staged,
+            pick_attachments,
+            describe_files,
+            stage_attachment_path,
+            cancel_attach,
+            stage_attachment_bytes,
+            attachment_thumbnail,
+            save_attachment_as,
             staged_exists,
             list_templates,
             save_template,

@@ -3,8 +3,6 @@
   import {
     CircleAlert,
     CircleCheck,
-    Paperclip,
-    X,
     Save,
     Eraser,
     LoaderCircle,
@@ -45,6 +43,7 @@
   import { fillText, matchDirectory, normKey } from "../lib/directory";
   import DateTimeInput from "./DateTimeInput.svelte";
   import LocationEditor from "./LocationEditor.svelte";
+  import AttachmentsField from "./AttachmentsField.svelte";
   import TagInput from "./TagInput.svelte";
 
   let {
@@ -432,23 +431,6 @@
     await api.deleteDraft(book.info.id, draftId).catch(() => {});
     app.draftStatus = { kind: "idle" };
     oncancel?.();
-  }
-
-  async function attach() {
-    try {
-      const s = await api.stageAttachment();
-      if (s) {
-        form.attachments = [...form.attachments, s];
-        app.announce(`Attached ${s.display_name}`);
-      }
-    } catch (e) {
-      app.toast("error", `Attachment failed: ${toAppError(e).message}`);
-    }
-  }
-
-  function removeAttachment(a: T.StagedAttachment) {
-    form.attachments = form.attachments.filter((x) => x.staging_id !== a.staging_id);
-    api.discardStaged(a.staging_id).catch(() => {});
   }
 
   function useTemplate(t: T.EntryTemplate) {
@@ -1204,11 +1186,6 @@
               : blankFollowUp())}
         /> Follow-up needed</label
       >
-      {#if !hidden.has("attachments")}
-        <button type="button" class="small" onclick={attach} disabled={blocked}
-          ><Paperclip size={14} />Attach file…</button
-        >
-      {/if}
     </div>
   </div>
   {#if form.follow_up.state !== "none" && !compact}
@@ -1246,26 +1223,15 @@
       >
     </fieldset>
   {/if}
-  {#if mode === "edit" && entry?.attachments.length}
-    <p class="hint" style="margin:0">
-      Existing attachments: {entry.attachments.map((a) => a.display_name).join(", ")} (kept)
-    </p>
-  {/if}
-  {#if form.attachments.length}
-    <ul class="atts" aria-label="New attachments">
-      {#each form.attachments as a (a.staging_id)}
-        <li class="badge neutral">
-          <Paperclip size={12} />{a.display_name}
-          <span class="muted">({Math.ceil(a.size_bytes / 1024)} KB)</span>
-          <button
-            type="button"
-            class="ghost icon-only small"
-            aria-label="Remove attachment {a.display_name}"
-            onclick={() => removeAttachment(a)}><X size={12} /></button
-          >
-        </li>
-      {/each}
-    </ul>
+  {#if !hidden.has("attachments") && !compact}
+    <AttachmentsField
+      id={fid("atts")}
+      bind:staged={form.attachments}
+      existing={mode === "edit" ? (entry?.attachments ?? []) : []}
+      bind:removed={form.remove_attachments}
+      bind:captions={form.attachment_captions}
+      disabled={blocked}
+    />
   {/if}
 
   {#if mode === "edit"}
@@ -1422,14 +1388,6 @@
   }
   .status :global(.err) {
     color: var(--danger);
-  }
-  .atts {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    list-style: none;
-    margin: 0;
-    padding: 0;
   }
   .templates {
     gap: 6px;

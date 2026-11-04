@@ -226,6 +226,9 @@ export interface EntryForm {
   important: boolean;
   /** 2.2: follow-up state, due time (UTC) and note. */
   follow_up: T.FollowUp;
+  /** 2.2 (editing a saved entry): attachments to remove, and caption changes, by attachment id. */
+  remove_attachments: string[];
+  attachment_captions: Record<string, string>;
 }
 
 export function blankFollowUp(): T.FollowUp {
@@ -288,6 +291,8 @@ export function newForm(ctx: FormContext): EntryForm {
     reported_location: null,
     important: false,
     follow_up: blankFollowUp(),
+    remove_attachments: [],
+    attachment_captions: {},
   };
 }
 
@@ -364,6 +369,8 @@ export function formFromEntry(e: T.Entry): EntryForm {
     reported_location: e.reported_location ?? null,
     important: e.important ?? false,
     follow_up: e.follow_up ? { ...e.follow_up } : blankFollowUp(),
+    remove_attachments: [],
+    attachment_captions: {},
   };
 }
 
@@ -447,6 +454,8 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
     reported_location: f.reported_location,
     important: f.important,
     follow_up: f.follow_up.state === "none" ? blankFollowUp() : f.follow_up,
+    remove_attachments: f.remove_attachments,
+    attachment_captions: Object.entries(f.attachment_captions).map(([id, caption]) => ({ id, caption })),
   };
 }
 
