@@ -52,6 +52,8 @@ export function defaultQuery(): T.EntryQuery {
     status: "active",
     favorites_only: false,
     flagged_only: false,
+    important_only: false,
+    follow_up: "",
     ids: [],
     sort: "event",
     descending: true,

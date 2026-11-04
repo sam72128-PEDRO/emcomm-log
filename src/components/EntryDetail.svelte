@@ -21,7 +21,9 @@
   import { api, newId, toAppError } from "../lib/api";
   import { confirm } from "../lib/confirm.svelte";
   import type * as T from "../lib/types";
-  import { DIRECTION_LABEL, HANDLING_LABEL, PRIORITY_LABEL } from "../lib/entryForm";
+  import { blankFollowUp, DIRECTION_LABEL, HANDLING_LABEL, PRIORITY_LABEL } from "../lib/entryForm";
+  import { changeFlags } from "../lib/handling";
+  import DirectoryDialog from "./DirectoryDialog.svelte";
   import { formatInstant, offsetLabel } from "../lib/time";
 
   let entry = $state<T.Entry | null>(null);
@@ -97,6 +99,32 @@
     } catch (e) {
       app.noteSaveFailure(toAppError(e));
       app.toast("error", toAppError(e).message);
+    } finally {
+      busy = false;
+    }
+  }
+
+  let savingToDir = $state<Partial<T.DirectoryInput> | null>(null);
+  /** The other station in this entry, as a directory item (the operator edits it before saving). */
+  function dirPrefill(e: T.Entry): Partial<T.DirectoryInput> {
+    if (e.ham?.their_call)
+      return {
+        label: e.ham.their_call,
+        kind: "amateur_callsign",
+        identifier: e.ham.their_call,
+        frequency_hz: e.ham.frequency_hz,
+        mode: e.ham.mode,
+      };
+    const other = e.direction === "sent" ? e.to_text || e.from_text : e.from_text || e.to_text;
+    return { label: other, identifier: other, channel: e.channel };
+  }
+
+  async function flag(patch: { important?: boolean; follow_up?: T.FollowUp }, reason: string) {
+    if (!entry) return;
+    busy = true;
+    try {
+      const next = await changeFlags(entry, patch, reason);
+      if (next) await load();
     } finally {
       busy = false;
     }
@@ -235,8 +263,57 @@
           >{:else}<span class="badge ok">ACTIVE</span>{/if}
         {#if entry.handling}<span class="badge info">{HANDLING_LABEL[entry.handling]}</span>{/if}
         {#if entry.flagged}<span class="badge danger">FLAGGED FOR REPORT</span>{/if}
+        {#if entry.important}<span class="badge warn">IMPORTANT</span>{/if}
+        {#if entry.follow_up?.state === "open"}<span class="badge warn">FOLLOW-UP OPEN</span
+          >{:else if entry.follow_up?.state === "resolved"}<span class="badge neutral"
+            >FOLLOW-UP RESOLVED</span
+          >{/if}
         <span class="badge neutral">Revision {entry.current_revision}</span>
       </div>
+      {#if entry.status === "active" && !app.readOnly}
+        <div class="row wrap flag-actions" role="group" aria-label="Important and follow-up">
+          <button
+            class="small"
+            aria-pressed={!!entry.important}
+            disabled={busy || !!app.storageBlocked}
+            onclick={() =>
+              flag(
+                { important: !entry!.important },
+                entry!.important ? "Important removed" : "Marked Important",
+              )}>{entry.important ? "Remove Important" : "Mark Important"}</button
+          >
+          {#if !entry.follow_up || entry.follow_up.state === "none"}
+            <button
+              class="small"
+              disabled={busy || !!app.storageBlocked}
+              onclick={() => flag({ follow_up: { ...blankFollowUp(), state: "open" } }, "Follow-up needed")}
+              >Follow-up needed</button
+            >
+          {:else if entry.follow_up.state === "open"}
+            <button
+              class="small"
+              disabled={busy || !!app.storageBlocked}
+              onclick={() =>
+                flag({ follow_up: { ...entry!.follow_up!, state: "resolved" } }, "Follow-up resolved")}
+              >Resolve follow-up</button
+            >
+          {:else}
+            <button
+              class="small"
+              disabled={busy || !!app.storageBlocked}
+              onclick={() =>
+                flag({ follow_up: { ...entry!.follow_up!, state: "open" } }, "Follow-up reopened")}
+              >Reopen follow-up</button
+            >
+          {/if}
+          <button class="small" onclick={() => (savingToDir = dirPrefill(entry!))} disabled={busy}
+            >Save to Directory…</button
+          >
+          <span class="hint"
+            >Saved at once as a new revision. Message status and Flag for report are not changed.</span
+          >
+        </div>
+      {/if}
       {#if entry.status === "void" && entry.void_reason}<p class="muted" style="margin:0">
           Void reason: {entry.void_reason}
         </p>{/if}
@@ -269,6 +346,14 @@
           <dd>{entry.channel}</dd>{/if}
         {#if entry.location}<dt>Location</dt>
           <dd>{entry.location}</dd>{/if}
+        {#if entry.follow_up && entry.follow_up.state !== "none"}<dt>Follow-up</dt>
+          <dd>
+            {entry.follow_up.state === "open" ? "Open" : "Resolved"}{entry.follow_up.due_utc
+              ? ` · due ${fmt(entry.follow_up.due_utc)}`
+              : ""}{entry.follow_up.resolved_utc
+              ? ` · resolved ${fmt(entry.follow_up.resolved_utc)}`
+              : ""}{entry.follow_up.note ? ` · ${entry.follow_up.note}` : ""}
+          </dd>{/if}
         {#if entry.tags.length}<dt>Tags</dt>
           <dd>{entry.tags.join(", ")}</dd>{/if}
         <dt>Operator</dt>
@@ -447,6 +532,7 @@
   </Modal>
 {/if}
 
+{#if savingToDir}<DirectoryDialog initial={savingToDir} onclose={() => (savingToDir = null)} />{/if}
 {#if form213 && entry}<Form213Dialog entryIds={[entry.id]} onclose={() => (form213 = false)} />{/if}
 
 <style>

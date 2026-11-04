@@ -14,6 +14,8 @@
     Paperclip,
     RotateCcw,
     ArrowRightLeft,
+    CircleAlert,
+    CalendarClock,
   } from "@lucide/svelte";
   import { app, defaultQuery } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -166,7 +168,9 @@
       q.tags.length +
       (q.status !== "active" ? 1 : 0) +
       (q.favorites_only ? 1 : 0) +
-      (q.flagged_only ? 1 : 0),
+      (q.flagged_only ? 1 : 0) +
+      (q.important_only ? 1 : 0) +
+      (q.follow_up ? 1 : 0),
   );
 
   function isSelected(id: string) {
@@ -390,8 +394,28 @@
             type="checkbox"
             checked={q.flagged_only}
             onchange={(e) => setQuery({ flagged_only: e.currentTarget.checked })}
-          />Flagged only</label
+          />Flagged for report only</label
         >
+        <label class="check"
+          ><input
+            type="checkbox"
+            checked={q.important_only ?? false}
+            onchange={(e) => setQuery({ important_only: e.currentTarget.checked })}
+          />Important only</label
+        >
+        <div class="field">
+          <label for="tl-fu">Follow-up</label>
+          <select
+            id="tl-fu"
+            value={q.follow_up ?? ""}
+            onchange={(e) => setQuery({ follow_up: e.currentTarget.value as T.EntryQuery["follow_up"] })}
+          >
+            <option value="">Any</option>
+            <option value="open">Open follow-ups</option>
+            <option value="resolved">Resolved follow-ups</option>
+            <option value="any">Open or resolved</option>
+          </select>
+        </div>
         <div class="field">
           <label for="tl-tags">Tags (comma separated)</label><input
             id="tl-tags"
@@ -524,6 +548,18 @@
                 >
               {:else}<span class="badge ok">Logged</span>{/if}
               {#if e.flagged}<Flag size={14} class="flag" aria-label="Flagged for report" />{/if}
+              {#if e.important}<span title="Important"
+                  ><CircleAlert size={14} class="important" aria-label="Important" /></span
+                >{/if}
+              {#if e.follow_up?.state === "open"}<span
+                  class="badge warn"
+                  title={e.follow_up.note || "Follow-up needed"}
+                  aria-label="Open follow-up"><CalendarClock size={12} />Follow-up</span
+                >{:else if e.follow_up?.state === "resolved"}<span
+                  class="badge neutral"
+                  title="Follow-up resolved"
+                  aria-label="Follow-up resolved">Resolved</span
+                >{/if}
             </td>
             <td>
               <button
@@ -707,6 +743,11 @@
   }
   :global(.flag) {
     color: var(--danger);
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+  :global(.important) {
+    color: var(--warn);
     vertical-align: middle;
     margin-left: 4px;
   }

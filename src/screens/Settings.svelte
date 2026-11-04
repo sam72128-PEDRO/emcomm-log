@@ -24,8 +24,9 @@
   import { formatInstant, relativeAge } from "../lib/time";
   import Modal from "../components/Modal.svelte";
   import TagInput from "../components/TagInput.svelte";
+  import DirectoryPanel from "../components/DirectoryPanel.svelte";
 
-  type Section = "general" | "profiles" | "presets" | "backups" | "location" | "storage";
+  type Section = "general" | "profiles" | "presets" | "backups" | "location" | "directory" | "storage";
   let section = $state<Section>("general");
   const sections: { id: Section; label: string }[] = [
     { id: "general", label: "General" },
@@ -33,6 +34,7 @@
     { id: "presets", label: "Presets" },
     { id: "backups", label: "Backups" },
     { id: "location", label: "Location & GPS" },
+    { id: "directory", label: "Logbook Directory" },
     { id: "storage", label: "Storage & Recovery" },
   ];
 
@@ -294,7 +296,7 @@
   <div class="panel-head"><h1 class="title"><SettingsIcon size={22} class="icon" />Settings</h1></div>
   <div class="layout">
     <nav class="secnav" aria-label="Settings sections">
-      {#each sections as sec (sec.id)}
+      {#each sections.filter((x) => x.id !== "directory" || app.active) as sec (sec.id)}
         <button aria-current={section === sec.id ? "page" : undefined} onclick={() => (section = sec.id)}
           >{sec.label}</button
         >
@@ -671,6 +673,10 @@
             {/each}
           </fieldset>
         {/if}
+      {/if}
+
+      {#if section === "directory" && app.active}
+        <DirectoryPanel />
       {/if}
 
       {#if section === "location"}

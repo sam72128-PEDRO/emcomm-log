@@ -364,3 +364,63 @@ describe("operator handover in an open QSO (2.1)", () => {
     expect(carrySession(prev, next).ham.operator_call).toBe("KJ4BBB");
   });
 });
+
+import { blankFollowUp, formCopyOf } from "../lib/entryForm";
+import { matchDirectory } from "../lib/directory";
+describe("2.2 flags and directory", () => {
+  const INC2 = { incident_name: "", incident_number: "", operational_period: "", agency: "", location: "" };
+  const ctx = {
+    type: "emergency" as const,
+    preset,
+    profile: null,
+    incident: INC2,
+    station: null,
+    currentOpId: null,
+  };
+  it("new entries, copies and Save & Add Another never carry Important or a follow-up", () => {
+    const f = newForm(ctx);
+    expect([f.important, f.follow_up.state]).toEqual([false, "none"]);
+    f.important = true;
+    f.follow_up = { ...blankFollowUp(), state: "open", note: "call back" };
+    expect(carrySession(f, newForm(ctx)).follow_up.state).toBe("none");
+    expect(carrySession(f, newForm(ctx)).important).toBe(false);
+    const saved = { ...toEntryInput(f, "emergency", "utc"), id: "x" } as unknown as Parameters<
+      typeof formCopyOf
+    >[0];
+    const copy = formCopyOf(
+      { ...(saved as object), attachments: [], ham: null, emergency: null } as never,
+      ctx,
+    );
+    expect([copy.important, copy.follow_up.state]).toEqual([false, "none"]);
+  });
+  it("a cleared follow-up is sent without its due time or note", () => {
+    const f = newForm(ctx);
+    f.follow_up = { state: "none", due_utc: "2026-11-02T22:00:00Z", note: "stale", resolved_utc: null };
+    expect(toEntryInput(f, "emergency", "utc").follow_up).toEqual(blankFollowUp());
+    f.follow_up = { state: "open", due_utc: "2026-11-02T22:00:00Z", note: "check", resolved_utc: null };
+    expect(toEntryInput(f, "emergency", "utc").follow_up?.note).toBe("check");
+  });
+  it("matches directory items by identifier, name or alias, ignoring case and spacing", () => {
+    const base = {
+      kind: "tactical_identifier" as const,
+      agency: "",
+      channel: "TAC 2",
+      frequency_hz: null,
+      mode: "",
+      tags: [],
+      notes: "",
+      last_used_utc: null,
+      last_entry_id: null,
+      created_at_utc: "",
+      updated_at_utc: "",
+    };
+    const items = [
+      { ...base, id: "1", label: "Shelter 2", identifier: "SHELTER 2", aliases: ["Lake HS"] },
+      { ...base, id: "2", label: "Net control", identifier: "W4CLB", aliases: [] },
+    ];
+    expect(matchDirectory(items, "  shelter   2 ")?.id).toBe("1");
+    expect(matchDirectory(items, "lake hs")?.id).toBe("1");
+    expect(matchDirectory(items, "w4clb")?.id).toBe("2");
+    expect(matchDirectory(items, "Shelter")).toBeNull();
+  });
+});

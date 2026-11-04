@@ -849,6 +849,13 @@ pub fn compute_stats(conn: &Connection, day_start_utc: Option<&str>, day_end_utc
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
     )?;
+    (s.important, s.open_follow_ups, s.overdue_follow_ups) = conn.query_row(
+        "SELECT COALESCE(SUM(important=1),0), COALESCE(SUM(follow_up_state='open'),0),
+                COALESCE(SUM(follow_up_state='open' AND follow_up_due_utc IS NOT NULL AND follow_up_due_utc < ?1),0)
+         FROM entries WHERE status='active'",
+        params![crate::fsutil::now_utc()],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
     if let (Some(a), Some(b)) = (day_start_utc, day_end_utc) {
         s.today = conn.query_row(
             "SELECT COUNT(*) FROM entries WHERE status='active' AND event_at_utc >= ?1 AND event_at_utc < ?2",

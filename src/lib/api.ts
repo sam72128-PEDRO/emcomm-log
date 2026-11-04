@@ -119,6 +119,11 @@ export const api = {
   getStation: () => call<T.Station>("get_station"),
   setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
   recentValues: (fields: T.RecentField[]) => call<T.Recents>("recent_values", { fields }),
+  listDirectory: (query: string) => call<T.DirectoryEntry[]>("list_directory", { query }),
+  saveDirectory: (id: string | null, input: T.DirectoryInput) =>
+    call<T.DirectorySaveResult>("save_directory", { id, input }),
+  deleteDirectory: (id: string) => call<void>("delete_directory", { id }),
+  markDirectoryUsed: (id: string, entryId: string) => call<void>("mark_directory_used", { id, entryId }),
   operatorSessions: () => call<T.OperatorSession[]>("operator_sessions"),
   activeOperator: () => call<T.OperatorSession | null>("active_operator"),
   switchOperator: (profileId: string, atUtc: string | null, note: string) =>

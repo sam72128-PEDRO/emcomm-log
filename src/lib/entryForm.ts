@@ -222,6 +222,14 @@ export interface EntryForm {
   operator_location: T.Location | null;
   /** A place reported in the traffic, kept apart from the station position. */
   reported_location: T.Location | null;
+  /** 2.2: Important (separate from Flag for Report and Favorite). */
+  important: boolean;
+  /** 2.2: follow-up state, due time (UTC) and note. */
+  follow_up: T.FollowUp;
+}
+
+export function blankFollowUp(): T.FollowUp {
+  return { state: "none", due_utc: null, note: "", resolved_utc: null };
 }
 
 export interface FormContext {
@@ -278,6 +286,8 @@ export function newForm(ctx: FormContext): EntryForm {
     op_id: ctx.currentOpId ?? "",
     operator_location: null,
     reported_location: null,
+    important: false,
+    follow_up: blankFollowUp(),
   };
 }
 
@@ -352,6 +362,8 @@ export function formFromEntry(e: T.Entry): EntryForm {
     op_id: e.op_id ?? "",
     operator_location: e.operator_location ?? null,
     reported_location: e.reported_location ?? null,
+    important: e.important ?? false,
+    follow_up: e.follow_up ? { ...e.follow_up } : blankFollowUp(),
   };
 }
 
@@ -371,9 +383,11 @@ export function formCopyOf(e: T.Entry, ctx: FormContext): EntryForm {
   f.em.operational_period = ctx.incident.operational_period;
   f.em.replied_at_utc = null;
   f.op_id = ctx.currentOpId ?? "";
-  // A copy is a new contact: no positions carried over from the original.
+  // A copy is a new contact: no positions or follow-up carried over from the original.
   f.operator_location = null;
   f.reported_location = null;
+  f.important = false;
+  f.follow_up = blankFollowUp();
   return f;
 }
 
@@ -431,6 +445,8 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
     op_id: f.op_id || null,
     operator_location: f.operator_location,
     reported_location: f.reported_location,
+    important: f.important,
+    follow_up: f.follow_up.state === "none" ? blankFollowUp() : f.follow_up,
   };
 }
 

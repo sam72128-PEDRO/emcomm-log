@@ -300,6 +300,9 @@ export interface LogbookStats {
   last_event_utc: string | null;
   last_recorded_utc: string | null;
   last_sequence: number;
+  important?: number;
+  open_follow_ups?: number;
+  overdue_follow_ups?: number;
 }
 
 export interface LogbookIndexRow {
@@ -361,6 +364,17 @@ export interface EntryInput {
   op_id: string | null;
   operator_location: Location | null;
   reported_location: Location | null;
+  important?: boolean;
+  follow_up?: FollowUp;
+}
+
+/** 2.2: a follow-up is a property of the entry; no task, notification or timer. */
+export type FollowUpState = "none" | "open" | "resolved";
+export interface FollowUp {
+  state: FollowUpState;
+  due_utc: string | null;
+  note: string;
+  resolved_utc: string | null;
 }
 
 export interface Entry {
@@ -396,6 +410,8 @@ export interface Entry {
   station_snapshot?: StationSnapshot;
   operator_location?: Location | null;
   reported_location?: Location | null;
+  important?: boolean;
+  follow_up?: FollowUp;
 }
 
 export interface SaveResult {
@@ -427,6 +443,9 @@ export interface EntryQuery {
   status: "active" | "void" | "all";
   favorites_only: boolean;
   flagged_only: boolean;
+  important_only?: boolean;
+  /** "" any, "open", "resolved", "any" (open or resolved) */
+  follow_up?: "" | "open" | "resolved" | "any";
   ids: string[];
   operator?: string;
   sort: "event" | "recorded";
@@ -790,3 +809,29 @@ export interface OperatorSession {
 export type RecentField =
   "their_call" | "station" | "channel" | "frequency_hz" | "mode" | "pota_ref" | "sota_ref";
 export type Recents = Partial<Record<RecentField, string[]>>;
+
+// ---------- 2.2 station directory (per logbook) ----------
+export type DirectoryKind = "amateur_callsign" | "tactical_identifier" | "station" | "organization" | "other";
+export interface DirectoryInput {
+  label: string;
+  kind: DirectoryKind;
+  identifier: string;
+  agency: string;
+  channel: string;
+  frequency_hz: number | null;
+  mode: string;
+  aliases: string[];
+  tags: string[];
+  notes: string;
+}
+export interface DirectoryEntry extends DirectoryInput {
+  id: string;
+  last_used_utc: string | null;
+  last_entry_id: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+}
+export interface DirectorySaveResult {
+  entry: DirectoryEntry;
+  similar: DirectoryEntry[];
+}
