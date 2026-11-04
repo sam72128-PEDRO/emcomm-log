@@ -320,6 +320,13 @@ pub struct LogbookStats {
     pub last_event_utc: Option<String>,
     pub last_recorded_utc: Option<String>,
     pub last_sequence: i64,
+    /// 2.2: active entries marked Important, open follow-ups, and those past their due time.
+    #[serde(default)]
+    pub important: i64,
+    #[serde(default)]
+    pub open_follow_ups: i64,
+    #[serde(default)]
+    pub overdue_follow_ups: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

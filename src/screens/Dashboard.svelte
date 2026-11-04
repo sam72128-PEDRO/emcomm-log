@@ -6,6 +6,7 @@
     FileText,
     ArrowLeftRight,
     Flag,
+    CalendarClock,
     SquarePen,
     List,
     Send,
@@ -152,6 +153,21 @@
         <Flag size={24} class="red" aria-hidden="true" />
         <div><strong>{s?.flagged ?? "–"}</strong><span>Flagged Reports</span></div>
       </div>
+      <button
+        class="stat stat-link"
+        title="Show open follow-ups in the Traffic Log"
+        onclick={() => {
+          app.logQuery = { ...defaultQuery(), follow_up: "open" };
+          app.navigate("log");
+        }}
+      >
+        <CalendarClock size={24} class={s?.overdue_follow_ups ? "red" : ""} aria-hidden="true" />
+        <div>
+          <strong>{s?.open_follow_ups ?? "–"}</strong><span
+            >Open Follow-ups{s?.overdue_follow_ups ? ` · ${s.overdue_follow_ups} overdue` : ""}</span
+          >
+        </div>
+      </button>
     </div>
   </section>
 
@@ -476,6 +492,18 @@
   }
   .stat + .stat {
     border-left: 1px solid var(--border);
+  }
+  .stat-link {
+    background: none;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+  }
+  .stat-link:hover strong,
+  .stat-link:focus-visible strong {
+    text-decoration: underline;
   }
   .stat strong {
     display: block;

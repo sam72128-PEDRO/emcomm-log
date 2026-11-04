@@ -34,6 +34,7 @@
     toEntryInput,
     toTemplateDefaults,
     validateForm,
+    blankFollowUp,
     carrySession,
     followIdentity,
   } from "../lib/entryForm";
@@ -41,6 +42,7 @@
   import { formatInstant } from "../lib/time";
   import { currentPeriod } from "../lib/periods";
   import { channelHint, channelValue } from "../lib/plan";
+  import { fillText, matchDirectory, normKey } from "../lib/directory";
   import DateTimeInput from "./DateTimeInput.svelte";
   import LocationEditor from "./LocationEditor.svelte";
   import TagInput from "./TagInput.svelte";
@@ -182,6 +184,44 @@
             : String(hz / 1e6),
       ),
   );
+  // 2.2 station directory (this logbook only): offered before history; applied only when picked.
+  let directory = $state<T.DirectoryEntry[]>([]);
+  $effect(() => {
+    void app.dataVersion;
+    api
+      .listDirectory("")
+      .then((d) => (directory = Array.isArray(d) ? d : []))
+      .catch(() => (directory = []));
+  });
+  const dirHits = $derived({
+    from: matchDirectory(directory, form.from_text),
+    to: matchDirectory(directory, form.to_text),
+    call: type === "ham" ? matchDirectory(directory, form.ham.their_call) : null,
+  });
+  /** A directory item whose channel/frequency/mode differ from the form: offer, never apply silently. */
+  const dirOffer = $derived.by(() => {
+    for (const d of [dirHits.call, dirHits.from, dirHits.to]) {
+      if (!d) continue;
+      const chan = d.channel && d.channel !== form.channel;
+      const fq = type === "ham" && d.frequency_hz && d.frequency_hz !== freq.hz;
+      const md = type === "ham" && d.mode && d.mode !== form.ham.mode;
+      if (chan || fq || md) return d;
+    }
+    return null;
+  });
+  function applyDirectory(d: T.DirectoryEntry) {
+    if (d.channel) form.channel = d.channel;
+    if (type === "ham") {
+      if (d.frequency_hz) {
+        form.freqText = String(d.frequency_hz / 1e6);
+        form.freqUnit = "MHz";
+      }
+      if (d.mode) form.ham.mode = d.mode;
+    }
+    app.announce(`Filled from directory: ${d.label}`);
+  }
+  const recentOnly = (vals: string[] | undefined) =>
+    (vals ?? []).filter((v) => !directory.some((d) => normKey(fillText(d)) === normKey(v)));
   const suggestedBand = $derived(freq.hz ? bandForHz(freq.hz) : null);
   const blocked = $derived(!!app.storageBlocked || app.readOnly);
 
@@ -331,6 +371,10 @@
         errors = {};
         await tick();
         focusFirst();
+      }
+      // Rank the directory items used by this entry first next time (best effort; the entry is saved).
+      for (const d of new Set([dirHits.from, dirHits.to, dirHits.call].filter((x) => !!x))) {
+        void api.markDirectoryUsed(d!.id, res.entry.id).catch(() => {});
       }
       onsaved?.(res.entry);
     } catch (e) {
@@ -583,6 +627,21 @@
     <span class="hint">{form.body.length.toLocaleString()} / 100,000</span>
   </div>
 
+  {#if dirOffer}
+    <div class="dir-offer" role="status">
+      <span class="badge neutral">Directory</span>
+      <span
+        >{dirOffer.label}{dirOffer.agency ? ` · ${dirOffer.agency}` : ""} usually uses {[
+          dirOffer.channel,
+          type === "ham" && dirOffer.frequency_hz ? `${(dirOffer.frequency_hz / 1e6).toFixed(4)} MHz` : "",
+          type === "ham" ? dirOffer.mode : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}</span
+      >
+      <button type="button" class="small" onclick={() => applyDirectory(dirOffer!)}>Use these</button>
+    </div>
+  {/if}
   {#if type === "ham" && form.kind === "qso" && compact}
     <div class="field">
       <label for={fid("call")}>Their callsign<span class="req">*</span></label>
@@ -1130,6 +1189,21 @@
       {#if !hidden.has("flagged")}<label class="check"
           ><input type="checkbox" bind:checked={form.flagged} /> Flag for report</label
         >{/if}
+      <label class="check" title="Important: stands out in the Traffic Log. Not the same as Flag for report."
+        ><input type="checkbox" bind:checked={form.important} /> Important</label
+      >
+      <label
+        class="check"
+        title="Follow-up needed: counted on the Dashboard until resolved. No reminder is sent."
+        ><input
+          type="checkbox"
+          checked={form.follow_up.state !== "none"}
+          onchange={(e) =>
+            (form.follow_up = e.currentTarget.checked
+              ? { ...form.follow_up, state: "open" }
+              : blankFollowUp())}
+        /> Follow-up needed</label
+      >
       {#if !hidden.has("attachments")}
         <button type="button" class="small" onclick={attach} disabled={blocked}
           ><Paperclip size={14} />Attach file…</button
@@ -1137,6 +1211,41 @@
       {/if}
     </div>
   </div>
+  {#if form.follow_up.state !== "none" && !compact}
+    <fieldset class="follow-up">
+      <legend>Follow-up</legend>
+      <div class="grid-3">
+        <div class="field">
+          <label for={fid("fu-state")}>State</label>
+          <select id={fid("fu-state")} bind:value={form.follow_up.state}>
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+          </select>
+        </div>
+        <DateTimeInput
+          id={fid("fu-due")}
+          label="Due (optional)"
+          bind:value={form.follow_up.due_utc}
+          zone={app.zone}
+          clearable
+          error={err("follow_up.due_utc")}
+        />
+        <div class="field">
+          <label for={fid("fu-note")}>Note</label>
+          <input
+            id={fid("fu-note")}
+            type="text"
+            bind:value={form.follow_up.note}
+            maxlength="500"
+            placeholder="e.g. Confirm delivery with Red Cross"
+          />
+        </div>
+      </div>
+      <span class="hint"
+        >Resolving does not change the message status (Pending / Acknowledged…) or Flag for report.</span
+      >
+    </fieldset>
+  {/if}
   {#if mode === "edit" && entry?.attachments.length}
     <p class="hint" style="margin:0">
       Existing attachments: {entry.attachments.map((a) => a.display_name).join(", ")} (kept)
@@ -1242,10 +1351,14 @@
 
 <!-- Local recent values (this logbook only); applied only when picked. -->
 <datalist id={fid("stations")}
-  >{#each recents.station ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+  >{#each directory as d (d.id)}<option value={fillText(d)}
+      >Directory · {d.label}{d.agency ? ` · ${d.agency}` : ""}</option
+    >{/each}{#each recentOnly(recents.station) as v (v)}<option value={v}></option>{/each}</datalist
 >
 <datalist id={fid("calls")}
-  >{#each recents.their_call ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+  >{#each directory.filter((d) => d.kind === "amateur_callsign" || d.identifier) as d (d.id)}<option
+      value={fillText(d)}>Directory · {d.label}</option
+    >{/each}{#each recentOnly(recents.their_call) as v (v)}<option value={v}></option>{/each}</datalist
 >
 <datalist id={fid("freqs")}
   >{#each recentFreqs as v (v)}<option value={v}></option>{/each}</datalist
@@ -1320,5 +1433,13 @@
   }
   .templates {
     gap: 6px;
+  }
+  .dir-offer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-2);
   }
 </style>
