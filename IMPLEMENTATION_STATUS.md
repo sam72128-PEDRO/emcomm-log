@@ -52,21 +52,45 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
   the full Tauri app crate.
 - **Windows:** clippy with `-D warnings` is clean on the core for `x86_64-pc-windows-gnu` (Geolocator code
   included). Nothing ran on Windows itself.
-- **GitHub Actions:** did not run for 2.1. GitHub refused to start the jobs because of an account billing
-  problem, so the Windows/Linux installers and the installed-app E2E are **not yet run** for 2.1.
-- **Hands-on:** the Mac screen was locked, so the 2.1 UI was not clicked through by hand.
+- **GitHub Actions:** not run for 2.1. By the product owner's decision, Windows/Linux builds and CI wait
+  until the macOS version is finished, so the Windows/Linux installers and installed-app E2E are **not yet
+  run** for 2.1.
+- **Hands-on (macOS release build, scratch data, 2026-11-03):** clicked through:
+  - first-run setup and a second operator profile;
+  - the Station dialog: tactical ID, station callsign normalised, default park, typed default position;
+  - a HAM QSO, with the station callsign from the station, the operator callsign from the person on duty,
+    and My POTA from the station;
+  - Switch Operator both ways with an unsaved QSO open (save under the outgoing operator; leave it for the
+    incoming operator, whose callsign it then takes);
+  - the Traffic Log shift-change row and operator filter;
+  - Use default and a reported location on one entry, and Entry Detail;
+  - local callsign suggestions and Save & Add Another carry-over;
+  - draft recovery after the app was killed;
+  - the ADIF preview and presets (SOTA activator 0 eligible with reasons and Export disabled; POTA
+    activator exported, with MY_SIG/SIG, UTC date across local midnight, and MY_LAT/MY_LON only with the
+    opt-in);
+  - a CSV with coordinates withheld.
+
+  The hands-on pass found and fixed 7 defects:
+  1. Save & Add Another carried the previous operator's callsign across a handover.
+  2. Esc discarded the Station dialog's unsaved changes without asking.
+  3. "Timed out" was shown while macOS was still waiting for the user to answer its permission prompt.
+  4. No grid was computed from typed coordinates.
+  5. The Switch Operator dialog showed "No shift yet" for the operator shown in the header.
+  6. "accuracy unknown" appeared on typed positions.
+  7. POTA/SOTA references were missing from Entry Detail.
 
 | ID | Status | Evidence |
 |---|---|---|
 | DESK-GPS-01/02 USB NMEA receiver, each OS | **pending (hardware)** | No receiver was available. The serial path is covered by a pty test on Linux and by recorded-NMEA parser tests. |
 | DESK-GPS-03 Bluetooth serial | **pending (hardware)** | Same code path as USB once the OS exposes a port; documented in `docs/GPS_SETUP.md`. |
 | DESK-GPS-04 gpsd over loopback | **passing (simulated gpsd)**, real gpsd **pending** | `gps::tests::gpsd_end_to_end_over_loopback`; non-loopback addresses are refused; absent gpsd → `no_device`. |
-| DESK-GPS-05 OS location, labelled | **partial** | Compiles for macOS and Linux, and type-checks for Windows. The source labels are unit-tested (`os.rs`). The permission prompt and a real fix have not been exercised on any OS. |
+| DESK-GPS-05 OS location, labelled | **partial** | macOS: Capture GPS asks Core Location, and macOS shows its permission prompt (confirmed in the `locationd` log). Without an answer the dialog now explains that and offers Retry. A real macOS fix has not been seen yet (the prompt was not answered during the test). Linux/Windows: compile only. |
 | DESK-GPS-06 Bad data never gives a fake fix | **passing** | NMEA tests: bad checksum, RMC `V`, GGA quality 0, stale fix, never-ending garbage, missing port, cancellation. |
 | DESK-GPS-07 Internal GNSS when present | **partial** | Windows: a satellite-sourced Geolocator position maps to *internal GNSS*; a built-in serial GNSS uses the serial path. A missing device is a normal outcome. Not run on hardware. |
 | DESK-GPS-08 Manual and default location with no GPS/network | **passing (core, all 3 OS builds compile)** | `identity::desk_loc_01_*`, `validate_location` tests. |
 | DESK-OP-01/02/03 | **passing** | `identity.rs`: the station survives a switch, periods are untouched, and profile edits do not rewrite entries. |
-| DESK-OP-04 Unsaved entry at handover | **partial** | Implemented in `SwitchOperatorDialog` (save under the outgoing operator, or leave it for the incoming one). Not covered by an automated test; not yet clicked through by hand. |
+| DESK-OP-04 Unsaved entry at handover | **passing (by hand on macOS)** | Both choices were clicked through in the release build: *save it now* saved the QSO under Alice before Bob's shift; *leave it open* kept the QSO and its operator callsign changed to the incoming operator. `followIdentity` and `carrySession` are unit-tested. |
 | DESK-LOC-01/02 | **passing** | Two independent locations. Every GPS failure is a typed outcome and saving never depends on it. |
 | DESK-QE-01 | **passing** | `recents` test (local, newest first, voided excluded); vitest Save & Add Another retention and no leakage; HAM station callsign comes from the station. |
 | DESK-QE-02 | **passing** | V1 save contract unchanged (A03–A06 suites). |
