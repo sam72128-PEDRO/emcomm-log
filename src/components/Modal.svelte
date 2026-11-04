@@ -3,6 +3,7 @@
   import type { Snippet } from "svelte";
   import { X } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
+  import { confirm } from "../lib/confirm.svelte";
 
   let {
     title,
@@ -11,6 +12,7 @@
     footer,
     size = "md",
     busy = false,
+    dirty,
   }: {
     title: string;
     onclose: () => void;
@@ -18,7 +20,29 @@
     footer?: Snippet;
     size?: "sm" | "md" | "lg" | "xl";
     busy?: boolean;
+    /** When it returns true, Esc / the close button ask before discarding (2.1 spec §5.1). */
+    dirty?: () => boolean;
   } = $props();
+
+  let asking = false;
+  async function requestClose() {
+    if (busy || asking) return;
+    if (dirty?.()) {
+      asking = true;
+      const a = await confirm.ask({
+        title: "Discard changes?",
+        message: `Close "${title}" without saving your changes?`,
+        buttons: [
+          { id: "keep", label: "Keep editing", tone: "primary" },
+          { id: "discard", label: "Discard", tone: "danger" },
+        ],
+        cancelId: "keep",
+      });
+      asking = false;
+      if (a.id !== "discard") return;
+    }
+    onclose();
+  }
 
   let dialogEl: HTMLDivElement | undefined = $state();
   const titleId = `dlg-${Math.random().toString(36).slice(2)}`;
@@ -61,7 +85,7 @@
         dialogEl.focus();
         return;
       }
-      if (!busy) onclose();
+      void requestClose();
       return;
     }
     if (e.key !== "Tab") return;
@@ -98,7 +122,7 @@
     <header class="modal-head">
       <h2 id={titleId}>{title}</h2>
       <span class="spacer"></span>
-      <button class="ghost icon-only" aria-label="Close dialog" onclick={onclose} disabled={busy}
+      <button class="ghost icon-only" aria-label="Close dialog" onclick={requestClose} disabled={busy}
         ><X size={18} /></button
       >
     </header>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Crosshair, Eraser, House } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
-  import { describeSource, formatCoord, parseCoord } from "../lib/location";
+  import { describeSource, formatCoord, maidenhead, parseCoord } from "../lib/location";
   import { formatInstant } from "../lib/time";
   import type * as T from "../lib/types";
   import GpsCaptureDialog from "./GpsCaptureDialog.svelte";
@@ -83,8 +83,18 @@
       coordError = "Enter both as decimal degrees, e.g. 33.812100 and -84.401100 (or 33.8121 N, 84.4011 W)";
       return;
     }
-    edit({ latitude_deg: lat, longitude_deg: lon });
+    // Fill the grid from the coordinates, keeping only a grid the operator typed themselves.
+    const typedGrid =
+      !!value?.maidenhead && !gridAuto && (value.source === "manual" || value.source === "reported");
+    edit({
+      latitude_deg: lat,
+      longitude_deg: lon,
+      maidenhead: typedGrid ? value!.maidenhead : maidenhead(lat, lon),
+    });
+    gridAuto = !typedGrid;
   }
+  /** True while the grid shown was filled from coordinates (so new coordinates may replace it). */
+  let gridAuto = $state(false);
 </script>
 
 <div class="loc" role="group" aria-labelledby="{id}-legend">
@@ -162,7 +172,10 @@
         id="{id}-grid"
         type="text"
         value={value?.maidenhead ?? ""}
-        oninput={(e) => edit({ maidenhead: e.currentTarget.value })}
+        oninput={(e) => {
+          gridAuto = false;
+          edit({ maidenhead: e.currentTarget.value });
+        }}
         maxlength="8"
         placeholder="EM73wv"
       />

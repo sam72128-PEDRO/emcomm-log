@@ -20,6 +20,7 @@
     sota_ref: s0?.sota_ref ?? "",
     updated_at_utc: s0?.updated_at_utc ?? "",
   });
+  const initial = JSON.stringify(st);
   let busy = $state(false);
   let error = $state<T.AppError | null>(null);
   const err = (f: string) => (error?.field === `station.${f}` ? error.message : "");
@@ -39,7 +40,13 @@
   }
 </script>
 
-<Modal title="Station / assignment" {onclose} {busy} size="lg">
+<Modal
+  title="Station / assignment"
+  {onclose}
+  {busy}
+  size="lg"
+  dirty={() => JSON.stringify($state.snapshot(st)) !== initial}
+>
   <p class="muted" style="margin:0">
     The station is the desk, position or portable setup — not the person. Several operators can work the same
     station in turn (Switch Operator). A tactical identifier is not a licensed callsign; enter the licensed
