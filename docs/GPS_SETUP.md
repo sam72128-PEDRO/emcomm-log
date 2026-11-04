@@ -80,7 +80,7 @@ contain them. See the operator guide, section "Locations and privacy".
 | Recorded NMEA (u-blox-style RMC/GGA/GSA, checksum errors, no-fix, stale) | all | **passing** (automated fixtures, `core/src/gps`) |
 | Pseudo-terminal serial port streaming NMEA | Linux | **passing** (automated) |
 | gpsd JSON (TPV, loopback; non-loopback refused) | all | **passing** (automated, simulated gpsd on 127.0.0.1) |
-| macOS Location Services | macOS 14 | **pending** — compiled; permission prompt not yet exercised by hand |
+| macOS Location Services | macOS 14.6 (Apple Silicon) | **passing** — permission prompt answered, fresh fix labelled *OS location*, ±35 m reported |
 | Windows location / built-in GNSS | Windows 10/11 | **pending** — compiled in CI only |
 | GeoClue2 | Linux | **pending** — compiled; no desktop session tested |
 | Physical USB GPS receiver | any | **pending** — no receiver available during 2.1 development |
