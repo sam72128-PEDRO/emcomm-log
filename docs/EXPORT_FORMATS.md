@@ -17,6 +17,14 @@ Originator, Originator Position, Recipient, Recipient Position, Sender, Receiver
 Reply Requested, Action Requested, Response, Resource / Unit, Assignment, Activity Start, Activity End,
 Emergency Location, Disposition, Preparer.
 
+### Columns added in 2.1
+
+All logbook types append **Station** (tactical ID · label · station callsign · agency at the time of the
+entry), **Station Position** and **Reported Location**; HAM logbooks also append **My POTA, POTA, My SOTA,
+SOTA**. A location is written as `place · grid · lat, lon · [source]`. By default latitude/longitude are
+omitted (`(coordinates withheld)` when nothing else describes the place) and grids are cut to 6 characters;
+*Include precise coordinates* writes them in full (6 decimals).
+
 ## Scope and ordering
 
 - Entire logbook / inclusive date range / current Traffic Log filter (including an explicit selection).
@@ -53,6 +61,13 @@ Emergency Location, Disposition, Preparer.
 | GRIDSQUARE / MY_GRIDSQUARE | their / my grid | validated Maidenhead |
 | STATION_CALLSIGN / OPERATOR | station / operator callsign | |
 | COMMENT | QSO notes, newlines → spaces | omitted (warning) if non-ASCII |
+| MY_POTA_REF / POTA_REF | my / their park | when present (ADIF POTARef list) |
+| MY_SIG, MY_SIG_INFO / SIG, SIG_INFO | `POTA` + my / their park | POTA activator preset only |
+| MY_SOTA_REF / SOTA_REF | my / their summit | when present |
+| MY_LAT / MY_LON | station position | only with *Include precise coordinates*; ADIF Location `XDDD MM.MMM` (e.g. `N033 48.726`). A reported location is never written. |
+
+ADIF version **3.1.8**. Presets (General/QRZ, POTA activator, SOTA activator, SOTA chaser) only change which
+QSOs qualify and whether `MY_SIG`/`SIG` are written; see the operator guide, section 7.
 
 Field lengths are the byte counts of the ASCII data. Skipped entries are listed with reasons
 (voided, no QSO fields, missing callsign/start/band-and-frequency).

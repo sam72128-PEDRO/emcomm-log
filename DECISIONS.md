@@ -96,3 +96,41 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     instructions. A chosen channel is stored in the entry as plain text ("TAC 2 (155.4750 MHz)"), not as a
     reference, so editing a plan never rewrites history. Copying a plan from another logbook opens that
     database read-only through the logbook index.
+
+## 2.1 decisions (desktop GPS, Quick Entry, HAM, operator spec EMLOG-DESKTOP-ENH-2026-11-03)
+
+29. **Station and operator are separate records.** Schema v4 adds a one-row `station` table per logbook
+    (tactical ID, label, licensed station callsign, agency, default position, activation refs) and
+    `operator_sessions` (shift history). Each entry stores a `station_snapshot_json` beside the existing
+    operator snapshot, so later edits to the station or a profile never change history. HAM
+    `STATION_CALLSIGN` is prefilled from the station, never the operator's personal call.
+30. **Switch Operator is one instant, no period change.** The handover time may be now or earlier within the
+    current shift (not in the future, not before the shift began, not to the person already on duty). It does
+    not touch operational periods or ICS forms. An unsaved entry at handover is never silently reassigned: the
+    operator chooses *save it now under the outgoing operator* (blocked until it saves) or *leave it for the
+    incoming operator*, who then becomes its recorded operator. Profiles stay global and local-only (no
+    profile export).
+31. **Locations are JSON value objects on the entry**, not rows in a shared table: `operator_location_json`
+    and `reported_location_json` each hold coordinates (WGS84, both or neither), label, grid, source, provider
+    id, fix time, accuracy, altitude, satellites, notes. Copying a value makes it immutable history with no
+    joins; *Use default* copies the station default and records the original source in `provider_id`.
+32. **Own NMEA parser, not the `nmea` crate**: only RMC/GGA/GSA are needed and the acceptance rules (checksum
+    mandatory; RMC status, mode and GGA quality must agree) are stricter than a general parser's. Serial via
+    `serialport` 4.10 with default features off (no libudev dependency on Linux). Nothing is ever written to
+    the receiver. Baud is probed at 4800 then 9600 unless fixed. Accuracy is never derived from HDOP.
+33. **OS location only through native APIs, on explicit request.** macOS Core Location (objc2, main thread,
+    `NSLocationWhenInUseUsageDescription`), Windows `Geolocator` (satellite-sourced → *internal GNSS*, otherwise
+    *OS position*), Linux GeoClue2 over D-Bus (zbus, blocking). The Tauri geolocation plugin is mobile-only and
+    is not used on desktop. gpsd is accepted on loopback addresses only.
+34. **Export privacy default is off.** Shared formats (CSV/XLSX/DOCX/TXT/PDF/ADIF) withhold latitude/longitude
+    and cut grids to 6 characters unless *Include precise coordinates* is ticked per export; ADIF then writes
+    `MY_LAT`/`MY_LON` from the station position only. `.emlog` packages and backups are full copies.
+35. **ADIF 3.1.8, one writer, four presets.** A preset changes only eligibility and, for POTA, adds
+    `MY_SIG`/`MY_SIG_INFO` (and `SIG`/`SIG_INFO` park-to-park) as POTA's uploader expects; `*_POTA_REF` and
+    `*_SOTA_REF` are written whenever present. Skipped QSOs are listed with reasons and require an
+    acknowledgement. No SOTA CSV (the spec allows it only against a validated SOTAData layout) and no upload.
+36. **Archived logbooks are not modified by viewing.** An archived logbook at an older schema opens from a
+    `VACUUM INTO` temporary copy that is migrated; the original is upgraded (with the usual verified
+    pre-migration copy) only when unarchived.
+37. **Recents are a query, not a table**: the newest 2000 active entries, grouped per field, newest first then
+    most used, 30 values, offered through `<datalist>` so a value is applied only when picked.

@@ -290,6 +290,14 @@ fn write_fixture_exports_for_external_validation() {
     let (_h, ham) = ham_fixture(parent.path());
     let hinfo = ham.info().unwrap();
     export::run_export(&ham.conn, &hinfo, &req(ExportFormat::Adif, "all"), &out.join("fixture.adi")).unwrap();
+    // 2.1: POTA activator preset with precise coordinates, and a CSV with the default privacy policy.
+    let (_p, pota) = activation_fixture(parent.path());
+    let pinfo = pota.info().unwrap();
+    let mut r = req(ExportFormat::Adif, "all");
+    r.adif_preset = adif::AdifPreset::PotaActivator;
+    r.include_precise_coordinates = true;
+    export::run_export(&pota.conn, &pinfo, &r, &out.join("pota.adi")).unwrap();
+    export::run_export(&pota.conn, &pinfo, &req(ExportFormat::Csv, "all"), &out.join("private.csv")).unwrap();
     // Large report to exercise pagination and repeated headings.
     let dir = create_book(parent.path(), LogbookType::Emergency, "Paging Fixture");
     let mut big = Logbook::open(&dir).unwrap();

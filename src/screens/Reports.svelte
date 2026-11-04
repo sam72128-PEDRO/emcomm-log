@@ -355,7 +355,8 @@
       <p class="muted" style="margin:0">
         A complete copy of this logbook — every entry including voided ones, revision history, templates,
         favorites, logbook settings and attachments — for moving to another computer. Report filters do not
-        apply. Your operator profiles and local settings are not included.
+        apply. Your operator profiles and local settings are not included. It also contains every recorded
+        station and reported position at full precision — share it only with people who should have them.
       </p>
       <div class="row">
         <button onclick={exportPackage} disabled={pkgBusy}
