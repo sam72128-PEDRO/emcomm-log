@@ -1,2 +1,2 @@
-# EMCOMM LOG 2.1.0 macOS (commit 5cd4814). Built and smoke-tested locally on macOS 14.6 (Apple Silicon). Unsigned. Windows/Linux not built for 2.1 yet.
-368e0996321afb2e58503db5a18cb3bfc4865c98996218b5954a50ce94277716  macos/EMCOMM LOG_2.1.0_aarch64.dmg
+# EMCOMM LOG 2.1.0 macOS (commit 58d8d3e). Built and tested locally on macOS 14.6 (Apple Silicon), incl. Location Services and a u-blox M8 USB receiver. Unsigned. Windows/Linux not built for 2.1 yet.
+c93a42886a1195d57dae49bbb2a36e7243d3ce994caa449a1a854820668797fa  macos/EMCOMM LOG_2.1.0_aarch64.dmg
