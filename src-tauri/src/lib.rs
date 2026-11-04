@@ -1079,6 +1079,50 @@ async fn set_station(state: State<'_, AppState>, station: Station) -> Cmd<Statio
     with_book(&state, |lb| lb.set_station(&station))
 }
 
+// ---------- 2.2 ADIF import ----------
+
+fn read_adif(path: &str) -> AppResult<Vec<u8>> {
+    let m = std::fs::metadata(path).map_err(|e| AppError::from(e).with_context("Cannot read the ADIF file"))?;
+    if m.len() > emcomm_core::adif_import::MAX_FILE_BYTES {
+        return Err(AppError::validation("adif", "The file is larger than 64 MB; split it and import the parts"));
+    }
+    std::fs::read(path).map_err(|e| AppError::from(e).with_context("Cannot read the ADIF file"))
+}
+
+#[tauri::command]
+async fn pick_adif_file(app: AppHandle) -> Cmd<Option<String>> {
+    let filters = [DialogFilter { name: "ADIF (.adi, .adif)".into(), extensions: vec!["adi".into(), "adif".into()] }];
+    Ok(file_dialog(&app, "Import ADIF", &filters, None).blocking_pick_file().and_then(to_path))
+}
+
+#[tauri::command]
+async fn adif_preview(
+    state: State<'_, AppState>,
+    path: String,
+    options: emcomm_core::adif_import::ImportOptions,
+) -> Cmd<emcomm_core::adif_import::AdifPreview> {
+    let bytes = read_adif(&path)?;
+    let name = Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    with_book(&state, |lb| lb.adif_preview(&bytes, &name, &options))
+}
+
+#[tauri::command]
+async fn adif_import(
+    state: State<'_, AppState>,
+    path: String,
+    expected_sha256: String,
+    selected: Vec<String>,
+    options: emcomm_core::adif_import::ImportOptions,
+) -> Cmd<emcomm_core::adif_import::AdifImportResult> {
+    let bytes = read_adif(&path)?;
+    let name = Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let op = operator_snapshot(&state)?;
+    with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        lb.adif_import(&bytes, &name, &expected_sha256, &selected, &options, &who)
+    })
+}
+
 #[tauri::command]
 async fn entry_links(state: State<'_, AppState>, entry_id: String, include_removed: bool) -> Cmd<Vec<emcomm_core::links::LinkView>> {
     with_book(&state, |lb| lb.entry_links(&entry_id, include_removed))
@@ -1554,6 +1598,9 @@ pub fn run() {
             get_station,
             set_station,
             recent_values,
+            pick_adif_file,
+            adif_preview,
+            adif_import,
             entry_links,
             add_link,
             remove_link,

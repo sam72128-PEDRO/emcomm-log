@@ -119,6 +119,11 @@ export const api = {
   getStation: () => call<T.Station>("get_station"),
   setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
   recentValues: (fields: T.RecentField[]) => call<T.Recents>("recent_values", { fields }),
+  pickAdifFile: () => call<string | null>("pick_adif_file"),
+  adifPreview: (path: string, options: T.AdifImportOptions) =>
+    call<T.AdifPreview>("adif_preview", { path, options }),
+  adifImport: (path: string, expectedSha256: string, selected: string[], options: T.AdifImportOptions) =>
+    call<T.AdifImportResult>("adif_import", { path, expectedSha256, selected, options }),
   entryLinks: (entryId: string, includeRemoved = false) =>
     call<T.LinkView[]>("entry_links", { entryId, includeRemoved }),
   addLink: (sourceId: string, targetId: string, relation: T.Relation, note: string) =>
