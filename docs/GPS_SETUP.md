@@ -83,7 +83,8 @@ contain them. See the operator guide, section "Locations and privacy".
 | macOS Location Services | macOS 14.6 (Apple Silicon) | **passing** — permission prompt answered, fresh fix labelled *OS location*, ±35 m reported |
 | Windows location / built-in GNSS | Windows 10/11 | **pending** — compiled in CI only |
 | GeoClue2 | Linux | **pending** — compiled; no desktop session tested |
-| Physical USB GPS receiver | any | **pending** — no receiver available during 2.1 development |
+| u-blox M8 USB receiver (UBX-M8130, USB 1546:01a8, NMEA 4.1, GPS+GLONASS+BeiDou) | macOS 14.6 | **passing** — detected as `/dev/cu.usbmodem101` (no driver); indoors *No fix yet* (200+ valid sentences, none rejected); at a window, cold start to fix in a few minutes; Capture GPS saved source, fix time, 12 satellites and altitude |
+| Physical USB GPS receiver | Windows, Linux | **pending** |
 | Physical Bluetooth GPS receiver | any | **pending** |
 | Real gpsd with a receiver | Linux | **pending** |
 

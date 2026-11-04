@@ -80,9 +80,16 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
   6. "accuracy unknown" appeared on typed positions.
   7. POTA/SOTA references were missing from Entry Detail.
 
+  A later session with real hardware (macOS Location Services and a u-blox M8 USB receiver) fixed four more
+  defects:
+  1. Satellites and altitude were lost because u-blox sends RMC before GGA.
+  2. The lat/lon boxes were not refreshed after Capture GPS or Use default.
+  3. An empty draft was written when the operator or station loaded after the editor appeared.
+  4. macOS system serial ports were listed as possible receivers.
+
 | ID | Status | Evidence |
 |---|---|---|
-| DESK-GPS-01/02 USB NMEA receiver, each OS | **pending (hardware)** | No receiver was available. The serial path is covered by a pty test on Linux and by recorded-NMEA parser tests. |
+| DESK-GPS-01/02 USB NMEA receiver, each OS | **passing on macOS**; Windows/Linux **pending** | macOS 14.6 with a u-blox M8 (UBX-M8130) USB receiver. It was detected by name. Indoors it reported *No fix yet* and gave no position. At a window it got a real fix. Capture GPS saved it on entry #3, and reading the logbook file afterwards confirmed source `external_usb_nmea`, the port, fix time, 12 satellites, 25.7 m altitude and grid. Hardware testing found and fixed two parser defects: u-blox sends RMC before the same-second GGA, which lost the satellites and altitude (the real lines are now a regression test), and the lat/lon boxes were not refreshed after a capture. |
 | DESK-GPS-03 Bluetooth serial | **pending (hardware)** | Same code path as USB once the OS exposes a port; documented in `docs/GPS_SETUP.md`. |
 | DESK-GPS-04 gpsd over loopback | **passing (simulated gpsd)**, real gpsd **pending** | `gps::tests::gpsd_end_to_end_over_loopback`; non-loopback addresses are refused; absent gpsd → `no_device`. |
 | DESK-GPS-05 OS location, labelled | **passing on macOS**; Linux/Windows **pending** | macOS 14.6, release build: before permission → *Permission needed* with Retry (no fake fix); after the user allowed it → *Fix received*, labelled *OS location (may be Wi-Fi based) · macOS Core Location*, fix 0 s old, ±35 m reported accuracy, grid computed. Linux (GeoClue) and Windows (Geolocator): compile only. |
