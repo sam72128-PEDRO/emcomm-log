@@ -412,6 +412,7 @@ export interface Entry {
   reported_location?: Location | null;
   important?: boolean;
   follow_up?: FollowUp;
+  related_count?: number;
 }
 
 export interface SaveResult {
@@ -834,4 +835,31 @@ export interface DirectoryEntry extends DirectoryInput {
 export interface DirectorySaveResult {
   entry: DirectoryEntry;
   similar: DirectoryEntry[];
+}
+
+// ---------- 2.2 related communications ----------
+export type Relation = "related_to" | "follow_up_to" | "relay_of" | "response_to" | "corrects";
+export interface EntryLink {
+  id: string;
+  source_entry_id: string;
+  target_entry_id: string;
+  relation: Relation;
+  note: string;
+  created_at_utc: string;
+  created_by: OperatorSnapshot;
+  removed_at_utc: string | null;
+  removed_by: OperatorSnapshot | null;
+}
+export interface LinkView {
+  link: EntryLink;
+  /** The viewed entry is the link's source. */
+  outgoing: boolean;
+  counterpart: {
+    id: string;
+    sequence_no: number;
+    kind: EntryKind;
+    event_at_utc: string;
+    subject: string;
+    status: EntryStatus;
+  };
 }

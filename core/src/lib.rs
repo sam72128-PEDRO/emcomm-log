@@ -11,6 +11,7 @@ pub mod export;
 pub mod faults;
 pub mod fsutil;
 pub mod gps;
+pub mod links;
 pub mod logbook;
 pub mod migrate;
 pub mod models;

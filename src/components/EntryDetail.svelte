@@ -24,6 +24,7 @@
   import { blankFollowUp, DIRECTION_LABEL, HANDLING_LABEL, PRIORITY_LABEL } from "../lib/entryForm";
   import { changeFlags } from "../lib/handling";
   import DirectoryDialog from "./DirectoryDialog.svelte";
+  import RelatedEntries from "./RelatedEntries.svelte";
   import { formatInstant, offsetLabel } from "../lib/time";
 
   let entry = $state<T.Entry | null>(null);
@@ -464,6 +465,7 @@
           </ul>
         </fieldset>
       {/if}
+      <RelatedEntries {entry} />
       <fieldset>
         <legend><History size={14} /> Revision history</legend>
         <ol class="timeline">

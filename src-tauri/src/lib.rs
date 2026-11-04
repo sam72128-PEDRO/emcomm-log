@@ -935,6 +935,35 @@ async fn set_station(state: State<'_, AppState>, station: Station) -> Cmd<Statio
 }
 
 #[tauri::command]
+async fn entry_links(state: State<'_, AppState>, entry_id: String, include_removed: bool) -> Cmd<Vec<emcomm_core::links::LinkView>> {
+    with_book(&state, |lb| lb.entry_links(&entry_id, include_removed))
+}
+
+#[tauri::command]
+async fn add_link(
+    state: State<'_, AppState>,
+    source_id: String,
+    target_id: String,
+    relation: emcomm_core::links::Relation,
+    note: String,
+) -> Cmd<emcomm_core::links::LinkView> {
+    let op = operator_snapshot(&state)?;
+    with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        lb.add_link(&source_id, &target_id, relation, &note, &who)
+    })
+}
+
+#[tauri::command]
+async fn remove_link(state: State<'_, AppState>, link_id: String) -> Cmd<()> {
+    let op = operator_snapshot(&state)?;
+    with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        lb.remove_link(&link_id, &who)
+    })
+}
+
+#[tauri::command]
 async fn list_directory(state: State<'_, AppState>, query: String) -> Cmd<Vec<emcomm_core::directory::DirectoryEntry>> {
     with_book(&state, |lb| lb.list_directory(&query))
 }
@@ -1372,6 +1401,9 @@ pub fn run() {
             get_station,
             set_station,
             recent_values,
+            entry_links,
+            add_link,
+            remove_link,
             list_directory,
             save_directory,
             delete_directory,
