@@ -41,6 +41,58 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **passing (automated on Windows and Linux, by hand on macOS); no human screen-reader session** | Installed-app E2E (`scripts/e2e.py`, 50/50 on Windows and Linux): Ctrl+1–5/F/,/Enter shortcuts, Tab order, focus into dialogs and restored after Esc, focus to invalid field, shortcuts blocked under dialogs with announcement, save and validation announced in live regions, native View menu driven by OS automation (pywinauto / xdotool), and the OS accessibility tree (UIA for Narrator/NVDA, AT-SPI for Orca) exposes labelled fields, buttons and combos. axe-core: no serious/critical violations on 10 screens. | macOS release app: native menus with shortcuts, Cmd+1–5/E/Enter, F1, Tab order, Esc and dialog focus verified by hand. Not done: a session with a real screen reader (VoiceOver/NVDA/Orca) by a person. |
 | A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing** | `installer-smoke.yml` on fresh GitHub VMs with the CI installers ([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **Linux** `.deb` (apt), `.AppImage`, and `.rpm` (clean Fedora container) launched with no network, stayed running, created their data store, wizard rendered; **Windows** `.msi` and NSIS `.exe` installed silently and run with the app's outbound traffic blocked by firewall rule, same checks. **macOS** (built locally): `scripts/mac_smoke.sh` mounts the `.dmg`, runs the app with all IP networking denied (Seatbelt), checks it stays up, creates its data store and shows the wizard. | Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
 
+## 2.2.0 — six additions (EMLOG-2.2-SHARED-2026-11-04)
+
+**Where it was verified (2026-11-04).**
+- **macOS 14.6 (Apple Silicon):** all core tests pass (unit and integration, including the 2.2 suite
+  `core/tests/v22.rs`); clippy `-D warnings`, svelte-check, ESLint and Prettier are clean; 30 frontend tests
+  pass. The independent validators pass (`validate_exports.py` 0 failures; `validate_forms.py` all ICS checks).
+- **Hands-on (macOS release build):** run on a copy of a real 2.1 test logbook (shifts, GPS fixes,
+  attachments, a 2.1 draft), clicked through:
+  - **Upgrade:** schema 4 → 5, with the notice naming the kept copy; the 2.1 history is intact.
+  - **Flags:** Mark Important and Follow-up needed (revisions with readable diffs).
+  - **Links:** Follow-up to #1, seen from both ends; no revision added.
+  - **Directory:** Save to Directory from a QSO; directory suggestion and "Use these" in a new QSO.
+  - **Attachments:** Attach files… (picker), a PNG thumbnail and caption, a PDF icon, then Save Entry; the
+    gallery with Open / Save As; Edit to change a caption and remove the PDF (one revision).
+  - **ADIF import:** preview (duplicate, two-park split, default station callsign, bad date with reason),
+    confirmed import as #5–#7, copyable summary.
+  - **Review export:** unchecking 2 of 7; voiding #6 from inside the review blocked the export ("#6
+    (voided)"), with no file written; re-review showed #6 excluded with the reason; the CSV held exactly the
+    6 approved entries, Important/Follow-up columns, the caption, no coordinates, and the scope line naming
+    the review.
+  - **Dashboard:** Open Follow-ups card → filtered Traffic Log.
+
+  Found and fixed during the pass: caption changes were not shown in the revision history, and the review's
+  time column wrapped.
+- **Not verified:**
+  - Drag and drop from Finder: automation could not start a real macOS drag session, and the cause was not
+    established. Needs a person to try it.
+  - Pasting a screenshot: not tried, to avoid overwriting the clipboard.
+  - ICS 213/214/309 review dialogs were not clicked through (the test logbook is HAM); the core rules are
+    covered by tests.
+  - Windows and Linux: not built or tested for 2.2. Per the product owner's decision, CI runs after the
+    macOS version is finished.
+  - Android: no 2.2 adapters yet (camera, Photo Picker, document picker, system save). They belong on the
+    Android branch, rebased onto 2.2.
+
+| Requirement | Status | Code | Evidence |
+|---|---|---|---|
+| DATA-01..03, 06, 08 (v5 migration, backup first, archived view copy, nothing rewritten) | **passing** | `core/migrations/logbook/0005_*`, `migrate.rs` | `v22::data_genuine_v21_*` (fixtures written by the 2.1.0 code), migrate up/down test, hands-on upgrade |
+| DATA-04/05 (`.emlog` carries v5; 2.1 refuses newer) | **passing** | `package.rs` (2.1 refuses newer schema/package) | package round trips in every v22 test; 2.1 code inspected (`migrate.rs`, `package.rs`) |
+| ATT-01..05, 08..10 (pick/drop/paste, managed copies, metadata, gallery, remove as change, packages) | **passing** (drop/paste UI **not verified**) | `attach.rs`, `logbook.rs::stage_*`, `entries.rs`, `AttachmentsField`, `AttachmentGallery` | `v22::att_*`, `attach::tests`, hands-on |
+| ATT-06 (sniffing, never open programs, malformed images) | **passing** | `attach.rs::is_risky`, `open_attachment` | `attach::tests` |
+| ATT-07 (streaming, progress, cancel, large-file warning) | **passing** (free-space pre-check: **not implemented**, a full disk fails cleanly) | `fsutil::copy_synced_progress` | `v22::att_*` (cancel leaves nothing) |
+| ATT-11/12, EXP-10 (names/captions in reports, no EXIF, no embedded files) | **partial** | `export::attachment_names`, thumbnails re-encoded | image appendix in PDF/DOCX **not implemented** (DECISIONS #44) |
+| REL-01..09 | **passing** | `links.rs`, `RelatedEntries`, `LinkEntryDialog` | `v22::rel_*` (spec acceptance), hands-on |
+| FLAG-01..08 | **passing** | `entries.rs::write_flags`, `validate_follow_up`, stats, filters | `v22::flag_*`, vitest, hands-on |
+| DIR-01..08 | **passing** | `directory.rs`, `DirectoryPanel`, `DirectoryDialog`, editor suggestions | `v22::dir_*`, vitest, hands-on |
+| ADIF-01..12 | **passing** | `adif_import.rs`, `AdifImportDialog` | `adif_import::tests`, `v22::adif_*` (atomic, idempotent, 2.1 export round trip, 1,000 QSOs: preview 56 ms, import 0.8 s debug), hands-on |
+| EXP-01..09, 11 | **passing** (ICS dialogs: core-tested, UI **not clicked**) | `export/review.rs`, `forms::plan_reviewed`, `ReviewExportDialog`, `ExportReviewPanel` | `v22::exp_*` (5 of 12, void blocks, ICS 214 out-of-period blocked, 213 eligibility), hands-on |
+| Regression (2.0/2.1 suites, export and form validators) | **passing on macOS** | — | all suites; `validate_exports.py`; `validate_forms.py` |
+| Desktop Windows/Linux, installers, E2E | **not run yet** | — | waiting for the go-ahead after macOS |
+| Android adapters (AND-*) | **not started** | — | Android branch |
+
 ## 2.1.0 — desktop GPS, Quick Entry, HAM presets, operator/station (spec EMLOG-DESKTOP-ENH-2026-11-03)
 
 **Where it was verified (2026-11-03).**
