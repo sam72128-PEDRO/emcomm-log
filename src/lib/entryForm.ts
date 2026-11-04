@@ -479,3 +479,30 @@ export function formHasContent(f: EntryForm, baseline: EntryForm): boolean {
     JSON.stringify({ ...x, event_at_utc: "", ham: { ...x.ham, qso_start_utc: null } });
   return strip(f) !== strip(baseline);
 }
+
+/**
+ * Save & Add Another (2.1 spec §5.1): keep the deliberate session settings (band, mode, frequency,
+ * channel, station/operator callsigns, my grid and activation references, the station position) and
+ * clear everything about the contact itself (their call, reports, reported place, text, notes).
+ */
+export function carrySession(prev: EntryForm, next: EntryForm): EntryForm {
+  const f: EntryForm = $state_snapshot_safe(next);
+  f.kind = prev.kind;
+  f.channel = prev.channel;
+  f.freqText = prev.freqText;
+  f.freqUnit = prev.freqUnit;
+  f.operator_location = prev.operator_location ? $state_snapshot_safe(prev.operator_location) : null;
+  for (const k of [
+    "band",
+    "mode",
+    "submode",
+    "station_call",
+    "operator_call",
+    "my_grid",
+    "my_pota_ref",
+    "my_sota_ref",
+  ] as const) {
+    f.ham[k] = prev.ham[k];
+  }
+  return f;
+}

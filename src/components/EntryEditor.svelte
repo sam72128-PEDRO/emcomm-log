@@ -34,12 +34,14 @@
     toEntryInput,
     toTemplateDefaults,
     validateForm,
+    carrySession,
   } from "../lib/entryForm";
   import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
   import { currentPeriod } from "../lib/periods";
   import { channelHint, channelValue } from "../lib/plan";
   import DateTimeInput from "./DateTimeInput.svelte";
+  import LocationEditor from "./LocationEditor.svelte";
   import TagInput from "./TagInput.svelte";
 
   let {
@@ -281,8 +283,9 @@
       if (!app.shift) void app.refreshIdentity();
       if (mode === "new") {
         draftId = newId();
-        form = newForm(ctx());
-        baseline = newForm(ctx());
+        const carried = carrySession($state.snapshot(form) as EntryForm, newForm(ctx()));
+        form = carried;
+        baseline = structuredClone(carried);
         errors = {};
         await tick();
         focusFirst();
@@ -663,11 +666,96 @@
           />
         </div>
       </div>
+      <div class="grid-4" style="margin-top:10px">
+        <div class="field">
+          <label for={fid("mypota")}>My POTA park</label>
+          <input
+            id={fid("mypota")}
+            type="text"
+            bind:value={form.ham.my_pota_ref}
+            maxlength="17"
+            placeholder="US-0005"
+            aria-invalid={err("ham.my_pota_ref") ? "true" : undefined}
+          />
+          {#if err("ham.my_pota_ref")}<span class="field-error">{err("ham.my_pota_ref")}</span>{/if}
+        </div>
+        <div class="field">
+          <label for={fid("pota")}>Their POTA park (P2P)</label>
+          <input
+            id={fid("pota")}
+            type="text"
+            bind:value={form.ham.pota_ref}
+            maxlength="17"
+            aria-invalid={err("ham.pota_ref") ? "true" : undefined}
+          />
+          {#if err("ham.pota_ref")}<span class="field-error">{err("ham.pota_ref")}</span>{/if}
+        </div>
+        <div class="field">
+          <label for={fid("mysota")}>My SOTA summit</label>
+          <input
+            id={fid("mysota")}
+            type="text"
+            bind:value={form.ham.my_sota_ref}
+            maxlength="20"
+            placeholder="W4C/CM-001"
+            aria-invalid={err("ham.my_sota_ref") ? "true" : undefined}
+          />
+          {#if err("ham.my_sota_ref")}<span class="field-error">{err("ham.my_sota_ref")}</span>{/if}
+        </div>
+        <div class="field">
+          <label for={fid("sota")}>Their SOTA summit (S2S / chaser)</label>
+          <input
+            id={fid("sota")}
+            type="text"
+            bind:value={form.ham.sota_ref}
+            maxlength="20"
+            aria-invalid={err("ham.sota_ref") ? "true" : undefined}
+          />
+          {#if err("ham.sota_ref")}<span class="field-error">{err("ham.sota_ref")}</span>{/if}
+        </div>
+      </div>
       <div class="field" style="margin-top:10px">
         <label for={fid("qnotes")}>QSO notes</label>
         <input id={fid("qnotes")} type="text" bind:value={form.ham.qso_notes} maxlength="10000" />
       </div>
     </fieldset>
+  {/if}
+
+  {#if !compact}
+    <details class="locs" open={!!(form.operator_location || form.reported_location)}>
+      <summary
+        >Location{#if form.operator_location || form.reported_location}<span class="muted">
+            · {[
+              form.operator_location ? "station position" : "",
+              form.reported_location ? "reported place" : "",
+            ]
+              .filter(Boolean)
+              .join(" + ")}</span
+          >{/if}</summary
+      >
+      <div class="locs-body">
+        <LocationEditor
+          id={fid("oploc")}
+          kind="station"
+          bind:value={form.operator_location}
+          defaultLocation={app.station?.default_location ?? null}
+          error={err("operator_location.latitude_deg") ||
+            err("operator_location.label") ||
+            err("operator_location.maidenhead")}
+        />
+        <LocationEditor
+          id={fid("reploc")}
+          kind="reported"
+          bind:value={form.reported_location}
+          error={err("reported_location.latitude_deg") ||
+            err("reported_location.label") ||
+            err("reported_location.maidenhead")}
+        />
+        <span class="hint"
+          >Optional. Never filled automatically; a missing or failed GPS fix never stops you saving.</span
+        >
+      </div>
+    </details>
   {/if}
 
   {#if type === "emergency" && !compact}
@@ -1078,6 +1166,22 @@
 </div>
 
 <style>
+  .locs {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 8px 12px;
+  }
+  .locs summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .locs-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+  }
   .editor {
     display: flex;
     flex-direction: column;

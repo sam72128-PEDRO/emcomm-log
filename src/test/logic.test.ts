@@ -263,3 +263,58 @@ describe("channel plan", () => {
     expect(channelValue(blankChannel())).toBe("");
   });
 });
+
+describe("Save & Add Another (2.1)", () => {
+  it("keeps session settings and clears the contact", async () => {
+    const { carrySession } = await import("../lib/entryForm");
+    const ctx = {
+      type: "ham" as const,
+      preset,
+      profile: null,
+      incident: { incident_name: "", incident_number: "", operational_period: "", agency: "", location: "" },
+    };
+    const prev = newForm(ctx);
+    prev.kind = "qso";
+    Object.assign(prev.ham, {
+      their_call: "K1ABC",
+      rst_sent: "59",
+      band: "20m",
+      mode: "SSB",
+      station_call: "W4CLB",
+      my_pota_ref: "US-0005",
+      pota_ref: "US-1234",
+    });
+    prev.freqText = "14.250";
+    prev.subject = "QSO with K1ABC";
+    prev.operator_location = {
+      latitude_deg: 35.5,
+      longitude_deg: -83.5,
+      label: "",
+      maidenhead: "",
+      source: "external_usb_nmea",
+      provider_id: "",
+      captured_at_utc: null,
+      accuracy_m: null,
+      altitude_m: null,
+      satellites: null,
+      notes: "",
+    };
+    prev.reported_location = { ...prev.operator_location, source: "reported", label: "Their QTH" };
+    const next = carrySession(prev, newForm(ctx));
+    expect([
+      next.ham.band,
+      next.ham.mode,
+      next.freqText,
+      next.ham.station_call,
+      next.ham.my_pota_ref,
+    ]).toEqual(["20m", "SSB", "14.250", "W4CLB", "US-0005"]);
+    expect([next.ham.their_call, next.ham.rst_sent, next.ham.pota_ref, next.subject]).toEqual([
+      "",
+      "",
+      "",
+      "",
+    ]);
+    expect(next.operator_location?.latitude_deg).toBe(35.5);
+    expect(next.reported_location).toBeNull();
+  });
+});

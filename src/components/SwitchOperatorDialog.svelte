@@ -61,8 +61,8 @@
 
 <Modal title="Switch operator" {onclose} {busy}>
   <p class="muted" style="margin:0">
-    Same logbook, same station{app.station?.tactical_id ? ` (${app.station.tactical_id})` : ""}. Entries already
-    saved keep the operator who logged them. The operational period and ICS forms are not changed.
+    Same logbook, same station{app.station?.tactical_id ? ` (${app.station.tactical_id})` : ""}. Entries
+    already saved keep the operator who logged them. The operational period and ICS forms are not changed.
   </p>
   {#if error}<div class="banner error" role="alert">
       <CircleAlert size={18} class="icon" />
@@ -71,14 +71,24 @@
   <div class="grid-2">
     <div class="field">
       <span class="label">On duty now</span>
-      <strong>{outgoing ? `${outgoing.name}${outgoing.callsign ? ` · ${outgoing.callsign}` : ""}` : "No shift yet"}</strong>
+      <strong
+        >{outgoing
+          ? `${outgoing.name}${outgoing.callsign ? ` · ${outgoing.callsign}` : ""}`
+          : "No shift yet"}</strong
+      >
     </div>
     <div class="field">
       <label for="sw-op">Incoming operator<span class="req">*</span></label>
-      <select id="sw-op" bind:value={profileId} aria-invalid={error?.field === "operator" ? "true" : undefined}>
+      <select
+        id="sw-op"
+        bind:value={profileId}
+        aria-invalid={error?.field === "operator" ? "true" : undefined}
+      >
         <option value="">Choose…</option>
         {#each choices as p (p.id)}<option value={p.id}
-            >{p.name}{p.callsign ? ` · ${p.callsign}` : ""}{p.license_class ? ` (${p.license_class})` : ""}</option
+            >{p.name}{p.callsign ? ` · ${p.callsign}` : ""}{p.license_class
+              ? ` (${p.license_class})`
+              : ""}</option
           >{/each}
       </select>
       <button
@@ -91,10 +101,22 @@
     </div>
   </div>
   <div class="grid-2">
-    <DateTimeInput id="sw-at" label="Handover time (leave empty for now)" bind:value={at} zone={app.zone} clearable />
+    <DateTimeInput
+      id="sw-at"
+      label="Handover time (leave empty for now)"
+      bind:value={at}
+      zone={app.zone}
+      clearable
+    />
     <div class="field">
       <label for="sw-note">Note</label>
-      <input id="sw-note" type="text" bind:value={note} maxlength="200" placeholder="e.g. Shift change 1900" />
+      <input
+        id="sw-note"
+        type="text"
+        bind:value={note}
+        maxlength="200"
+        placeholder="e.g. Shift change 1900"
+      />
     </div>
   </div>
   {#if dirty}

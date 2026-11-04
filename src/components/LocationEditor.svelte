@@ -56,9 +56,17 @@
     const manual = kind === "reported" ? "reported" : "manual";
     const next: T.Location = { ...base, ...patch };
     if ("latitude_deg" in patch || "longitude_deg" in patch) {
-      Object.assign(next, { source: manual, provider_id: "", captured_at_utc: null, accuracy_m: null, satellites: null, altitude_m: null });
+      Object.assign(next, {
+        source: manual,
+        provider_id: "",
+        captured_at_utc: null,
+        accuracy_m: null,
+        satellites: null,
+        altitude_m: null,
+      });
     }
-    const empty = next.latitude_deg == null && !next.label.trim() && !next.maidenhead.trim() && !next.notes.trim();
+    const empty =
+      next.latitude_deg == null && !next.label.trim() && !next.maidenhead.trim() && !next.notes.trim();
     value = empty ? null : next;
     last = value;
   }
@@ -81,23 +89,36 @@
 
 <div class="loc" role="group" aria-labelledby="{id}-legend">
   <div class="row wrap head">
-    <span id="{id}-legend" class="legend">{kind === "station" ? "Station position" : "Reported location"}</span>
-    {#if value}<span class="badge neutral" title={value.provider_id || undefined}>{describeSource(value.source)}</span>{/if}
+    <span id="{id}-legend" class="legend"
+      >{kind === "station" ? "Station position" : "Reported location"}</span
+    >
+    {#if value}<span class="badge neutral" title={value.provider_id || undefined}
+        >{describeSource(value.source)}</span
+      >{/if}
     <span class="spacer"></span>
     {#if kind === "station"}
-      <button class="small ghost" onclick={() => (capturing = true)} title="Get one fix from a GPS receiver or the computer's location"
+      <button
+        class="small ghost"
+        onclick={() => (capturing = true)}
+        title="Get one fix from a GPS receiver or the computer's location"
         ><Crosshair size={14} />Capture GPS…</button
       >
       {#if defaultLocation}<button
           class="small ghost"
           onclick={() => {
-            value = { ...defaultLocation!, source: "logbook_default", provider_id: `${defaultLocation!.source} ${defaultLocation!.provider_id}`.trim() };
+            value = {
+              ...defaultLocation!,
+              source: "logbook_default",
+              provider_id: `${defaultLocation!.source} ${defaultLocation!.provider_id}`.trim(),
+            };
             last = value;
           }}
           title="Use this logbook's default station position"><House size={14} />Use default</button
         >{/if}
     {/if}
-    {#if value}<button class="small ghost" onclick={() => ((value = null), (last = null))}><Eraser size={14} />Clear</button>{/if}
+    {#if value}<button class="small ghost" onclick={() => ((value = null), (last = null))}
+        ><Eraser size={14} />Clear</button
+      >{/if}
   </div>
   <div class="grid-4">
     <div class="field">
@@ -113,15 +134,38 @@
     </div>
     <div class="field">
       <label for="{id}-lat">Latitude</label>
-      <input id="{id}-lat" type="text" inputmode="decimal" bind:value={latText} onchange={commitCoords} placeholder="33.812100" aria-invalid={coordError ? "true" : undefined} />
+      <input
+        id="{id}-lat"
+        type="text"
+        inputmode="decimal"
+        bind:value={latText}
+        onchange={commitCoords}
+        placeholder="33.812100"
+        aria-invalid={coordError ? "true" : undefined}
+      />
     </div>
     <div class="field">
       <label for="{id}-lon">Longitude</label>
-      <input id="{id}-lon" type="text" inputmode="decimal" bind:value={lonText} onchange={commitCoords} placeholder="-84.401100" aria-invalid={coordError ? "true" : undefined} />
+      <input
+        id="{id}-lon"
+        type="text"
+        inputmode="decimal"
+        bind:value={lonText}
+        onchange={commitCoords}
+        placeholder="-84.401100"
+        aria-invalid={coordError ? "true" : undefined}
+      />
     </div>
     <div class="field">
       <label for="{id}-grid">Grid</label>
-      <input id="{id}-grid" type="text" value={value?.maidenhead ?? ""} oninput={(e) => edit({ maidenhead: e.currentTarget.value })} maxlength="8" placeholder="EM73wv" />
+      <input
+        id="{id}-grid"
+        type="text"
+        value={value?.maidenhead ?? ""}
+        oninput={(e) => edit({ maidenhead: e.currentTarget.value })}
+        maxlength="8"
+        placeholder="EM73wv"
+      />
     </div>
   </div>
   {#if coordError || error}<span class="field-error">{coordError || error}</span>{/if}
@@ -129,7 +173,11 @@
     <span class="hint"
       >{formatCoord(value.latitude_deg, value.longitude_deg)}{#if value.captured_at_utc}
         · fix {formatInstant(value.captured_at_utc, app.zone, app.clock)}{/if}{#if value.satellites != null}
-        · {value.satellites} satellites{/if}{value.accuracy_m != null ? ` · ±${Math.round(value.accuracy_m)} m` : value.source === "manual" || value.source === "reported" ? "" : " · accuracy unknown"}</span
+        · {value.satellites} satellites{/if}{value.accuracy_m != null
+        ? ` · ±${Math.round(value.accuracy_m)} m`
+        : value.source === "manual" || value.source === "reported"
+          ? ""
+          : " · accuracy unknown"}</span
     >
   {/if}
 </div>

@@ -75,6 +75,33 @@ pub struct GlobalSettings {
     pub active_profile_id: Option<String>,
     /// Preset chosen per logbook type ("general"/"ham"/"emergency") during first run.
     pub default_preset_ids: BTreeMap<String, String>,
+    /// Location & GPS preferences (2.1). No tracking setting exists: capture is always one fix on request.
+    #[serde(default)]
+    pub gps: GpsSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct GpsSettings {
+    /// "auto" (prefer a configured receiver, then OS location), "serial", "gpsd", "os", or "manual".
+    pub preferred: String,
+    pub serial_path: String,
+    /// 0 = probe 4800 then 9600.
+    pub baud: u32,
+    pub serial_kind: crate::gps::SerialKind,
+    pub gpsd_endpoint: String,
+}
+
+impl Default for GpsSettings {
+    fn default() -> Self {
+        GpsSettings {
+            preferred: "auto".into(),
+            serial_path: String::new(),
+            baud: 0,
+            serial_kind: crate::gps::SerialKind::Usb,
+            gpsd_endpoint: "127.0.0.1:2947".into(),
+        }
+    }
 }
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -91,6 +118,7 @@ impl Default for GlobalSettings {
             backup: BackupSettings::default(),
             active_profile_id: None,
             default_preset_ids: BTreeMap::new(),
+            gps: GpsSettings::default(),
         }
     }
 }

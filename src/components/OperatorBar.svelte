@@ -21,13 +21,17 @@
     onclick={() => (editingStation = true)}
     disabled={app.readOnly}
     title="Station / assignment for this logbook (separate from the person operating)"
-    ><RadioTower size={14} />Station: <strong>{stationText}</strong
-    >{#if st?.station_callsign && st.station_callsign !== stationText}<span class="muted">
+    ><RadioTower size={14} />Station:
+    <strong>{stationText}</strong>{#if st?.station_callsign && st.station_callsign !== stationText}<span
+        class="muted"
+      >
         · {st.station_callsign}</span
       >{/if}</button
   >
   <span class="chip plain"
-    ><UserRound size={14} />Operator: <strong>{who?.name ?? "—"}</strong>{#if who?.callsign}<span class="muted">
+    ><UserRound size={14} />Operator: <strong>{who?.name ?? "—"}</strong>{#if who?.callsign}<span
+        class="muted"
+      >
         · {who.callsign}</span
       >{/if}</span
   >

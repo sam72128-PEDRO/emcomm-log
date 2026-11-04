@@ -4,6 +4,7 @@
 //! typed failure; nothing is ever fabricated, and quality fields are only filled when reported.
 
 pub mod nmea;
+pub mod os;
 
 use crate::models::{Location, LocationSource};
 use chrono::{DateTime, Utc};

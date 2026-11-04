@@ -54,6 +54,58 @@ export interface GlobalSettings {
   backup: BackupSettings;
   active_profile_id: string | null;
   default_preset_ids: Record<string, string>;
+  gps?: GpsSettings;
+}
+
+export type SerialKind = "usb" | "bluetooth" | "internal" | "unknown";
+
+export interface GpsSettings {
+  preferred: "auto" | "serial" | "gpsd" | "os" | "manual";
+  serial_path: string;
+  baud: number;
+  serial_kind: SerialKind;
+  gpsd_endpoint: string;
+}
+
+export interface GpsSource {
+  provider: "serial" | "gpsd" | "os";
+  path: string;
+  label: string;
+  serial_kind: SerialKind | null;
+  detail: string;
+}
+
+export interface GpsRequest {
+  provider: "serial" | "gpsd" | "os";
+  path: string;
+  baud: number;
+  serial_kind: SerialKind;
+  gpsd_endpoint: string;
+  timeout_s: number;
+  max_age_s: number;
+}
+
+export type GpsStatus =
+  | "fix"
+  | "stale_fix"
+  | "permission_denied"
+  | "no_device"
+  | "device_busy"
+  | "no_fix"
+  | "timed_out"
+  | "disconnected"
+  | "invalid_sentence"
+  | "unavailable"
+  | "cancelled";
+
+export interface GpsOutcome {
+  status: GpsStatus;
+  message: string;
+  location: Location | null;
+  fix_age_s: number | null;
+  baud: number | null;
+  sentences: number;
+  rejected: number;
 }
 
 export interface ProfileInput {

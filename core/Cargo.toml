@@ -32,7 +32,17 @@ emcomm-core = { path = ".", features = ["fault-injection"] }
 tempfile = "3.27.0"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-serialport = "4.10.1"
+# No libudev: Linux ports are found through /sys (USB and Bluetooth rfcomm still recognised).
+serialport = { version = "4.10.1", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-core-location = { version = "0.3.2", default-features = false, features = ["std", "CLLocation", "CLLocationManager"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSDate"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "async-io"] }
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
+windows = { version = "0.61.3", features = ["Devices_Geolocation", "Foundation"] }

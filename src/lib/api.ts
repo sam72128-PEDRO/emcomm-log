@@ -113,6 +113,9 @@ export const api = {
   exportPreview: (req: T.ExportRequest) => call<T.ExportPreview>("export_preview", { req }),
   runExport: (req: T.ExportRequest, dest: string) => call<T.ExportResult>("run_export", { req, dest }),
 
+  gpsSources: () => call<T.GpsSource[]>("gps_sources"),
+  gpsAcquire: (req: T.GpsRequest) => call<T.GpsOutcome>("gps_acquire", { req }),
+  gpsCancel: () => call<void>("gps_cancel"),
   getStation: () => call<T.Station>("get_station"),
   setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
   operatorSessions: () => call<T.OperatorSession[]>("operator_sessions"),
