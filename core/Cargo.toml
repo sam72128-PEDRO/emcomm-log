@@ -31,5 +31,8 @@ zip = { version = "9.2.3", default-features = false, features = ["deflate"] }
 emcomm-core = { path = ".", features = ["fault-injection"] }
 tempfile = "3.27.0"
 
+[target.'cfg(not(target_os = "android"))'.dependencies]
+serialport = "4.10.1"
+
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

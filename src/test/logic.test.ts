@@ -142,8 +142,27 @@ describe("regressions from hands-on testing", () => {
     const f = newForm(ctx);
     f.kind = "traffic";
     f.subject = "Net check-in";
-    expect(f.ham.station_call).toBe("KJ4MRC");
+    expect(f.ham.operator_call).toBe("KJ4MRC");
     expect(toEntryInput(f, "ham", "utc").ham).toBeNull();
+  });
+  it("takes the station callsign from the station, never from the operator's own callsign (2.1)", () => {
+    expect(newForm(ctx).ham.station_call).toBe("");
+    const station = {
+      label: "",
+      tactical_id: "",
+      station_callsign: "W4CLB",
+      agency: "",
+      default_location: null,
+      pota_ref: "US-1234",
+      sota_ref: "",
+      updated_at_utc: "",
+    };
+    const f = newForm({ ...ctx, station });
+    expect([f.ham.station_call, f.ham.operator_call, f.ham.my_pota_ref]).toEqual([
+      "W4CLB",
+      "KJ4MRC",
+      "US-1234",
+    ]);
   });
   it("flags a frequency outside the chosen band before saving", async () => {
     const { validateForm } = await import("../lib/entryForm");

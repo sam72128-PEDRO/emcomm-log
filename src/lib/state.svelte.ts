@@ -106,8 +106,16 @@ class AppStore {
     (this.active?.settings.time_display_override ?? this.settings?.time_display ?? "local") as Zone,
   );
   clock: Clock = $derived((this.settings?.clock ?? "24h") as Clock);
+  /** The logbook's station / assignment and shift history (2.1). */
+  station = $state<T.Station | null>(null);
+  sessions = $state<T.OperatorSession[]>([]);
+  /** The open shift in the open logbook, if one has started. */
+  shift: T.OperatorSession | null = $derived([...this.sessions].reverse().find((s) => !s.ended_at_utc) ?? null);
+  /** The person entries are recorded under: the open shift's profile, else the app's selected profile. */
   profile: T.Profile | null = $derived(
-    this.profiles.find((p) => p.id === this.settings?.active_profile_id) ?? null,
+    this.profiles.find((p) => p.id === (this.shift?.profile_id ?? this.settings?.active_profile_id)) ??
+      this.profiles.find((p) => p.id === this.settings?.active_profile_id) ??
+      null,
   );
   bookType: T.LogbookType | null = $derived(this.active?.info.logbook_type ?? null);
   readOnly = $derived(this.active?.info.read_only ?? false);
@@ -128,6 +136,7 @@ class AppStore {
     if (changed) {
       this.plans = {};
       void this.refreshPeriods();
+      void this.refreshIdentity();
     }
     this.backup = v?.backup ?? null;
     this.storageBlocked = v && !v.health.ok && v.health.error ? v.health.error : null;
@@ -146,6 +155,20 @@ class AppStore {
       this.stats = await api.logbookStats(a, b);
     } catch {
       this.stats = null;
+    }
+  }
+
+  async refreshIdentity() {
+    if (!this.active) {
+      this.station = null;
+      this.sessions = [];
+      return;
+    }
+    try {
+      [this.station, this.sessions] = await Promise.all([api.getStation(), api.operatorSessions()]);
+    } catch {
+      this.station = null;
+      this.sessions = [];
     }
   }
 

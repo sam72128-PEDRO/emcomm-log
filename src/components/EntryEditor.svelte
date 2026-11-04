@@ -75,6 +75,7 @@
     preset,
     profile: app.profile,
     incident: app.active?.info.incident ?? book.info.incident,
+    station: app.station,
     currentOpId: type === "emergency" ? (currentPeriod(app.periods)?.id ?? null) : null,
   });
 
@@ -276,6 +277,8 @@
         );
       }
       app.bumpData();
+      // The first save in a logbook starts its first shift; show it.
+      if (!app.shift) void app.refreshIdentity();
       if (mode === "new") {
         draftId = newId();
         form = newForm(ctx());

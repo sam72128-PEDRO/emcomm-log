@@ -113,6 +113,12 @@ export const api = {
   exportPreview: (req: T.ExportRequest) => call<T.ExportPreview>("export_preview", { req }),
   runExport: (req: T.ExportRequest, dest: string) => call<T.ExportResult>("run_export", { req, dest }),
 
+  getStation: () => call<T.Station>("get_station"),
+  setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
+  operatorSessions: () => call<T.OperatorSession[]>("operator_sessions"),
+  activeOperator: () => call<T.OperatorSession | null>("active_operator"),
+  switchOperator: (profileId: string, atUtc: string | null, note: string) =>
+    call<T.OperatorSession>("switch_operator", { profileId, atUtc, note }),
   listPeriods: () => call<T.OperationalPeriod[]>("list_periods"),
   currentPeriod: () => call<T.OperationalPeriod | null>("current_period"),
   savePeriod: (id: string | null, input: T.OperationalPeriodInput) =>
