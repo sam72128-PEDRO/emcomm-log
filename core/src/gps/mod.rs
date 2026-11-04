@@ -231,6 +231,7 @@ pub fn list_serial() -> Vec<GpsSource> {
         .into_iter()
         // macOS lists each device twice; the "cu." call-out device is the one to open.
         .filter(|p| !p.port_name.starts_with("/dev/tty."))
+        .filter(|p| !is_system_port(&p.port_name))
         .map(|p| {
             let (kind, detail) = match &p.port_type {
                 serialport::SerialPortType::UsbPort(u) => (
@@ -255,6 +256,13 @@ pub fn list_serial() -> Vec<GpsSource> {
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out.dedup_by(|a, b| a.path == b.path);
     out
+}
+
+/// macOS system ports that are never a GPS receiver (Bluetooth incoming service, Wi-Fi/debug consoles).
+pub fn is_system_port(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = name.strip_prefix("cu.").or_else(|| name.strip_prefix("tty.")).unwrap_or(name);
+    ["Bluetooth-Incoming-Port", "wlan-debug", "debug-console"].contains(&name) || name.ends_with("-WirelessiAP")
 }
 
 #[cfg(not(target_os = "android"))]
@@ -479,6 +487,15 @@ mod tests {
         cancel.store(true, Ordering::SeqCst);
         let o = read_fix(void.as_bytes(), Instant::now() + Duration::from_secs(2), &cancel, LocationSource::Gpsd, "t".into(), 10);
         assert_eq!(o.status, "cancelled");
+    }
+
+    #[test]
+    fn macos_system_ports_are_hidden() {
+        assert!(is_system_port("/dev/cu.Bluetooth-Incoming-Port"));
+        assert!(is_system_port("/dev/cu.wlan-debug"));
+        assert!(!is_system_port("/dev/cu.usbmodem101"));
+        assert!(!is_system_port("/dev/cu.GPS-Puck-SerialPort"));
+        assert!(!is_system_port("COM3"));
     }
 
     #[test]
