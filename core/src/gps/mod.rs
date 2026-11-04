@@ -174,11 +174,23 @@ pub fn read_fix<R: Read>(
     let mut r = BufReader::new(reader);
     let mut b = nmea::FixBuilder::default();
     let mut buf = Vec::new();
+    // A valid RMC fix still waiting for its GGA is used if the stream ends or time runs out first.
+    let held = |b: &nmea::FixBuilder| {
+        b.pending().map(|fix| {
+            let mut o = outcome_from_fix(&fix, source, provider.clone(), max_age_s, Utc::now());
+            o.sentences = b.sentences;
+            o.rejected = b.rejected;
+            o
+        })
+    };
     loop {
         if cancel.load(Ordering::SeqCst) {
             return GpsOutcome { sentences: b.sentences, rejected: b.rejected, ..GpsOutcome::fail("cancelled", "Cancelled") };
         }
         if Instant::now() >= deadline {
+            if let Some(o) = held(&b) {
+                return o;
+            }
             let (status, msg) = if b.sentences > 0 {
                 (
                     "no_fix",
@@ -194,6 +206,9 @@ pub fn read_fix<R: Read>(
         buf.clear();
         match r.read_until(b'\n', &mut buf) {
             Ok(0) => {
+                if let Some(o) = held(&b) {
+                    return o;
+                }
                 return GpsOutcome {
                     sentences: b.sentences,
                     rejected: b.rejected,
@@ -203,7 +218,7 @@ pub fn read_fix<R: Read>(
             Ok(_) => {
                 let line = String::from_utf8_lossy(&buf);
                 if let Some(fix) = b.push_line(&line) {
-                    let mut o = outcome_from_fix(&fix, source, provider, max_age_s, Utc::now());
+                    let mut o = outcome_from_fix(&fix, source, provider.clone(), max_age_s, Utc::now());
                     o.sentences = b.sentences;
                     o.rejected = b.rejected;
                     return o;
