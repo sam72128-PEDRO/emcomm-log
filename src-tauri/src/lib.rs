@@ -35,6 +35,9 @@ pub struct AppState {
     close_requested_at: Mutex<Option<Instant>>,
     allow_exit: AtomicBool,
     reveal_allow: Mutex<HashSet<PathBuf>>,
+    /// One foreground GPS acquisition at a time; `gps_cancel` stops it and releases the device.
+    gps_busy: Arc<AtomicBool>,
+    gps_cancel: Arc<AtomicBool>,
 }
 
 type Cmd<T> = Result<T, AppError>;
@@ -949,6 +952,69 @@ async fn switch_operator(state: State<'_, AppState>, profile_id: String, at_utc:
     with_book(&state, |lb| lb.switch_operator(&incoming, at_utc.as_deref(), &note))
 }
 
+// ---------- GPS (2.1): one fix on request, never tracking ----------
+
+#[tauri::command]
+async fn gps_sources() -> Cmd<Vec<emcomm_core::gps::GpsSource>> {
+    let mut out = Vec::new();
+    #[cfg(not(target_os = "android"))]
+    out.extend(tauri::async_runtime::spawn_blocking(emcomm_core::gps::list_serial).await.unwrap_or_default());
+    if cfg!(target_os = "linux") {
+        out.push(emcomm_core::gps::GpsSource {
+            provider: "gpsd".into(),
+            path: "127.0.0.1:2947".into(),
+            label: "gpsd on this computer".into(),
+            serial_kind: None,
+            detail: "Uses the receiver configured in the gpsd service".into(),
+        });
+    }
+    if emcomm_core::gps::os::SUPPORTED {
+        out.push(emcomm_core::gps::GpsSource {
+            provider: "os".into(),
+            path: String::new(),
+            label: emcomm_core::gps::os::LABEL.into(),
+            serial_kind: None,
+            detail: "May use Wi-Fi or a stored position, so it is labelled OS location, not GPS".into(),
+        });
+    }
+    Ok(out)
+}
+
+/// Acquire one fix. Runs off the UI thread; `gps_cancel` stops it and every path releases the device.
+#[tauri::command]
+async fn gps_acquire(app: AppHandle, state: State<'_, AppState>, req: emcomm_core::gps::GpsRequest) -> Cmd<emcomm_core::gps::GpsOutcome> {
+    if state.gps_busy.swap(true, Ordering::SeqCst) {
+        return Ok(emcomm_core::gps::GpsOutcome::fail("device_busy", "A GPS fix is already being acquired"));
+    }
+    state.gps_cancel.store(false, Ordering::SeqCst);
+    let (busy, cancel) = (state.gps_busy.clone(), state.gps_cancel.clone());
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let o = match req.provider.as_str() {
+            #[cfg(not(target_os = "android"))]
+            "serial" => emcomm_core::gps::acquire_serial(&req, &cancel),
+            "gpsd" => emcomm_core::gps::acquire_gpsd(&req, &cancel),
+            "os" => {
+                let main = |f: Box<dyn FnOnce() + Send>| {
+                    let _ = app.run_on_main_thread(f);
+                };
+                emcomm_core::gps::os::acquire(&req, &cancel, &main)
+            }
+            other => emcomm_core::gps::GpsOutcome::fail("unavailable", format!("Unknown GPS source '{other}'")),
+        };
+        busy.store(false, Ordering::SeqCst);
+        o
+    })
+    .await
+    .map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(out)
+}
+
+#[tauri::command]
+async fn gps_cancel(state: State<'_, AppState>) -> Cmd<()> {
+    state.gps_cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 // ---------- operational periods and ICS forms (V2) ----------
 
 #[tauri::command]
@@ -1181,6 +1247,8 @@ pub fn run() {
                 close_requested_at: Mutex::new(None),
                 allow_exit: AtomicBool::new(false),
                 reveal_allow: Mutex::new(HashSet::new()),
+                gps_busy: Arc::new(AtomicBool::new(false)),
+                gps_cancel: Arc::new(AtomicBool::new(false)),
             });
             create_main_window(app)?;
             fit_window_to_screen(app.handle());
@@ -1266,6 +1334,9 @@ pub fn run() {
             import_package,
             export_preview,
             run_export,
+            gps_sources,
+            gps_acquire,
+            gps_cancel,
             get_station,
             set_station,
             operator_sessions,

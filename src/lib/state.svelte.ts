@@ -110,7 +110,9 @@ class AppStore {
   station = $state<T.Station | null>(null);
   sessions = $state<T.OperatorSession[]>([]);
   /** The open shift in the open logbook, if one has started. */
-  shift: T.OperatorSession | null = $derived([...this.sessions].reverse().find((s) => !s.ended_at_utc) ?? null);
+  shift: T.OperatorSession | null = $derived(
+    [...this.sessions].reverse().find((s) => !s.ended_at_utc) ?? null,
+  );
   /** The person entries are recorded under: the open shift's profile, else the app's selected profile. */
   profile: T.Profile | null = $derived(
     this.profiles.find((p) => p.id === (this.shift?.profile_id ?? this.settings?.active_profile_id)) ??
@@ -165,7 +167,9 @@ class AppStore {
       return;
     }
     try {
-      [this.station, this.sessions] = await Promise.all([api.getStation(), api.operatorSessions()]);
+      const [station, sessions] = await Promise.all([api.getStation(), api.operatorSessions()]);
+      this.station = station ?? null;
+      this.sessions = Array.isArray(sessions) ? sessions : [];
     } catch {
       this.station = null;
       this.sessions = [];

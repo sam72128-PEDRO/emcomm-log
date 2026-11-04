@@ -31,6 +31,7 @@
   import KindBadge from "../components/KindBadge.svelte";
   import Modal from "../components/Modal.svelte";
   import PeriodsPanel from "../components/PeriodsPanel.svelte";
+  import OperatorBar from "../components/OperatorBar.svelte";
   import CurrentPlanPanel from "../components/CurrentPlanPanel.svelte";
   import { currentPeriod } from "../lib/periods";
 
@@ -126,12 +127,7 @@
           <span>Logbook: {info.name}</span>
           <span>{TYPE_LABEL[info.logbook_type]}</span>
         </p>
-        <p class="sub">
-          Operator: {app.profile?.name ?? "—"}{app.profile?.callsign ? ` (${app.profile.callsign})` : ""}{app
-            .profile?.position
-            ? ` · ${app.profile.position}`
-            : ""}
-        </p>
+        <div class="sub"><OperatorBar compact /></div>
       </div>
       <button
         class="small ghost edit"

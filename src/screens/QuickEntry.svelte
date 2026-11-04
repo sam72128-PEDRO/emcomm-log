@@ -10,6 +10,7 @@
   import { formatInstant } from "../lib/time";
   import { currentPeriod } from "../lib/periods";
   import EntryEditor from "../components/EntryEditor.svelte";
+  import OperatorBar from "../components/OperatorBar.svelte";
   import KindBadge from "../components/KindBadge.svelte";
 
   let tab = $state<"entry" | "templates" | "favorites">("entry");
@@ -161,6 +162,7 @@
       >Times entered in {app.zone === "utc" ? "UTC" : "local time"} · {app.stats?.total_active ?? 0} active entries</span
     >
   </div>
+  <div class="opbar-row"><OperatorBar compact /></div>
   <div class="tabs" role="tablist" aria-label="Quick Entry" tabindex="-1" onkeydown={onTabKey}>
     <button
       id="qe-tab-entry"
@@ -276,6 +278,9 @@
 </section>
 
 <style>
+  .opbar-row {
+    padding: 6px 16px 0;
+  }
   .title {
     display: flex;
     gap: 10px;

@@ -177,6 +177,20 @@ impl AppDb {
         if b.keep_recent < 1 || b.keep_recent > 500 || b.keep_daily > 365 || b.keep_weekly > 520 {
             return Err(AppError::validation("backup.keep_recent", "Retention values are out of range (keep at least 1 recent)"));
         }
+        let g = &s.gps;
+        if !["auto", "serial", "gpsd", "os", "manual"].contains(&g.preferred.as_str()) {
+            return Err(AppError::validation("gps.preferred", "Unknown GPS source"));
+        }
+        if ![0, 4800, 9600, 19200, 38400, 57600, 115200].contains(&g.baud) {
+            return Err(AppError::validation("gps.baud", "Choose a standard baud rate"));
+        }
+        if g.serial_path.chars().count() > 260 {
+            return Err(AppError::validation("gps.serial_path", "Port path is too long"));
+        }
+        let host = g.gpsd_endpoint.trim().rsplit_once(':').map(|(h, _)| h.trim_matches(['[', ']'])).unwrap_or("");
+        if !g.gpsd_endpoint.trim().is_empty() && !["127.0.0.1", "localhost", "::1"].contains(&host) {
+            return Err(AppError::validation("gps.gpsd_endpoint", "gpsd must be on this computer (127.0.0.1:2947)"));
+        }
         if let Some(p) = s.default_logbook_parent.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
             let path = Path::new(p);
             fsutil::check_writable(path).map_err(|e| AppError { field: Some("default_logbook_parent".into()), ..e })?;
