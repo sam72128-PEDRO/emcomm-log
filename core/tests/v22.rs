@@ -455,3 +455,200 @@ fn att_capture_caption_remove_and_travel_with_hashes() {
     assert_eq!(sha(&Path::new(&imp.path).join(&got.attachments[0].rel_path)), photo_att.sha256);
     assert!(Path::new(&imp.path).join(&shot_att.rel_path).is_file(), "removed attachment's file travels too");
 }
+
+fn adi_field(n: &str, v: &str) -> String {
+    format!("<{n}:{}>{v}", v.len())
+}
+fn adi_rec(fields: &[(&str, &str)]) -> String {
+    fields.iter().map(|(n, v)| adi_field(n, v)).collect::<String>() + "<EOR>\n"
+}
+
+#[test]
+fn adif_import_preview_duplicates_atomic_and_idempotent() {
+    use emcomm_core::adif_import::{ImportOptions, RowStatus};
+    use emcomm_core::faults::{self, Fault};
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Ham, "Import");
+    let mut lb = Logbook::open(&dir).unwrap();
+    // One QSO already in the log.
+    lb.save_new(&qso("W1AW", "2026-11-02T19:00:00Z", Some(14_062_000), "20m", "CW"), &rid(), &operator()).unwrap();
+
+    let file = format!(
+        "QRZ export\n{}<EOH>\n{}{}{}{}{}{}{}{}",
+        adi_field("ADIF_VER", "3.1.8") + &adi_field("PROGRAMID", "QRZLogbook"),
+        // 1: same as the existing W1AW (call, minute, band, mode, station) -> duplicate
+        adi_rec(&[
+            ("CALL", "W1AW"),
+            ("QSO_DATE", "20261102"),
+            ("TIME_ON", "1900"),
+            ("FREQ", "14.062"),
+            ("MODE", "CW"),
+            ("STATION_CALLSIGN", "KJ4MRC")
+        ]),
+        // 2+3: POTA activator, same call/time/band, two different parks -> two QSOs, both new
+        adi_rec(&[
+            ("CALL", "K1ABC"),
+            ("QSO_DATE", "20261102"),
+            ("TIME_ON", "2000"),
+            ("BAND", "40M"),
+            ("MODE", "SSB"),
+            ("MY_SIG", "POTA"),
+            ("MY_SIG_INFO", "US-0005"),
+            ("SIG", "POTA"),
+            ("SIG_INFO", "US-1234")
+        ]),
+        adi_rec(&[
+            ("CALL", "K1ABC"),
+            ("QSO_DATE", "20261102"),
+            ("TIME_ON", "2000"),
+            ("BAND", "40M"),
+            ("MODE", "SSB"),
+            ("MY_POTA_REF", "US-0006")
+        ]),
+        // 4: SOTA activator; 5: SOTA chaser with Unicode notes
+        adi_rec(&[
+            ("CALL", "G4XYZ"),
+            ("QSO_DATE", "20261103"),
+            ("TIME_ON", "000130"),
+            ("FREQ", "10.118"),
+            ("MODE", "CW"),
+            ("MY_SOTA_REF", "W4C/CM-001"),
+            ("OPERATOR", "KJ4AAA")
+        ]),
+        adi_rec(&[
+            ("CALL", "DL1ABC"),
+            ("QSO_DATE", "20261103"),
+            ("TIME_ON", "0100"),
+            ("FREQ", "7.030"),
+            ("MODE", "CW"),
+            ("SOTA_REF", "W7A/AP-001"),
+            ("NOTES", "Grüße — 73")
+        ]),
+        // 6: invalid date; 7: no call
+        adi_rec(&[("CALL", "N0BAD"), ("QSO_DATE", "2026-11-02"), ("TIME_ON", "1900")]),
+        adi_rec(&[("QSO_DATE", "20261102"), ("TIME_ON", "1900")]),
+        // 8: same contact as #4 again inside the file
+        adi_rec(&[
+            ("CALL", "G4XYZ"),
+            ("QSO_DATE", "20261103"),
+            ("TIME_ON", "000130"),
+            ("FREQ", "10.118"),
+            ("MODE", "CW"),
+            ("MY_SOTA_REF", "W4C/CM-001"),
+            ("OPERATOR", "KJ4AAA")
+        ]),
+    );
+    let bytes = file.as_bytes();
+    let opts = ImportOptions { default_station_call: "W4CLB".into(), default_operator_call: String::new() };
+    let pv = lb.adif_preview(bytes, "qrz.adi", &opts).unwrap();
+    assert_eq!(pv.program, "QRZLogbook");
+    assert_eq!((pv.records, pv.ok, pv.duplicates, pv.invalid), (8, 4, 2, 2));
+    let by = |rec: usize| pv.rows.iter().find(|r| r.record == rec).unwrap();
+    assert_eq!(by(1).status, RowStatus::Duplicate);
+    assert_eq!(by(1).duplicate_of, Some(1));
+    assert_eq!((by(2).status.clone(), by(3).status.clone()), (RowStatus::Ok, RowStatus::Ok), "multi-park is not a duplicate");
+    assert_eq!(by(2).station_call, "W4CLB", "default station callsign fills a missing one");
+    assert_eq!(by(4).operator_call, "KJ4AAA");
+    assert!(by(6).reason.contains("YYYYMMDD") && by(7).reason.contains("CALL"));
+    assert!(by(8).reason.contains("earlier in this file"));
+    // Nothing was written by the preview.
+    assert_eq!(lb.list_entries(&all_query()).unwrap().total, 1);
+
+    // Default selection = the OK rows. A failure before commit leaves nothing behind.
+    let selected: Vec<String> = pv.rows.iter().filter(|r| r.status == RowStatus::Ok).map(|r| r.key.clone()).collect();
+    faults::inject("adif.import.before_commit", Fault::Io, 1);
+    assert!(lb.adif_import(bytes, "qrz.adi", &pv.source_sha256, &selected, &opts, &operator()).is_err());
+    faults::clear();
+    assert_eq!(lb.list_entries(&all_query()).unwrap().total, 1, "atomic: no partial import");
+    let n: i64 = lb.conn.query_row("SELECT COUNT(*) FROM adif_import_batches", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+    // A different file than the one previewed is refused.
+    assert!(lb.adif_import(b"<CALL:4>K1AB<EOR>", "x.adi", &pv.source_sha256, &selected, &opts, &operator()).is_err());
+
+    let res = lb.adif_import(bytes, "qrz.adi", &pv.source_sha256, &selected, &opts, &operator()).unwrap();
+    assert_eq!((res.imported, res.first_sequence, res.last_sequence), (4, Some(2), Some(5)), "next numbers in order");
+    let items = lb.list_entries(&all_query()).unwrap().items;
+    let g4 = items.iter().find(|e| e.ham.as_ref().is_some_and(|h| h.their_call == "G4XYZ")).unwrap();
+    assert_eq!(g4.event_at_utc, "2026-11-03T00:01:30.000Z", "contact time in UTC, not import time");
+    assert_eq!(g4.ham.as_ref().unwrap().my_sota_ref, "W4C/CM-001");
+    assert_eq!(g4.operator_snapshot.name, operator().name, "who imported it");
+    assert_eq!(g4.station_snapshot.station_callsign, "W4CLB", "the QSO's own station, not the logbook's current one");
+    let dl = items.iter().find(|e| e.ham.as_ref().is_some_and(|h| h.their_call == "DL1ABC")).unwrap();
+    assert_eq!(dl.ham.as_ref().unwrap().qso_notes, "Grüße — 73");
+
+    // Importing the same file again doubles nothing: every row is now a duplicate, and the earlier batch shows.
+    let again = lb.adif_preview(bytes, "qrz.adi", &opts).unwrap();
+    assert_eq!(again.ok, 0);
+    assert_eq!(again.previous_batches.len(), 1);
+    assert!(
+        again.rows.iter().filter(|r| r.status == RowStatus::Duplicate).all(|r| r.duplicate_of.is_some() || r.reason.contains("earlier"))
+    );
+    // An explicitly chosen duplicate can still be imported ("Import selected anyway").
+    let pick = vec![again.rows.iter().find(|r| r.record == 5).unwrap().key.clone()];
+    assert_eq!(lb.adif_import(bytes, "qrz.adi", &again.source_sha256, &pick, &opts, &operator()).unwrap().imported, 1);
+
+    // Our own 2.1 ADIF export imports into another logbook as the same QSOs.
+    let info = lb.info().unwrap();
+    let out = t.path().join("export.adi");
+    let mut r = emcomm_core::export::ExportRequest {
+        format: emcomm_core::export::ExportFormat::Adif,
+        scope: "all".into(),
+        range_from: None,
+        range_to: None,
+        filter: None,
+        include_voided: false,
+        display_zone: "utc".into(),
+        adif_preset: Default::default(),
+        include_precise_coordinates: false,
+    };
+    r.adif_preset = emcomm_core::export::adif::AdifPreset::General;
+    let exp = emcomm_core::export::run_export(&lb.conn, &info, &r, &out).unwrap();
+    let other = create_book(t.path(), LogbookType::Ham, "Round trip");
+    let mut lb2 = Logbook::open(&other).unwrap();
+    let ob = std::fs::read(&out).unwrap();
+    let pv2 = lb2.adif_preview(&ob, "export.adi", &ImportOptions::default()).unwrap();
+    assert_eq!(pv2.invalid, 0, "{:?}", pv2.rows.iter().filter(|r| r.status == RowStatus::Invalid).collect::<Vec<_>>());
+    assert_eq!(pv2.ok as i64 + pv2.duplicates as i64, exp.exported);
+    // A general logbook cannot import ADIF.
+    let gen_dir = create_book(t.path(), LogbookType::General, "General");
+    assert!(Logbook::open(&gen_dir).unwrap().adif_preview(&ob, "x.adi", &ImportOptions::default()).is_err());
+    let keys: Vec<String> = pv2.rows.iter().filter(|r| r.status == RowStatus::Ok).map(|r| r.key.clone()).collect();
+    lb2.adif_import(&ob, "export.adi", &pv2.source_sha256, &keys, &ImportOptions::default(), &operator()).unwrap();
+}
+
+#[test]
+fn adif_import_1000_qsos_with_parks_and_duplicates() {
+    use emcomm_core::adif_import::{ImportOptions, RowStatus};
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Ham, "Big import");
+    let mut lb = Logbook::open(&dir).unwrap();
+    let mut file = String::from("<ADIF_VER:5>3.1.8<EOH>\n");
+    for i in 0..1000 {
+        let call = format!("K{}AB", i % 10);
+        let time = format!("{:02}{:02}", (i / 60) % 24, i % 60);
+        let park = if i % 2 == 0 { "US-0005" } else { "US-0006" };
+        // Every 10th record repeats the previous one (a duplicate inside the file).
+        let n = if i % 10 == 9 { i - 1 } else { i };
+        let time = if i % 10 == 9 { format!("{:02}{:02}", (n / 60) % 24, n % 60) } else { time };
+        let park = if i % 10 == 9 { if n % 2 == 0 { "US-0005" } else { "US-0006" } } else { park };
+        let call = if i % 10 == 9 { format!("K{}AB", n % 10) } else { call };
+        file += &adi_rec(&[
+            ("CALL", &call),
+            ("QSO_DATE", "20261104"),
+            ("TIME_ON", &time),
+            ("BAND", "20m"),
+            ("MODE", "FT8"),
+            ("MY_POTA_REF", park),
+            ("STATION_CALLSIGN", "W4CLB"),
+        ]);
+    }
+    let started = std::time::Instant::now();
+    let pv = lb.adif_preview(file.as_bytes(), "big.adi", &ImportOptions::default()).unwrap();
+    let preview_time = started.elapsed();
+    assert_eq!((pv.ok, pv.duplicates, pv.invalid), (900, 100, 0));
+    let keys: Vec<String> = pv.rows.iter().filter(|r| r.status == RowStatus::Ok).map(|r| r.key.clone()).collect();
+    let started = std::time::Instant::now();
+    let res = lb.adif_import(file.as_bytes(), "big.adi", &pv.source_sha256, &keys, &ImportOptions::default(), &operator()).unwrap();
+    println!("1000-record ADIF: preview {preview_time:?}, import {:?}", started.elapsed());
+    assert_eq!((res.imported, res.first_sequence, res.last_sequence), (900, Some(1), Some(900)));
+}

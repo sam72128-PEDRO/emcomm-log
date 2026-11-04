@@ -324,7 +324,8 @@ export interface LogbookIndexRow {
   available: boolean;
 }
 
-export type AttachmentSource = "file" | "drag_drop" | "paste" | "camera" | "photo_picker" | "document_picker" | "import";
+export type AttachmentSource =
+  "file" | "drag_drop" | "paste" | "camera" | "photo_picker" | "document_picker" | "import";
 export interface StagedAttachment {
   staging_id: string;
   display_name: string;
@@ -880,4 +881,52 @@ export interface LinkView {
     subject: string;
     status: EntryStatus;
   };
+}
+
+// ---------- 2.2 ADIF import ----------
+export interface AdifImportOptions {
+  default_station_call: string;
+  default_operator_call: string;
+}
+export type AdifRowStatus = "ok" | "duplicate" | "invalid";
+export interface AdifPreviewRow {
+  key: string;
+  record: number;
+  status: AdifRowStatus;
+  reason: string;
+  warnings: string[];
+  call: string;
+  start_utc: string | null;
+  band: string;
+  frequency_hz: number | null;
+  mode: string;
+  station_call: string;
+  operator_call: string;
+  my_pota_ref: string;
+  pota_ref: string;
+  my_sota_ref: string;
+  sota_ref: string;
+  duplicate_of: number | null;
+}
+export interface AdifPreview {
+  source_name: string;
+  source_sha256: string;
+  size_bytes: number;
+  program: string;
+  adif_version: string;
+  records: number;
+  rows: AdifPreviewRow[];
+  ok: number;
+  duplicates: number;
+  invalid: number;
+  kept_as_extras: [string, number][];
+  warnings: string[];
+  previous_batches: { id: string; source_name: string; imported_at_utc: string; imported: number }[];
+}
+export interface AdifImportResult {
+  batch_id: string;
+  imported: number;
+  skipped: number;
+  first_sequence: number | null;
+  last_sequence: number | null;
 }

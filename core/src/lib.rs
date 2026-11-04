@@ -1,6 +1,7 @@
 //! EMCOMM LOG core: all authoritative persistence, validation, backup, package, and export logic.
 //! The Tauri shell is a thin command layer over this crate.
 
+pub mod adif_import;
 pub mod appdb;
 pub mod attach;
 pub mod backup;

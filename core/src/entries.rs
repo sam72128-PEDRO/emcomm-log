@@ -180,6 +180,76 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
     })
 }
 
+/// Insert one new entry (row, HAM/emergency parts, attachments, numbering, search index, first revision)
+/// inside the caller's transaction. Used by Save Entry and by ADIF import (many entries, one transaction).
+/// `station`: the station snapshot to record; None = the logbook's current station.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn insert_new_entry(
+    tx: &rusqlite::Transaction,
+    logbook_id: &str,
+    v: &EntryInput,
+    finals: &[FinalizedAttachment],
+    operator: &OperatorSnapshot,
+    request_id: &str,
+    station: Option<&crate::models::StationSnapshot>,
+) -> AppResult<Entry> {
+    let seq: i64 = tx.query_row("SELECT next_sequence FROM logbook", [], |r| r.get(0))?;
+    let id = fsutil::new_uuid();
+    let now = now_utc();
+    tx.execute(
+        "INSERT INTO entries(id, logbook_id, sequence_no, kind, event_at_utc, event_timezone, event_utc_offset_min,
+            recorded_at_utc, updated_at_utc, status, direction, priority, handling, flagged, from_text, to_text, subject,
+            body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id, op_id,
+            station_snapshot_json, operator_location_json, reported_location_json)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21,?22,?23,?24,?25)",
+        params![
+            id,
+            logbook_id,
+            seq,
+            v.kind.as_str(),
+            v.event_at_utc,
+            v.event_timezone,
+            v.event_utc_offset_min,
+            now,
+            v.direction.as_str(),
+            v.priority.as_str(),
+            v.handling.map(|h| h.as_str()),
+            v.flagged,
+            v.from_text,
+            v.to_text,
+            v.subject,
+            v.body,
+            v.channel,
+            v.location,
+            serde_json::to_string(operator)?,
+            serde_json::to_string(&v.tags)?,
+            request_id,
+            v.op_id,
+            match station {
+                Some(st) => serde_json::to_string(st)?,
+                None => serde_json::to_string(&crate::station::read_station(tx)?.snapshot())?,
+            },
+            location_json(&v.operator_location)?,
+            location_json(&v.reported_location)?
+        ],
+    )?;
+    write_flags(tx, &id, v, None, &now)?;
+    if let Some(h) = &v.ham {
+        insert_ham(tx, &id, h)?;
+    }
+    if let Some(m) = &v.emergency {
+        insert_emergency(tx, &id, m)?;
+    }
+    for f in finals {
+        insert_attachment(tx, &id, f, 1)?;
+    }
+    tx.execute("UPDATE logbook SET next_sequence = ?1, updated_at_utc = ?2", params![seq + 1, now])?;
+    write_fts(tx, &id)?;
+    let entry = load_entry(tx, &id)?;
+    insert_revision(tx, &id, 1, "create", "", None, &entry, operator, request_id)?;
+    Ok(entry)
+}
+
 /// Important + follow-up columns (schema v5). `resolved_utc` is set by the core when an entry becomes
 /// resolved (kept if it was already resolved) and cleared when it is reopened or cleared.
 fn write_flags(tx: &rusqlite::Transaction, id: &str, v: &EntryInput, before: Option<&FollowUp>, now: &str) -> AppResult<()> {
@@ -403,7 +473,7 @@ fn guess_mime(name: &str) -> &'static str {
     }
 }
 
-struct FinalizedAttachment {
+pub(crate) struct FinalizedAttachment {
     rel_path: String,
     display_name: String,
     size: u64,
@@ -596,57 +666,7 @@ impl Logbook {
             for s in &v.new_attachments {
                 finals.push(finalize_attachment(&dir, s, &mut created)?);
             }
-            let seq: i64 = tx.query_row("SELECT next_sequence FROM logbook", [], |r| r.get(0))?;
-            let id = fsutil::new_uuid();
-            let now = now_utc();
-            tx.execute(
-                "INSERT INTO entries(id, logbook_id, sequence_no, kind, event_at_utc, event_timezone, event_utc_offset_min,
-                    recorded_at_utc, updated_at_utc, status, direction, priority, handling, flagged, from_text, to_text, subject,
-                    body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id, op_id,
-                    station_snapshot_json, operator_location_json, reported_location_json)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21,?22,?23,?24,?25)",
-                params![
-                    id,
-                    logbook_id,
-                    seq,
-                    v.kind.as_str(),
-                    v.event_at_utc,
-                    v.event_timezone,
-                    v.event_utc_offset_min,
-                    now,
-                    v.direction.as_str(),
-                    v.priority.as_str(),
-                    v.handling.map(|h| h.as_str()),
-                    v.flagged,
-                    v.from_text,
-                    v.to_text,
-                    v.subject,
-                    v.body,
-                    v.channel,
-                    v.location,
-                    serde_json::to_string(operator)?,
-                    serde_json::to_string(&v.tags)?,
-                    request_id,
-                    v.op_id,
-                    serde_json::to_string(&crate::station::read_station(&tx)?.snapshot())?,
-                    location_json(&v.operator_location)?,
-                    location_json(&v.reported_location)?
-                ],
-            )?;
-            write_flags(&tx, &id, &v, None, &now)?;
-            if let Some(h) = &v.ham {
-                insert_ham(&tx, &id, h)?;
-            }
-            if let Some(m) = &v.emergency {
-                insert_emergency(&tx, &id, m)?;
-            }
-            for f in &finals {
-                insert_attachment(&tx, &id, f, 1)?;
-            }
-            tx.execute("UPDATE logbook SET next_sequence = ?1, updated_at_utc = ?2", params![seq + 1, now])?;
-            write_fts(&tx, &id)?;
-            let entry = load_entry(&tx, &id)?;
-            insert_revision(&tx, &id, 1, "create", "", None, &entry, operator, request_id)?;
+            let entry = insert_new_entry(&tx, &logbook_id, &v, &finals, operator, request_id, None)?;
             faults::check("entry.save.before_commit")?;
             Ok(entry)
         })();

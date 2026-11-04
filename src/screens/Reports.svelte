@@ -9,6 +9,7 @@
     CircleCheck,
     LoaderCircle,
     ExternalLink,
+    FileUp,
   } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -16,6 +17,7 @@
   import { todayDateString, zoneLabel } from "../lib/time";
   import Form214Dialog from "../components/Form214Dialog.svelte";
   import Form309Dialog from "../components/Form309Dialog.svelte";
+  import AdifImportDialog from "../components/AdifImportDialog.svelte";
 
   const info = app.active!.info;
   const formats: { id: T.ExportFormat; label: string; desc: string; ext: string; ham?: boolean }[] = [
@@ -44,6 +46,7 @@
 
   let form214 = $state(false);
   let form309 = $state(false);
+  let adifImport = $state(false);
   let format = $state<T.ExportFormat>("pdf");
   let scope = $state<"all" | "range" | "filter">(app.reportScope);
   let from = $state(todayDateString(app.zone));
@@ -327,6 +330,24 @@
     </div>
   </section>
 
+  {#if info.logbook_type === "ham"}
+    <section class="panel">
+      <div class="panel-head"><h2><FileUp size={20} class="icon" />Import QSOs (ADIF)</h2></div>
+      <div class="panel-body col">
+        <p class="muted" style="margin:0">
+          Add QSOs from an ADIF file exported by QRZ, LoTW, POTA, SOTA or another logging program. You see
+          every QSO first, with possible duplicates and anything that cannot be imported; nothing is uploaded
+          or looked up.
+        </p>
+        <div class="row">
+          <button onclick={() => (adifImport = true)} disabled={app.readOnly}
+            ><FileUp size={16} />Import ADIF…</button
+          >
+        </div>
+      </div>
+    </section>
+  {/if}
+
   {#if app.bookType === "emergency"}
     <section class="panel">
       <div class="panel-head"><h2><FileText size={20} class="icon" />ICS forms</h2></div>
@@ -386,6 +407,7 @@
 
 {#if form214}<Form214Dialog onclose={() => (form214 = false)} />{/if}
 {#if form309}<Form309Dialog onclose={() => (form309 = false)} />{/if}
+{#if adifImport}<AdifImportDialog onclose={() => (adifImport = false)} />{/if}
 
 <style>
   .page {
