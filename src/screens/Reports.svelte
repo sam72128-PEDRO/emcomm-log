@@ -18,6 +18,7 @@
   import Form214Dialog from "../components/Form214Dialog.svelte";
   import Form309Dialog from "../components/Form309Dialog.svelte";
   import AdifImportDialog from "../components/AdifImportDialog.svelte";
+  import ReviewExportDialog from "../components/ReviewExportDialog.svelte";
 
   const info = app.active!.info;
   const formats: { id: T.ExportFormat; label: string; desc: string; ext: string; ham?: boolean }[] = [
@@ -90,7 +91,11 @@
       .catch((e) => (previewErr = toAppError(e).message));
   });
 
-  async function run() {
+  let reviewing = $state(false);
+
+  /** After Review: choose where to save, then write exactly the approved entries. */
+  async function run(reviewed: T.ReviewRef[] | null) {
+    reviewing = false;
     const f = formats.find((x) => x.id === format)!;
     const stamp = new Date().toISOString().slice(0, 10);
     const dest = await api.pickSaveFile(`Export ${f.label}`, `${info.name} ${stamp}.${f.ext}`, [
@@ -101,7 +106,7 @@
     result = null;
     resultErr = null;
     try {
-      result = await api.runExport(request, dest);
+      result = await api.runExport({ ...request, reviewed }, dest);
       app.toast("ok", `Export complete: ${result.exported} record(s) written.`);
     } catch (e) {
       resultErr = toAppError(e).message;
@@ -267,16 +272,15 @@
       <div class="row">
         <button
           class="primary"
-          onclick={run}
+          onclick={() => (reviewing = true)}
           disabled={running ||
             !!previewErr ||
             !preview ||
             (needsAck && !skipAck) ||
             (format === "adif" ? preview.adif_eligible === 0 : preview.count === 0)}
         >
-          {#if running}<LoaderCircle size={16} class="spin" />Exporting…{:else}<FileDown size={16} />Export {formats.find(
-              (f) => f.id === format,
-            )?.label}…{/if}
+          {#if running}<LoaderCircle size={16} class="spin" />Exporting…{:else}<FileDown size={16} />Review
+            and export {formats.find((f) => f.id === format)?.label}…{/if}
         </button>
         <span class="hint"
           >No Office installation needed. Files are written to a temporary name and only renamed into place
@@ -408,6 +412,12 @@
 {#if form214}<Form214Dialog onclose={() => (form214 = false)} />{/if}
 {#if form309}<Form309Dialog onclose={() => (form309 = false)} />{/if}
 {#if adifImport}<AdifImportDialog onclose={() => (adifImport = false)} />{/if}
+{#if reviewing}<ReviewExportDialog
+    {request}
+    formatLabel={formats.find((f) => f.id === format)?.label ?? ""}
+    onexport={run}
+    onclose={() => (reviewing = false)}
+  />{/if}
 
 <style>
   .page {

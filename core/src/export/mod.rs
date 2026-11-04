@@ -8,6 +8,7 @@ pub mod forms;
 pub mod ics;
 pub mod ics309;
 pub mod pdf;
+pub mod review;
 pub mod txt;
 pub mod xlsx;
 
@@ -65,6 +66,10 @@ pub struct ExportRequest {
     /// grid squares are always included.
     #[serde(default)]
     pub include_precise_coordinates: bool,
+    /// 2.2 Review Export: the exact entries (and their revisions) the operator approved. When set, only
+    /// these are exported, and the export is refused if any changed since the review.
+    #[serde(default)]
+    pub reviewed: Option<Vec<review::ReviewRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,7 +214,49 @@ pub fn resolve_query(req: &ExportRequest) -> AppResult<(EntryQuery, String)> {
     q.0.descending = false;
     q.0.limit = 0;
     q.0.offset = 0;
+    if let Some(r) = &req.reviewed {
+        if r.is_empty() {
+            return Err(AppError::validation("reviewed", "No entries are selected for export"));
+        }
+        q.0.ids = r.iter().map(|x| x.id.clone()).collect();
+        q.1 = format!("{}; {} entr{} chosen in review", q.1, r.len(), if r.len() == 1 { "y" } else { "ies" });
+    }
     Ok(q)
+}
+
+/// 2.2 Review Export for the generic formats: every entry in the scope, with why any cannot be included.
+pub fn review(conn: &Connection, book: LogbookType, req: &ExportRequest) -> AppResult<review::ExportReview> {
+    if req.format == ExportFormat::Adif && book != LogbookType::Ham {
+        return Err(AppError::validation("format", "ADIF export is only available for HAM logbooks"));
+    }
+    let mut r = req.clone();
+    r.reviewed = None;
+    let (mut q, _) = resolve_query(&r)?;
+    // Show voided entries in the scope too, as excluded, rather than letting them vanish.
+    let void_wanted = q.status == "void";
+    if !void_wanted {
+        q.status = "all".into();
+    }
+    let mut rows = Vec::new();
+    crate::entries::for_each_entry(conn, &q, |e| {
+        let ok = if e.status == EntryStatus::Void && !req.include_voided {
+            Err("Voided (tick Include voided entries to export it)".to_string())
+        } else if req.format == ExportFormat::Adif {
+            adif::eligibility_for(e, req.adif_preset)
+        } else {
+            Ok(())
+        };
+        rows.push(review::row(e, ok));
+        Ok(())
+    })?;
+    let mut notes = vec![];
+    if req.format == ExportFormat::Adif {
+        notes.push("ADIF holds QSOs only; other entries are listed as not included.".into());
+    }
+    if !req.include_precise_coordinates {
+        notes.push("Precise coordinates are left out (place names and 6-character grids are kept).".into());
+    }
+    Ok(review::build(rows, notes))
 }
 
 pub fn describe_filter(q: &EntryQuery) -> String {
@@ -474,6 +521,9 @@ pub fn is_formula_like(s: &str) -> bool {
 pub fn run_export(conn: &Connection, info: &LogbookInfo, req: &ExportRequest, dest: &Path) -> AppResult<ExportResult> {
     if req.format == ExportFormat::Adif && info.logbook_type != LogbookType::Ham {
         return Err(AppError::validation("format", "ADIF export is only available for HAM logbooks"));
+    }
+    if let Some(r) = &req.reviewed {
+        review::check_unchanged(conn, r)?;
     }
     let (q, description) = resolve_query(req)?;
     let count = count_entries(conn, &q)?;

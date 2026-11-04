@@ -4,6 +4,7 @@
 
 use super::ics::{FormBuilder, ICS_213, ICS_214};
 use super::pdf::{FontMetrics, wrap};
+use super::review::{self, ExportReview, ReviewRef, check_unchanged};
 use super::{DisplayZone, SkippedRecord};
 use crate::entries::load_entry;
 use crate::error::{AppError, AppResult, ErrorCode};
@@ -31,6 +32,9 @@ pub struct Form213Request {
     pub entry_ids: Vec<String>,
     /// "local" or "utc"
     pub display_zone: String,
+    /// 2.2: the messages (and revisions) approved in Review; None = every eligible selected message.
+    #[serde(default)]
+    pub reviewed: Option<Vec<ReviewRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +49,10 @@ pub struct Form214Request {
     pub prepared_by_name: String,
     pub prepared_by_position: String,
     pub display_zone: String,
+    /// 2.2: restrict to these entries (a Traffic Log selection); empty = every eligible entry of the period.
+    pub entry_ids: Vec<String>,
+    /// 2.2: the entries (and revisions) approved in Review.
+    pub reviewed: Option<Vec<ReviewRef>>,
 }
 
 impl Default for Form214Request {
@@ -59,6 +67,8 @@ impl Default for Form214Request {
             prepared_by_name: String::new(),
             prepared_by_position: String::new(),
             display_zone: "local".into(),
+            entry_ids: vec![],
+            reviewed: None,
         }
     }
 }
@@ -131,39 +141,82 @@ pub(crate) fn require_emergency(info: &LogbookInfo) -> AppResult<()> {
     Ok(())
 }
 
-/// Which of the requested entries can go on an ICS 213, and why the others cannot.
-fn plan_213(conn: &Connection, ids: &[String]) -> AppResult<(Vec<Entry>, Vec<SkippedRecord>)> {
-    let mut ok = Vec::new();
-    let mut skipped = Vec::new();
+/// Each requested entry and whether it can go on an ICS 213 (and why not).
+fn candidates_213(conn: &Connection, ids: &[String]) -> AppResult<Vec<(Entry, Result<(), String>)>> {
+    let mut out: Vec<(Entry, Result<(), String>)> = Vec::new();
     for id in ids {
         let e = load_entry(conn, id)?;
-        let reason = if e.status == EntryStatus::Void {
-            Some("voided")
+        let ok = if e.status == EntryStatus::Void {
+            Err("voided".to_string())
         } else if e.kind != EntryKind::Message || e.emergency.is_none() {
-            Some("not a Message entry (the ICS 213 is for messages)")
+            Err("not a Message entry (the ICS 213 is for messages)".to_string())
         } else {
-            None
+            Ok(())
         };
-        match reason {
-            Some(r) => skipped.push(SkippedRecord { sequence_no: e.sequence_no, reason: r.into() }),
-            None => ok.push(e),
+        out.push((e, ok));
+    }
+    out.sort_by_key(|(e, _)| e.sequence_no);
+    Ok(out)
+}
+
+/// Split candidates into what goes on the form and what is skipped, honouring a Review (2.2 EXP-04/08):
+/// only reviewed entries, refused if any changed or cannot legally go on this form.
+pub(crate) fn plan_reviewed(
+    conn: &Connection,
+    cands: Vec<(Entry, Result<(), String>)>,
+    reviewed: &Option<Vec<ReviewRef>>,
+) -> AppResult<(Vec<Entry>, Vec<SkippedRecord>)> {
+    if let Some(r) = reviewed {
+        check_unchanged(conn, r)?;
+        for x in r {
+            match cands.iter().find(|(e, _)| e.id == x.id) {
+                Some((_, Ok(()))) => {}
+                Some((e, Err(why))) => {
+                    return Err(AppError::validation("reviewed", format!("Entry #{} cannot go on this form: {why}", e.sequence_no)));
+                }
+                None => return Err(AppError::validation("reviewed", "A reviewed entry is not part of this form's scope")),
+            }
         }
     }
-    ok.sort_by_key(|e| e.sequence_no);
+    let mut ok = Vec::new();
+    let mut skipped = Vec::new();
+    for (e, elig) in cands {
+        match elig {
+            Err(why) => skipped.push(SkippedRecord { sequence_no: e.sequence_no, reason: why }),
+            Ok(()) => match reviewed {
+                Some(r) if !r.iter().any(|x| x.id == e.id) => {
+                    skipped.push(SkippedRecord { sequence_no: e.sequence_no, reason: "left out in review".into() })
+                }
+                _ => ok.push(e),
+            },
+        }
+    }
     skipped.sort_by_key(|s| s.sequence_no);
     Ok((ok, skipped))
 }
 
+fn plan_213(conn: &Connection, req: &Form213Request) -> AppResult<(Vec<Entry>, Vec<SkippedRecord>)> {
+    let cands = candidates_213(conn, &req.entry_ids)?;
+    plan_reviewed(conn, cands, &req.reviewed)
+}
+
+/// 2.2: one message per ICS 213; non-messages and voided entries listed with the reason.
+pub fn review_213(conn: &Connection, info: &LogbookInfo, req: &Form213Request) -> AppResult<ExportReview> {
+    require_emergency(info)?;
+    let rows = candidates_213(conn, &req.entry_ids)?.into_iter().map(|(e, ok)| review::row(&e, ok)).collect();
+    Ok(review::build(rows, vec!["Each message becomes its own ICS 213.".into()]))
+}
+
 pub fn preview_213(conn: &Connection, info: &LogbookInfo, req: &Form213Request) -> AppResult<FormPreview> {
     require_emergency(info)?;
-    let (ok, skipped) = plan_213(conn, &req.entry_ids)?;
+    let (ok, skipped) = plan_213(conn, req)?;
     Ok(FormPreview { count: ok.len() as i64, skipped })
 }
 
 pub fn build_213(conn: &Connection, info: &LogbookInfo, req: &Form213Request) -> AppResult<BuiltForm> {
     require_emergency(info)?;
     let zone = DisplayZone::parse(&req.display_zone);
-    let (entries, skipped) = plan_213(conn, &req.entry_ids)?;
+    let (entries, skipped) = plan_213(conn, req)?;
     if entries.is_empty() {
         return Err(AppError::validation("entries", "None of the selected entries can go on an ICS 213 (only active Message entries can)"));
     }
@@ -253,11 +306,52 @@ pub(crate) fn entries_for_period(conn: &Connection, op_id: &str, start: &str, en
     ids.iter().map(|id| load_entry(conn, id)).collect()
 }
 
-pub fn preview_214(conn: &Connection, info: &LogbookInfo, req: &Form214Request) -> AppResult<FormPreview> {
+/// The entries an ICS 214 for this period can list: the period's entries of the chosen types, or the
+/// selected entries with a reason for each one outside the period (never silently added, EXP-05).
+fn candidates_214(conn: &Connection, req: &Form214Request) -> AppResult<Vec<(Entry, Result<(), String>)>> {
+    let op = get_period(conn, &req.op_id)?;
+    if op.status == EntryStatus::Void {
+        return Err(AppError::validation("op_id", "That operational period is voided"));
+    }
+    let all = entries_for_period(conn, &op.id, &op.start_utc, &op.end_utc, &req.kinds)?;
+    if req.entry_ids.is_empty() {
+        return Ok(all.into_iter().map(|e| (e, Ok(()))).collect());
+    }
+    let mut out = Vec::new();
+    for id in &req.entry_ids {
+        match all.iter().find(|e| &e.id == id) {
+            Some(e) => out.push((e.clone(), Ok(()))),
+            None => {
+                let e = load_entry(conn, id)?;
+                let why = if e.status == EntryStatus::Void {
+                    "voided".to_string()
+                } else if !req.kinds.contains(&e.kind) {
+                    format!("{} entries are not included (choose the entry types to list)", e.kind.as_str())
+                } else {
+                    format!("outside operational period \u{201c}{}\u{201d}", op.name)
+                };
+                out.push((e, Err(why)));
+            }
+        }
+    }
+    out.sort_by(|(a, _), (b, _)| (&a.event_at_utc, a.sequence_no).cmp(&(&b.event_at_utc, b.sequence_no)));
+    Ok(out)
+}
+
+pub fn review_214(conn: &Connection, info: &LogbookInfo, req: &Form214Request) -> AppResult<ExportReview> {
     require_emergency(info)?;
     let op = get_period(conn, &req.op_id)?;
-    let n = entries_for_period(conn, &op.id, &op.start_utc, &op.end_utc, &req.kinds)?.len();
-    Ok(FormPreview { count: n as i64, skipped: vec![] })
+    let rows = candidates_214(conn, req)?.into_iter().map(|(e, ok)| review::row(&e, ok)).collect();
+    Ok(review::build(
+        rows,
+        vec![format!("Operational period \u{201c}{}\u{201d}: entries assigned to it, plus unassigned entries timed inside it.", op.name)],
+    ))
+}
+
+pub fn preview_214(conn: &Connection, info: &LogbookInfo, req: &Form214Request) -> AppResult<FormPreview> {
+    require_emergency(info)?;
+    let (ok, skipped) = plan_reviewed(conn, candidates_214(conn, req)?, &req.reviewed)?;
+    Ok(FormPreview { count: ok.len() as i64, skipped })
 }
 
 fn activity_text(e: &Entry, zone: DisplayZone, details: bool) -> String {
@@ -301,7 +395,7 @@ pub fn build_214(conn: &Connection, info: &LogbookInfo, req: &Form214Request) ->
     if op.status == EntryStatus::Void {
         return Err(AppError::validation("op_id", "That operational period is voided"));
     }
-    let entries = entries_for_period(conn, &op.id, &op.start_utc, &op.end_utc, &req.kinds)?;
+    let (entries, skipped_214) = plan_reviewed(conn, candidates_214(conn, req)?, &req.reviewed)?;
     let resources: Vec<OpResource> = list_resources(conn, &op.id)?;
     let fm = FontMetrics::load()?;
     // Each entry becomes one or more rows; continuation rows leave Date/Time blank.
@@ -382,7 +476,7 @@ pub fn build_214(conn: &Connection, info: &LogbookInfo, req: &Form214Request) ->
     }
     let pages = b.page_count() as i64;
     let pdf = b.finish(&format!("ICS 214 Activity Log \u{2014} {} \u{2014} {}", info.name, op.name))?;
-    Ok(BuiltForm { pdf, exported: entries.len() as i64, pages, skipped: vec![], warnings })
+    Ok(BuiltForm { pdf, exported: entries.len() as i64, pages, skipped: skipped_214, warnings })
 }
 
 /// Write bytes to `dest` atomically (temp file, sync, rename), like the other exports.

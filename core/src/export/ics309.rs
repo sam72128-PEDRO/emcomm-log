@@ -7,6 +7,7 @@ use super::forms::{
     BuiltForm, FormPreview, FormResult, date_time, entries_for_period, footer_base, local_parts, publish, require_emergency, zone_note,
 };
 use super::ics::DrawnDoc;
+use super::review::{self, ExportReview, ReviewRef};
 use super::{DisplayZone, SkippedRecord};
 use crate::error::{AppError, AppResult};
 use crate::fsutil::now_utc;
@@ -41,6 +42,8 @@ pub struct Form309Request {
     pub prepared_by_name: String,
     pub prepared_by_call: String,
     pub display_zone: String,
+    /// 2.2: the entries (and revisions) approved in Review.
+    pub reviewed: Option<Vec<ReviewRef>>,
 }
 
 impl Default for Form309Request {
@@ -56,25 +59,26 @@ impl Default for Form309Request {
             prepared_by_name: String::new(),
             prepared_by_call: String::new(),
             display_zone: "local".into(),
+            reviewed: None,
         }
     }
 }
 
 /// Entries for the log and the selected entries that are left out (with why).
-fn plan(conn: &Connection, req: &Form309Request) -> AppResult<(Vec<Entry>, Vec<SkippedRecord>)> {
+/// Each candidate entry and whether it can go on this ICS 309 (and why not).
+fn candidates(conn: &Connection, req: &Form309Request) -> AppResult<Vec<(Entry, Result<(), String>)>> {
     let op = get_period(conn, &req.op_id)?;
     if op.status == EntryStatus::Void {
         return Err(AppError::validation("op_id", "That operational period is voided"));
     }
     let all = entries_for_period(conn, &op.id, &op.start_utc, &op.end_utc, &req.kinds)?;
     if req.entry_ids.is_empty() {
-        return Ok((all, vec![]));
+        return Ok(all.into_iter().map(|e| (e, Ok(()))).collect());
     }
-    let mut kept = Vec::new();
-    let mut skipped = Vec::new();
+    let mut out = Vec::new();
     for id in &req.entry_ids {
         match all.iter().find(|e| &e.id == id) {
-            Some(e) => kept.push(e.clone()),
+            Some(e) => out.push((e.clone(), Ok(()))),
             None => {
                 let e = crate::entries::load_entry(conn, id)?;
                 let reason = if e.status == EntryStatus::Void {
@@ -84,13 +88,23 @@ fn plan(conn: &Connection, req: &Form309Request) -> AppResult<(Vec<Entry>, Vec<S
                 } else {
                     format!("not in operational period \u{201c}{}\u{201d}", op.name)
                 };
-                skipped.push(SkippedRecord { sequence_no: e.sequence_no, reason });
+                out.push((e, Err(reason)));
             }
         }
     }
-    kept.sort_by(|a, b| (&a.event_at_utc, a.sequence_no).cmp(&(&b.event_at_utc, b.sequence_no)));
-    skipped.sort_by_key(|s| s.sequence_no);
-    Ok((kept, skipped))
+    out.sort_by(|(a, _), (b, _)| (&a.event_at_utc, a.sequence_no).cmp(&(&b.event_at_utc, b.sequence_no)));
+    Ok(out)
+}
+
+fn plan(conn: &Connection, req: &Form309Request) -> AppResult<(Vec<Entry>, Vec<SkippedRecord>)> {
+    super::forms::plan_reviewed(conn, candidates(conn, req)?, &req.reviewed)
+}
+
+/// 2.2: the 309 lines that would be written, with FROM/TO and summary, and why others are left out.
+pub fn review_309(conn: &Connection, info: &LogbookInfo, req: &Form309Request) -> AppResult<ExportReview> {
+    require_emergency(info)?;
+    let rows = candidates(conn, req)?.into_iter().map(|(e, ok)| review::row(&e, ok)).collect();
+    Ok(review::build(rows, vec!["One log line per entry: time, FROM, TO and the message summary.".into()]))
 }
 
 pub fn preview_309(conn: &Connection, info: &LogbookInfo, req: &Form309Request) -> AppResult<FormPreview> {

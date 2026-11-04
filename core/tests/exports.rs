@@ -76,6 +76,7 @@ fn req(format: ExportFormat, scope: &str) -> ExportRequest {
         display_zone: "utc".into(),
         adif_preset: Default::default(),
         include_precise_coordinates: false,
+        reviewed: None,
     }
 }
 

@@ -34,11 +34,13 @@
   import KindBadge from "../components/KindBadge.svelte";
   import Form213Dialog from "../components/Form213Dialog.svelte";
   import Form309Dialog from "../components/Form309Dialog.svelte";
+  import Form214Dialog from "../components/Form214Dialog.svelte";
 
   const book = app.active!;
   const kinds = allowedKinds(book.info.logbook_type);
   let form213 = $state(false);
   let form309 = $state(false);
+  let form214 = $state(false);
   let page = $state<T.EntryPage>({ total: 0, items: [] });
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -633,12 +635,22 @@
         title={app.selection.length
           ? "Communications log of the selected entries"
           : "Communications log of an operational period"}><FileText size={16} />ICS 309…</button
+      ><button
+        onclick={() => (form214 = true)}
+        title={app.selection.length
+          ? "Activity log of the selected entries (only those in the chosen period)"
+          : "Activity log of an operational period"}><FileText size={16} />ICS 214…</button
       >{/if}
     <button onclick={() => exportCurrent(false)}><Download size={16} />Export…</button>
     <button onclick={print}><Printer size={16} />Print</button>
   </footer>
 </section>
 
+{#if form214}<Form214Dialog
+    entryIds={[...app.selection]}
+    opId={page.items.find((e) => app.selection.includes(e.id) && e.op_id)?.op_id ?? null}
+    onclose={() => (form214 = false)}
+  />{/if}
 {#if form213}<Form213Dialog entryIds={[...app.selection]} onclose={() => (form213 = false)} />{/if}
 {#if form309}<Form309Dialog
     entryIds={[...app.selection]}

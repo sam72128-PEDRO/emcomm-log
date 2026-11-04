@@ -3,13 +3,20 @@
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
   import FormResultBanner from "./FormResultBanner.svelte";
+  import ExportReviewPanel from "./ExportReviewPanel.svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import { reviewedRefs } from "../lib/review";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
   import { currentPeriod } from "../lib/periods";
   import { formatInstant } from "../lib/time";
   import type * as T from "../lib/types";
 
-  let { opId = null, onclose }: { opId?: string | null; onclose: () => void } = $props();
+  let {
+    opId = null,
+    entryIds = [],
+    onclose,
+  }: { opId?: string | null; entryIds?: string[]; onclose: () => void } = $props();
 
   const usable = $derived(app.periods.filter((p) => p.status === "active"));
   const p = app.profile;
@@ -27,6 +34,7 @@
     prepared_by_name: p?.name ?? "",
     prepared_by_position: p?.position ?? "",
     display_zone: app.zone,
+    entry_ids: untrack(() => [...entryIds]),
   });
   const KINDS: [T.EntryKind, string][] = [
     ["activity", "Activity"],
@@ -35,7 +43,8 @@
     ["status", "Status"],
     ["note", "Note"],
   ];
-  let preview = $state<T.FormPreview | null>(null);
+  let preview = $state<T.ExportReview | null>(null);
+  const checked = new SvelteSet<string>();
   let previewErr = $state<string | null>(null);
   let busy = $state(false);
   let result = $state<T.FormResult | null>(null);
@@ -47,8 +56,12 @@
     previewErr = null;
     if (!r.op_id) return;
     api
-      .form214Preview(r)
-      .then((x) => (preview = x))
+      .formReview("214", r)
+      .then((x) => {
+        preview = x;
+        checked.clear();
+        for (const row of x.rows) if (row.eligible) checked.add(row.id);
+      })
       .catch((e) => (previewErr = toAppError(e).message));
   });
 
@@ -68,7 +81,10 @@
     result = null;
     resultErr = null;
     try {
-      result = await api.exportForm214($state.snapshot(req) as T.Form214Request, dest);
+      result = await api.exportForm214(
+        { ...($state.snapshot(req) as T.Form214Request), reviewed: reviewedRefs(preview, checked) },
+        dest,
+      );
       app.toast("ok", `ICS 214 saved (${result.pages} page${result.pages === 1 ? "" : "s"})`);
     } catch (e) {
       resultErr = toAppError(e).message;
@@ -173,7 +189,7 @@
     </fieldset>
     <div class="summary" aria-live="polite">
       {#if previewErr}<span class="field-error"><CircleAlert size={15} /> {previewErr}</span>
-      {:else if preview}<strong>{preview.count} entr{preview.count === 1 ? "y" : "ies"}</strong> will be listed.
+      {:else if preview}<ExportReviewPanel review={preview} {checked} />
       {:else}<span class="muted">Counting…</span>{/if}
     </div>
     {#if resultErr}<div class="banner error" role="alert">
@@ -185,7 +201,15 @@
   {#snippet footer()}
     <button onclick={onclose}>{result ? "Close" : "Cancel"}</button>
     {#if usable.length}
-      <button class="primary" onclick={run} disabled={busy || !preview || !!previewErr || !req.kinds.length}>
+      <button
+        class="primary"
+        onclick={run}
+        disabled={busy ||
+          !preview ||
+          !!previewErr ||
+          !req.kinds.length ||
+          (!preview.too_many && checked.size === 0)}
+      >
         {#if busy}<LoaderCircle size={16} class="spin" />Saving…{:else}<FileDown size={16} />Save ICS 214…{/if}
       </button>
     {/if}
