@@ -1,0 +1,51 @@
+EMCOMM LOG 2.1.0 for Windows
+============================
+
+What's in this package (use ONE of the two installers)
+  EMCOMM LOG_2.1.0_x64_en-US.msi   Windows Installer package (recommended; good for managed PCs)
+  EMCOMM LOG_2.1.0_x64-setup.exe   Setup program (alternative)
+  SHA256SUMS.txt                   checksums to confirm the download is intact
+  CHANGELOG.md, OPERATOR_GUIDE.md, GPS_SETUP.md
+
+Requirements
+  - Windows 10 or 11, 64-bit (x64).
+  - Microsoft Edge WebView2 Runtime. It is built into Windows 11 and up-to-date Windows 10; if it is
+    missing, the setup installs it (that one step needs an internet connection).
+  - EMCOMM LOG itself needs no internet connection and does not use one.
+
+1. Check the download (optional)
+   In PowerShell, in the folder with the files:
+     Get-FileHash -Algorithm SHA256 *.msi, *.exe
+   Compare the hashes with SHA256SUMS.txt.
+
+2. Install
+   Double-click the .msi (or the setup .exe) and follow the steps.
+   This build is not code-signed, so Windows may show "Windows protected your PC" (SmartScreen):
+   click "More info", then "Run anyway". You only need to do this once.
+
+3. First run
+   Start EMCOMM LOG from the Start menu. The setup wizard asks for your operator profile, time
+   display, the folder for logbooks and a backup folder. Use a local disk or a directly attached
+   drive, not a network share or a OneDrive/Dropbox-synced folder.
+
+Upgrading from 2.0
+   Run the 2.1 installer; it replaces the old version. The first time 2.1 opens a 2.0 logbook it
+   upgrades it and keeps an untouched copy in the logbook's hidden ".pre-migration" folder.
+   Archived logbooks are only upgraded when you unarchive them.
+
+Location and GPS (optional)
+   - Computer location / built-in GPS: turn on Settings -> Privacy & security -> Location, and
+     allow desktop apps to access your location.
+   - USB GPS receiver: plug it in; it appears as a COM port (Device Manager -> Ports). Some adapter
+     chips need the maker's driver.
+   - Bluetooth GPS receiver: pair it in Settings -> Bluetooth & devices, then More Bluetooth settings
+     -> COM Ports shows an "Outgoing" port; choose that one.
+   Location and GPS have not yet been tested on real Windows hardware. See GPS_SETUP.md.
+
+Where your data lives
+   Settings and profiles: %APPDATA%\org.emcommlog.desktop
+   Logbooks: the folder you chose in setup. Help -> Where Is My Data? shows both.
+
+Uninstall
+   Settings -> Apps -> Installed apps -> EMCOMM LOG -> Uninstall. Your logbooks and settings are
+   kept; delete the folders above yourself only if you no longer need them.

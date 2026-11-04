@@ -1,0 +1,55 @@
+EMCOMM LOG 2.1.0 for macOS
+==========================
+
+What's in this package
+  EMCOMM LOG_2.1.0_aarch64.dmg   the app (Apple Silicon: M1/M2/M3/M4 Macs)
+  SHA256SUMS.txt                 checksum to confirm the download is intact
+  CHANGELOG.md, OPERATOR_GUIDE.md, GPS_SETUP.md
+
+Requirements
+  - macOS 11 or later on an Apple Silicon Mac. (Intel Macs are not supported by this build.)
+  - No internet connection is needed or used.
+
+1. Check the download (optional)
+   In Terminal, in the folder with the files:
+     shasum -a 256 -c SHA256SUMS.txt
+   It should print "OK".
+
+2. Install
+   - Double-click "EMCOMM LOG_2.1.0_aarch64.dmg".
+   - Drag "EMCOMM LOG" into the Applications folder.
+   - Eject the disk image.
+
+3. First launch (this build is not signed by Apple)
+   macOS will say it cannot verify the developer. To open it anyway:
+   - Try to open EMCOMM LOG once from Applications, and click "Done" (or "Cancel") on the warning.
+   - Open System Settings -> Privacy & Security, scroll down to the message about EMCOMM LOG,
+     click "Open Anyway", and confirm with your password or Touch ID.
+   - On older macOS versions, right-click the app -> Open -> Open also works.
+   You only need to do this once.
+
+4. First run
+   The setup wizard asks for your operator profile, time display, the folder for logbooks and a
+   backup folder. Use a local disk, not a network share or a cloud-synced folder.
+
+Upgrading from 2.0
+   Install over the old version (replace it in Applications). The first time 2.1 opens a 2.0
+   logbook it upgrades it and keeps an untouched copy in the logbook's hidden ".pre-migration"
+   folder. Archived logbooks are only upgraded when you unarchive them.
+
+Location and GPS (optional)
+   - Computer location: the first time you press Capture GPS or Test GPS, macOS asks whether
+     EMCOMM LOG may use your location. Click Allow. You can change this later in
+     System Settings -> Privacy & Security -> Location Services.
+   - USB GPS receiver: plug it in; it appears as /dev/cu.usbmodem... or /dev/cu.usbserial-...
+     (tested: u-blox M8 USB receiver, no driver needed). Some adapter chips need the maker's driver.
+   - Bluetooth GPS receiver: pair it in System Settings -> Bluetooth first (not yet tested).
+   See GPS_SETUP.md for details.
+
+Where your data lives
+   Settings and profiles: ~/Library/Application Support/org.emcommlog.desktop
+   Logbooks: the folder you chose in setup. Help -> Where Is My Data? shows both.
+
+Uninstall
+   Drag EMCOMM LOG from Applications to the Trash. Your logbooks and settings are kept; delete the
+   folders above yourself only if you no longer need them.
