@@ -1,0 +1,7 @@
+# EMCOMM LOG 2.1.0 (commit 55610ee). Windows/Linux: CI run 41880906914, installer smoke + installed-app E2E run 41884022605 (60/60 on Windows .msi and Linux .deb). macOS: built and tested locally on macOS 14.6 Apple Silicon. Unsigned.
+fce385eb7e1e4c4251adf351f4ce4a5c581a7df9ef93e08fb14e36bd20a44723  macos/EMCOMM LOG_2.1.0_aarch64.dmg
+321e642e6ec4c6be550106d8c33f9e5fc16c520b71a062e273dec8e6adbfdf3e  windows/EMCOMM LOG_2.1.0_x64-setup.exe
+9ec395099da4b08fe65558b0518aa9fe8dbbeec8a7c628b679df76891a842826  windows/EMCOMM LOG_2.1.0_x64_en-US.msi
+3309af8bc975ad31e2fa25d33486b8a35d24dd0589cf032048fec287e796876a  linux/EMCOMM LOG-2.1.0-1.x86_64.rpm
+ba1b91b56ba86c52d589554d6b64972543bd94e3b5c4ea0174f5dc9e643bbd43  linux/EMCOMM LOG_2.1.0_amd64.AppImage
+347dfd8b25a6c513422282838217eddbab28de70ac85a03dc1e2fcc19827f60c  linux/EMCOMM LOG_2.1.0_amd64.deb
