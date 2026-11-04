@@ -140,6 +140,33 @@
   });
 
   const freq = $derived(parseFrequencyHz(form.freqText, form.freqUnit));
+
+  // Local suggestions from this logbook's recent history (2.1 §5.3). Offered through datalists only:
+  // nothing is filled in until the operator picks a value.
+  let recents = $state<T.Recents>({});
+  $effect(() => {
+    void app.dataVersion;
+    const fields: T.RecentField[] =
+      type === "ham"
+        ? ["their_call", "frequency_hz", "mode", "pota_ref", "sota_ref", "channel"]
+        : ["station", "channel"];
+    api
+      .recentValues(fields)
+      .then((r) => (recents = r && typeof r === "object" ? r : {}))
+      .catch(() => (recents = {}));
+  });
+  const recentFreqs = $derived(
+    (recents.frequency_hz ?? [])
+      .map(Number)
+      .filter((hz) => hz > 0)
+      .map((hz) =>
+        form.freqUnit === "kHz"
+          ? String(hz / 1e3)
+          : form.freqUnit === "GHz"
+            ? String(hz / 1e9)
+            : String(hz / 1e6),
+      ),
+  );
   const suggestedBand = $derived(freq.hz ? bandForHz(freq.hz) : null);
   const blocked = $derived(!!app.storageBlocked || app.readOnly);
 
@@ -463,13 +490,27 @@
     {#if !hidden.has("from_text")}
       <div class="field">
         <label for={fid("from")}>{lbl("from_text", "From / Station")}</label>
-        <input id={fid("from")} type="text" bind:value={form.from_text} maxlength="120" autocomplete="off" />
+        <input
+          id={fid("from")}
+          type="text"
+          bind:value={form.from_text}
+          maxlength="120"
+          autocomplete="off"
+          list={fid("stations")}
+        />
       </div>
     {/if}
     {#if !hidden.has("to_text")}
       <div class="field">
         <label for={fid("to")}>{lbl("to_text", "To")}</label>
-        <input id={fid("to")} type="text" bind:value={form.to_text} maxlength="120" autocomplete="off" />
+        <input
+          id={fid("to")}
+          type="text"
+          bind:value={form.to_text}
+          maxlength="120"
+          autocomplete="off"
+          list={fid("stations")}
+        />
       </div>
     {/if}
     {#if !hidden.has("channel")}
@@ -485,7 +526,10 @@
         />
         <datalist id={fid("channels")}
           >{#each planChannels as r, i (i)}<option value={channelValue(r)}>{channelHint(r)}</option
-            >{/each}{#each preset.channels as c (c)}<option value={c}></option>{/each}</datalist
+            >{/each}{#each preset.channels as c (c)}<option value={c}
+            ></option>{/each}{#each (recents.channel ?? []).filter((c) => !preset.channels.includes(c)) as c (c)}<option
+              value={c}>recent</option
+            >{/each}</datalist
         >
         {#if planChannels.length}<span class="hint"
             >{planChannels.length} channel{planChannels.length === 1 ? "" : "s"} in this period's plan</span
@@ -532,6 +576,8 @@
         type="text"
         bind:value={form.ham.their_call}
         maxlength="20"
+        list={fid("calls")}
+        autocomplete="off"
         class="mono"
         aria-invalid={err("ham.their_call") ? "true" : undefined}
       />
@@ -549,6 +595,8 @@
             type="text"
             bind:value={form.ham.their_call}
             maxlength="20"
+            list={fid("calls")}
+            autocomplete="off"
             autocapitalize="characters"
             class="mono"
             aria-invalid={err("ham.their_call") ? "true" : undefined}
@@ -579,6 +627,8 @@
               type="text"
               inputmode="decimal"
               bind:value={form.freqText}
+              list={fid("freqs")}
+              autocomplete="off"
               class="mono"
               aria-invalid={err("ham.frequency_hz") || freq.error ? "true" : undefined}
             />
@@ -618,7 +668,9 @@
             autocapitalize="characters"
           />
           <datalist id={fid("modes")}
-            >{#each MODES as m (m)}<option value={m}></option>{/each}</datalist
+            >{#each recents.mode ?? [] as m (m)}<option value={m}>recent</option
+              >{/each}{#each MODES.filter((m) => !(recents.mode ?? []).includes(m)) as m (m)}<option value={m}
+              ></option>{/each}</datalist
           >
         </div>
         <div class="field">
@@ -674,6 +726,8 @@
             type="text"
             bind:value={form.ham.my_pota_ref}
             maxlength="17"
+            list={fid("potas")}
+            autocomplete="off"
             placeholder="US-0005"
             aria-invalid={err("ham.my_pota_ref") ? "true" : undefined}
           />
@@ -686,6 +740,8 @@
             type="text"
             bind:value={form.ham.pota_ref}
             maxlength="17"
+            list={fid("potas")}
+            autocomplete="off"
             aria-invalid={err("ham.pota_ref") ? "true" : undefined}
           />
           {#if err("ham.pota_ref")}<span class="field-error">{err("ham.pota_ref")}</span>{/if}
@@ -697,6 +753,8 @@
             type="text"
             bind:value={form.ham.my_sota_ref}
             maxlength="20"
+            list={fid("sotas")}
+            autocomplete="off"
             placeholder="W4C/CM-001"
             aria-invalid={err("ham.my_sota_ref") ? "true" : undefined}
           />
@@ -709,6 +767,8 @@
             type="text"
             bind:value={form.ham.sota_ref}
             maxlength="20"
+            list={fid("sotas")}
+            autocomplete="off"
             aria-invalid={err("ham.sota_ref") ? "true" : undefined}
           />
           {#if err("ham.sota_ref")}<span class="field-error">{err("ham.sota_ref")}</span>{/if}
@@ -1164,6 +1224,23 @@
     {/if}
   </div>
 </div>
+
+<!-- Local recent values (this logbook only); applied only when picked. -->
+<datalist id={fid("stations")}
+  >{#each recents.station ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+>
+<datalist id={fid("calls")}
+  >{#each recents.their_call ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+>
+<datalist id={fid("freqs")}
+  >{#each recentFreqs as v (v)}<option value={v}></option>{/each}</datalist
+>
+<datalist id={fid("potas")}
+  >{#each recents.pota_ref ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+>
+<datalist id={fid("sotas")}
+  >{#each recents.sota_ref ?? [] as v (v)}<option value={v}></option>{/each}</datalist
+>
 
 <style>
   .locs {

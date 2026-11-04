@@ -118,6 +118,7 @@ export const api = {
   gpsCancel: () => call<void>("gps_cancel"),
   getStation: () => call<T.Station>("get_station"),
   setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
+  recentValues: (fields: T.RecentField[]) => call<T.Recents>("recent_values", { fields }),
   operatorSessions: () => call<T.OperatorSession[]>("operator_sessions"),
   activeOperator: () => call<T.OperatorSession | null>("active_operator"),
   switchOperator: (profileId: string, atUtc: string | null, note: string) =>

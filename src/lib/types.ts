@@ -786,3 +786,7 @@ export interface OperatorSession {
   ended_at_utc: string | null;
   note: string;
 }
+
+export type RecentField =
+  "their_call" | "station" | "channel" | "frequency_hz" | "mode" | "pota_ref" | "sota_ref";
+export type Recents = Partial<Record<RecentField, string[]>>;
