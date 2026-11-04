@@ -21,7 +21,7 @@ used on the tablet.
    it, then tap **Install**.
 3. Open **EMCOMM LOG** from the app drawer and complete first-run setup.
 
-Check the download against `EMCOMM-LOG-2.1.0-tablet.apk.sha256` (`4987c5d5900c74cbe2ca5265e22973d05b6fadb31c95d33e3b7adffd0744864a`) if you like:
+Check the download against `EMCOMM-LOG-2.1.0-tablet.apk.sha256` (`f8910f29b6dfba1337ff5f4fdf826677b1364c07edf69a74602c0c79d167d359`) if you like:
 `shasum -a 256 EMCOMM-LOG-2.1.0-tablet.apk` on a Mac.
 
 Updates are installed the same way, over the existing app; logbooks are kept. Installing 2.1.0 over 2.0.0
