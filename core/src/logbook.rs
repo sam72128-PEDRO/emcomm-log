@@ -734,8 +734,25 @@ impl Logbook {
     // ---------- attachments ----------
 
     pub fn stage_attachment(&self, src: &Path) -> AppResult<StagedAttachment> {
+        self.stage_attachment_from(src, "file", None, &mut |_, _| {})
+    }
+
+    /// Copy a file into the logbook's staging area (streamed, hashed, synced) so a draft can keep it and a
+    /// later Save Entry can commit it. The source can disappear afterwards (USB stick, camera roll).
+    /// `progress(done, total)` is called as bytes are copied; `cancel` stops the copy and removes the
+    /// partial file.
+    pub fn stage_attachment_from(
+        &self,
+        src: &Path,
+        source: &str,
+        cancel: Option<&std::sync::atomic::AtomicBool>,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> AppResult<StagedAttachment> {
         self.ensure_writable()?;
         crate::faults::check("attachment.stage")?;
+        if !crate::attach::SOURCES.contains(&source) {
+            return Err(AppError::validation("attachments", "Unknown attachment source"));
+        }
         let meta = fs::metadata(src).map_err(|e| AppError::from(e).with_context("Cannot read the selected file"))?;
         if !meta.is_file() {
             return Err(AppError::validation("attachments", "Only regular files can be attached"));
@@ -747,17 +764,119 @@ impl Logbook {
         fs::create_dir_all(&staging)?;
         let id = fsutil::new_uuid();
         let data = staging.join(&id);
-        let (sha, size) = match fsutil::copy_synced(src, &data) {
+        let (sha, size) = match fsutil::copy_synced_progress(src, &data, meta.len(), cancel, progress) {
             Ok(v) => v,
             Err(e) => {
                 let _ = fs::remove_file(&data);
                 return Err(e);
             }
         };
-        let display_name = src.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "attachment".into());
-        let sa = StagedAttachment { staging_id: id.clone(), display_name, size_bytes: size, sha256: sha };
-        fsutil::atomic_write(&staging.join(format!("{id}.json")), serde_json::to_string(&sa)?.as_bytes())?;
+        let display_name =
+            crate::attach::clean_name(&src.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "attachment".into()));
+        self.finish_staging(id, data, display_name, size, sha, source)
+    }
+
+    /// Stage bytes the app already holds (a pasted screenshot). Written straight to staging; never kept in
+    /// the database or the UI.
+    pub fn stage_attachment_bytes(&self, name: &str, bytes: &[u8], source: &str) -> AppResult<StagedAttachment> {
+        self.ensure_writable()?;
+        crate::faults::check("attachment.stage")?;
+        if !crate::attach::SOURCES.contains(&source) {
+            return Err(AppError::validation("attachments", "Unknown attachment source"));
+        }
+        if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+            return Err(AppError::validation("attachments", "Attachments are limited to 512 MB each"));
+        }
+        let staging = self.dir.join(STAGING_DIR);
+        fs::create_dir_all(&staging)?;
+        let id = fsutil::new_uuid();
+        let data = staging.join(&id);
+        let res = (|| -> AppResult<String> {
+            let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&data)?;
+            std::io::Write::write_all(&mut f, bytes)?;
+            f.sync_all()?;
+            Ok(hex::encode(<sha2::Sha256 as sha2::Digest>::digest(bytes)))
+        })();
+        let sha = match res {
+            Ok(h) => h,
+            Err(e) => {
+                let _ = fs::remove_file(&data);
+                return Err(e);
+            }
+        };
+        self.finish_staging(id, data, crate::attach::clean_name(name), bytes.len() as u64, sha, source)
+    }
+
+    fn finish_staging(
+        &self,
+        id: String,
+        data: PathBuf,
+        display_name: String,
+        size: u64,
+        sha256: String,
+        source: &str,
+    ) -> AppResult<StagedAttachment> {
+        let sniffed = crate::attach::sniff_file(&data)?;
+        let sa = StagedAttachment {
+            staging_id: id.clone(),
+            mime: sniffed.mime(&display_name),
+            display_name,
+            size_bytes: size,
+            sha256,
+            source: source.to_string(),
+            caption: String::new(),
+        };
+        let staging = self.dir.join(STAGING_DIR);
+        if let Err(e) = fsutil::atomic_write(&staging.join(format!("{id}.json")), serde_json::to_string(&sa)?.as_bytes()) {
+            let _ = fs::remove_file(&data);
+            return Err(e);
+        }
         Ok(sa)
+    }
+
+    /// Path of a staged file (validated id), for thumbnails while an entry is still unsaved.
+    pub fn staged_path(&self, staging_id: &str) -> AppResult<PathBuf> {
+        if uuid::Uuid::parse_str(staging_id).is_err() {
+            return Err(AppError::validation("attachments", "Invalid staged attachment reference"));
+        }
+        let p = self.dir.join(STAGING_DIR).join(staging_id);
+        if !p.is_file() {
+            return Err(AppError::validation("attachments", "That attachment is no longer staged; attach it again"));
+        }
+        Ok(p)
+    }
+
+    /// Save a copy of a saved attachment to a file the operator chose (Save As). Written to a temporary
+    /// name beside the destination and renamed only after the copy's hash matches.
+    pub fn save_attachment_as(&self, attachment_id: &str, dest: &Path) -> AppResult<()> {
+        let src = self.attachment_path(attachment_id)?;
+        let want: String = self.conn.query_row("SELECT sha256 FROM attachments WHERE id=?1", params![attachment_id], |r| r.get(0))?;
+        let parent = dest.parent().ok_or_else(|| AppError::validation("dest", "Choose a folder to save into"))?;
+        let tmp = parent.join(format!(".emcomm-tmp-{}", fsutil::new_uuid()));
+        let res = fsutil::copy_synced(&src, &tmp);
+        match res {
+            Ok((h, _)) if h == want => {}
+            Ok(_) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(AppError::new(ErrorCode::Integrity, "The attachment in the logbook does not match its recorded hash"));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+        fs::rename(&tmp, dest).inspect_err(|_| {
+            let _ = fs::remove_file(&tmp);
+        })?;
+        Ok(())
+    }
+
+    /// Display name and detected type of a saved attachment (for the Open rule).
+    pub fn attachment_meta(&self, attachment_id: &str) -> AppResult<(String, String)> {
+        self.conn
+            .query_row("SELECT display_name, mime FROM attachments WHERE id=?1", params![attachment_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?
+            .ok_or_else(|| AppError::not_found("Attachment not found"))
     }
 
     pub fn staged_exists(&self, staging_id: &str) -> bool {

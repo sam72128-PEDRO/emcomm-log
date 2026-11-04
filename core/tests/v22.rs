@@ -380,3 +380,78 @@ fn rel_links_are_one_hop_audited_and_never_change_entries() {
     let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
     assert_eq!(lb2.entry_links(&e10.id, true).unwrap().len(), 3);
 }
+
+#[test]
+fn att_capture_caption_remove_and_travel_with_hashes() {
+    use emcomm_core::attach::{is_risky, sniff_file};
+    use emcomm_core::package::export_package;
+    use std::sync::atomic::AtomicBool;
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::General, "Attachments");
+    let mut lb = Logbook::open(&dir).unwrap();
+
+    // A photo dropped onto the editor (named .txt on purpose: the type comes from the content).
+    let photo = t.path().join("IMG_0001.txt");
+    std::fs::write(&photo, b"\xFF\xD8\xFF\xE0 jpeg-ish bytes with EXIF GPS inside").unwrap();
+    let mut progress = vec![];
+    let mut a = lb.stage_attachment_from(&photo, "drag_drop", None, &mut |d, t| progress.push((d, t))).unwrap();
+    assert_eq!((a.source.as_str(), a.mime.as_str()), ("drag_drop", "image/jpeg"));
+    assert!(!progress.is_empty());
+    std::fs::remove_file(&photo).unwrap(); // the source can vanish: the managed copy is what counts
+    a.caption = "Bridge damage, north side".into();
+    // A pasted screenshot.
+    let shot = lb.stage_attachment_bytes("Screenshot 2026-11-04.png", b"\x89PNG\r\n\x1a\n...", "paste").unwrap();
+    assert_eq!(shot.mime, "image/png");
+    // A cancelled copy leaves nothing staged.
+    let big = t.path().join("big.bin");
+    std::fs::write(&big, vec![7u8; 3 * 1024 * 1024]).unwrap();
+    let staged_before = std::fs::read_dir(dir.join(".staging")).unwrap().count();
+    let cancel = AtomicBool::new(true);
+    assert!(lb.stage_attachment_from(&big, "file", Some(&cancel), &mut |_, _| {}).is_err());
+    assert_eq!(std::fs::read_dir(dir.join(".staging")).unwrap().count(), staged_before);
+    assert!(lb.stage_attachment_from(&big, "carrier_pigeon", None, &mut |_, _| {}).is_err());
+
+    let e = lb.save_new(&EntryInput { new_attachments: vec![a, shot], ..input("Bridge report") }, &rid(), &operator()).unwrap().entry;
+    assert_eq!(e.attachments.len(), 2);
+    let photo_att = e.attachments.iter().find(|x| x.source == "drag_drop").unwrap().clone();
+    assert_eq!(photo_att.caption, "Bridge damage, north side");
+    let shot_att = e.attachments.iter().find(|x| x.source == "paste").unwrap().clone();
+
+    // Save As writes an identical copy.
+    let out = t.path().join("export-copy.jpg");
+    lb.save_attachment_as(&photo_att.id, &out).unwrap();
+    assert_eq!(sha(&out), photo_att.sha256);
+    // Programs are never opened, whatever their name.
+    let prog = t.path().join("invoice.pdf");
+    std::fs::write(&prog, b"MZ\x90\x00 windows program").unwrap();
+    assert!(is_risky("invoice.pdf", sniff_file(&prog).unwrap()));
+
+    // Caption change + removal are one recorded change; the removed file stays for history and backups.
+    let mut i = as_input(&e);
+    i.attachment_captions = vec![AttachmentCaption { id: photo_att.id.clone(), caption: "Bridge damage (north)".into() }];
+    i.remove_attachments = vec![shot_att.id.clone()];
+    let e2 = lb.save_changes(&e.id, e.current_revision, &i, "tidy attachments", &rid(), &operator()).unwrap().entry;
+    assert_eq!(e2.current_revision, 2);
+    assert_eq!(e2.attachments.len(), 1);
+    assert_eq!(e2.attachments[0].caption, "Bridge damage (north)");
+    let revs = lb.revisions(&e.id).unwrap();
+    assert_eq!(revs[1].before.as_ref().unwrap()["attachments"].as_array().unwrap().len(), 2, "history keeps it");
+    assert!(dir.join(&shot_att.rel_path).is_file(), "file kept");
+    assert_eq!(lb.cleanup_orphans(&Default::default()).unwrap(), 0, "a removed attachment is not an orphan");
+    // Removing something not on the entry fails without changing anything.
+    let mut bad = as_input(&e2);
+    bad.remove_attachments = vec![shot_att.id.clone()];
+    assert!(lb.save_changes(&e2.id, e2.current_revision, &bad, "", &rid(), &operator()).is_err());
+
+    // Package: captions, sources and every file travel; hashes intact.
+    drop(lb);
+    let pkg = t.path().join("att.emlog");
+    export_package(&dir, &pkg).unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let imp = import_package(&pkg, dest.path(), None, &[]).unwrap();
+    let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
+    let got = lb2.get_entry(&e.id).unwrap();
+    assert_eq!((got.attachments.len(), got.attachments[0].caption.as_str()), (1, "Bridge damage (north)"));
+    assert_eq!(sha(&Path::new(&imp.path).join(&got.attachments[0].rel_path)), photo_att.sha256);
+    assert!(Path::new(&imp.path).join(&shot_att.rel_path).is_file(), "removed attachment's file travels too");
+}

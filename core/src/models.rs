@@ -452,6 +452,26 @@ pub struct StagedAttachment {
     pub display_name: String,
     pub size_bytes: u64,
     pub sha256: String,
+    /// 2.2: where it came from (file, drag_drop, paste, camera, photo_picker, document_picker).
+    #[serde(default = "default_source")]
+    pub source: String,
+    /// 2.2: optional caption, editable until saved.
+    #[serde(default)]
+    pub caption: String,
+    /// 2.2: type detected from the content at staging.
+    #[serde(default)]
+    pub mime: String,
+}
+
+fn default_source() -> String {
+    "file".into()
+}
+
+/// 2.2: change the caption of an attachment already saved on the entry (Save Changes).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AttachmentCaption {
+    pub id: String,
+    pub caption: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -475,6 +495,10 @@ pub struct EntryInput {
     pub ham: Option<HamFields>,
     pub emergency: Option<EmergencyFields>,
     pub new_attachments: Vec<StagedAttachment>,
+    /// 2.2 (Save Changes only): attachments to remove from the entry. The file is kept for history.
+    pub remove_attachments: Vec<String>,
+    /// 2.2 (Save Changes only): caption changes for attachments already on the entry.
+    pub attachment_captions: Vec<AttachmentCaption>,
     /// Operational period (schema v2); None = assigned by event time when forms are made.
     pub op_id: Option<String>,
     /// Where the logging station was (schema v4); never filled automatically.
@@ -508,6 +532,8 @@ impl Default for EntryInput {
             ham: None,
             emergency: None,
             new_attachments: vec![],
+            remove_attachments: vec![],
+            attachment_captions: vec![],
             op_id: None,
             operator_location: None,
             reported_location: None,
@@ -527,6 +553,10 @@ pub struct Attachment {
     pub sha256: String,
     pub added_at_utc: String,
     pub added_in_revision: i64,
+    #[serde(default)]
+    pub caption: String,
+    #[serde(default)]
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

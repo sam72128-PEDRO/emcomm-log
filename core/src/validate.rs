@@ -355,7 +355,31 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
             return Err(AppError::validation("attachments", "Invalid staged attachment reference"));
         }
         let name = single_line("attachments", &a.display_name, MAX_MEDIUM)?;
-        atts.push(StagedAttachment { display_name: if name.is_empty() { "attachment".into() } else { name }, ..a.clone() });
+        if !crate::attach::SOURCES.contains(&a.source.as_str()) {
+            return Err(AppError::validation("attachments", "Unknown attachment source"));
+        }
+        atts.push(StagedAttachment {
+            display_name: if name.is_empty() { "attachment".into() } else { name },
+            caption: single_line("attachments.caption", &a.caption, MAX_MEDIUM)?,
+            ..a.clone()
+        });
+    }
+    let mut remove_attachments: Vec<String> = Vec::new();
+    for id in &input.remove_attachments {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err(AppError::validation("attachments", "Invalid attachment reference"));
+        }
+        if !remove_attachments.contains(id) {
+            remove_attachments.push(id.clone());
+        }
+    }
+    let mut attachment_captions = Vec::new();
+    for c in &input.attachment_captions {
+        if uuid::Uuid::parse_str(&c.id).is_err() {
+            return Err(AppError::validation("attachments", "Invalid attachment reference"));
+        }
+        attachment_captions
+            .push(AttachmentCaption { id: c.id.clone(), caption: single_line("attachments.caption", &c.caption, MAX_MEDIUM)? });
     }
     Ok(EntryInput {
         kind: input.kind,
@@ -376,6 +400,8 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
         ham,
         emergency,
         new_attachments: atts,
+        remove_attachments,
+        attachment_captions,
         op_id: match &input.op_id {
             Some(id) if uuid::Uuid::parse_str(id).is_err() => {
                 return Err(AppError::validation("op_id", "Invalid operational period reference"));

@@ -96,6 +96,41 @@ pub fn sha256_file(path: &Path) -> AppResult<(String, u64)> {
 }
 
 /// Copy a file and fsync the destination. Returns (sha256, size) of the bytes written.
+/// `copy_synced` with progress reporting (about every 1 MiB) and optional cancellation.
+pub fn copy_synced_progress(
+    src: &Path,
+    dst: &Path,
+    expected: u64,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    progress: &mut dyn FnMut(u64, u64),
+) -> AppResult<(String, u64)> {
+    let mut input = File::open(src)?;
+    let mut out = OpenOptions::new().write(true).create_new(true).open(dst)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut total = 0u64;
+    let mut last = 0u64;
+    loop {
+        if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst)) {
+            return Err(crate::error::AppError::new(crate::error::ErrorCode::Cancelled, "Attachment copy cancelled"));
+        }
+        let n = input.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        out.write_all(&buf[..n])?;
+        h.update(&buf[..n]);
+        total += n as u64;
+        if total - last >= 1024 * 1024 {
+            last = total;
+            progress(total, expected);
+        }
+    }
+    out.sync_all()?;
+    progress(total, expected.max(total));
+    Ok((hex::encode(h.finalize()), total))
+}
+
 pub fn copy_synced(src: &Path, dst: &Path) -> AppResult<(String, u64)> {
     let mut input = File::open(src)?;
     let mut out = OpenOptions::new().write(true).create_new(true).open(dst)?;
