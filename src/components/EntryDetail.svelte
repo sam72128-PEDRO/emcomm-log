@@ -16,7 +16,7 @@
   import KindBadge from "./KindBadge.svelte";
   import Form213Dialog from "./Form213Dialog.svelte";
   import { periodById } from "../lib/periods";
-  import { describeSource, formatCoord } from "../lib/location";
+  import { accuracyNote, describeSource, formatCoord } from "../lib/location";
   import { app } from "../lib/state.svelte";
   import { api, newId, toAppError } from "../lib/api";
   import { confirm } from "../lib/confirm.svelte";
@@ -300,11 +300,9 @@
               <span class="muted"
                 >— {describeSource(l.source)}{l.captured_at_utc
                   ? `, fix ${fmt(l.captured_at_utc)}`
-                  : ""}{l.accuracy_m != null
-                  ? `, ±${Math.round(l.accuracy_m)} m`
-                  : l.latitude_deg != null && !["manual", "reported"].includes(l.source)
-                    ? ", accuracy unknown"
-                    : ""}{l.satellites != null ? `, ${l.satellites} satellites` : ""}</span
+                  : ""}{accuracyNote(l) ? `, ${accuracyNote(l)}` : ""}{l.satellites != null
+                  ? `, ${l.satellites} satellites`
+                  : ""}</span
               >
             </dd>
           {/if}
@@ -332,6 +330,10 @@
             <dd>{entry.ham.their_grid || "—"} (theirs) · {entry.ham.my_grid || "—"} (mine)</dd>
             <dt>Station / operator</dt>
             <dd>{entry.ham.station_call || "—"} / {entry.ham.operator_call || "—"}</dd>
+            {#if entry.ham.my_pota_ref || entry.ham.pota_ref}<dt>POTA (mine / theirs)</dt>
+              <dd class="mono">{entry.ham.my_pota_ref || "—"} / {entry.ham.pota_ref || "—"}</dd>{/if}
+            {#if entry.ham.my_sota_ref || entry.ham.sota_ref}<dt>SOTA (mine / theirs)</dt>
+              <dd class="mono">{entry.ham.my_sota_ref || "—"} / {entry.ham.sota_ref || "—"}</dd>{/if}
             {#if entry.ham.qso_notes}<dt>Notes</dt>
               <dd>{entry.ham.qso_notes}</dd>{/if}
           </dl>

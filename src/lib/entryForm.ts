@@ -497,7 +497,6 @@ export function carrySession(prev: EntryForm, next: EntryForm): EntryForm {
     "mode",
     "submode",
     "station_call",
-    "operator_call",
     "my_grid",
     "my_pota_ref",
     "my_sota_ref",
@@ -505,4 +504,19 @@ export function carrySession(prev: EntryForm, next: EntryForm): EntryForm {
     f.ham[k] = prev.ham[k];
   }
   return f;
+}
+
+/**
+ * A new entry follows identity changes (operator handover, station edit): a callsign field still showing
+ * the previous default takes the new one; anything the operator typed is left alone.
+ */
+export function followIdentity(
+  form: EntryForm,
+  prev: { operator: string; station: string },
+  next: { operator: string; station: string },
+): void {
+  if (form.ham.operator_call === prev.operator || form.ham.operator_call === "")
+    form.ham.operator_call = next.operator;
+  if (form.ham.station_call === prev.station || form.ham.station_call === "")
+    form.ham.station_call = next.station;
 }
