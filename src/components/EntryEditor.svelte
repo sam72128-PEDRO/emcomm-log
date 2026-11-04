@@ -99,7 +99,12 @@
   $effect(() => {
     const next = { operator: app.profile?.callsign ?? "", station: app.station?.station_callsign ?? "" };
     if (next.operator === identity.operator && next.station === identity.station) return;
-    if (mode !== "edit" && type === "ham") untrack(() => followIdentity(form, identity, next));
+    // The baseline follows too, so an untouched form is not mistaken for an edit (no empty drafts).
+    if (mode !== "edit" && type === "ham")
+      untrack(() => {
+        followIdentity(form, identity, next);
+        followIdentity(baseline, identity, next);
+      });
     identity = next;
   });
 

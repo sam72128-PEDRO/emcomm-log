@@ -34,6 +34,16 @@
     }
   });
 
+  /** Replace the whole value from outside the text boxes (GPS, default, clear) and show it. */
+  function replace(l: T.Location | null) {
+    value = l;
+    last = value;
+    latText = l?.latitude_deg != null ? String(l.latitude_deg) : "";
+    lonText = l?.longitude_deg != null ? String(l.longitude_deg) : "";
+    coordError = "";
+    gridAuto = false;
+  }
+
   function blank(): T.Location {
     return {
       latitude_deg: null,
@@ -116,18 +126,16 @@
       {#if defaultLocation}<button
           class="small ghost"
           onclick={() => {
-            value = {
+            replace({
               ...defaultLocation!,
               source: "logbook_default",
               provider_id: `${defaultLocation!.source} ${defaultLocation!.provider_id}`.trim(),
-            };
-            last = value;
+            });
           }}
           title="Use this logbook's default station position"><House size={14} />Use default</button
         >{/if}
     {/if}
-    {#if value}<button class="small ghost" onclick={() => ((value = null), (last = null))}
-        ><Eraser size={14} />Clear</button
+    {#if value}<button class="small ghost" onclick={() => replace(null)}><Eraser size={14} />Clear</button
       >{/if}
   </div>
   <div class="grid-4">
@@ -193,8 +201,7 @@
 
 {#if capturing}<GpsCaptureDialog
     onaccept={(l) => {
-      value = l;
-      last = l;
+      replace(l);
       capturing = false;
     }}
     onclose={() => (capturing = false)}
