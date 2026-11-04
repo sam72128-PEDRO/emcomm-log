@@ -34,6 +34,12 @@ pub const LOGBOOK_MIGRATIONS: &[Migration] = &[
         up: include_str!("../migrations/logbook/0004_identity_location.up.sql"),
         down: include_str!("../migrations/logbook/0004_identity_location.down.sql"),
     },
+    Migration {
+        version: 5,
+        name: "v22_features",
+        up: include_str!("../migrations/logbook/0005_v22_features.up.sql"),
+        down: include_str!("../migrations/logbook/0005_v22_features.down.sql"),
+    },
 ];
 
 pub const APP_MIGRATIONS: &[Migration] = &[
@@ -141,7 +147,18 @@ mod tests {
     #[test]
     fn logbook_migrations_up_down_up() {
         let mut c = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 4);
+        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 5);
+        rollback(&mut c, LOGBOOK_MIGRATIONS, 4).unwrap();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('entry_links','station_directory','adif_import_batches')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0);
+        let cols: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name='important'", [], |r| r.get(0)).unwrap();
+        assert_eq!(cols, 0, "v5 columns removed on rollback");
         rollback(&mut c, LOGBOOK_MIGRATIONS, 3).unwrap();
         let n: i64 =
             c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('station','operator_sessions')", [], |r| r.get(0)).unwrap();
@@ -158,7 +175,7 @@ mod tests {
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
-        assert_eq!(current_version(&c).unwrap(), 4);
+        assert_eq!(current_version(&c).unwrap(), 5);
     }
 
     #[test]
