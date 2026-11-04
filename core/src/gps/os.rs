@@ -83,6 +83,7 @@ mod mac {
 
     enum Poll {
         Waiting,
+        Undecided,
         Denied,
         Disabled,
         Fix(OsFix),
@@ -121,11 +122,20 @@ mod mac {
         }
         let deadline = Instant::now() + Duration::from_secs(req.timeout_s.clamp(5, 600));
         let since = Utc::now() - chrono::Duration::seconds(req.max_age_s as i64);
+        // True while macOS has not had an answer to its permission prompt.
+        let mut undecided = false;
         let result = loop {
             if cancel.load(Ordering::SeqCst) {
                 break GpsOutcome::fail("cancelled", "Cancelled");
             }
             if Instant::now() >= deadline {
+                if undecided {
+                    break GpsOutcome::fail(
+                        "permission_denied",
+                        "macOS is asking whether EMCOMM LOG may use your location. Answer its prompt \
+                         (it may be behind this window), then press Retry.",
+                    );
+                }
                 break GpsOutcome::fail("timed_out", "macOS did not provide a position before the timeout");
             }
             let poll = on_main(main, || unsafe {
@@ -135,6 +145,9 @@ mod mac {
                     let st = mgr.authorizationStatus();
                     if st == CLAuthorizationStatus::Denied || st == CLAuthorizationStatus::Restricted {
                         return Poll::Denied;
+                    }
+                    if st == CLAuthorizationStatus::NotDetermined {
+                        return Poll::Undecided;
                     }
                     if !CLLocationManager::locationServicesEnabled_class() {
                         return Poll::Disabled;
@@ -160,6 +173,7 @@ mod mac {
                     }
                 })
             });
+            undecided = matches!(poll, Some(Poll::Undecided));
             match poll {
                 Some(Poll::Denied) => {
                     break GpsOutcome::fail(
@@ -168,6 +182,7 @@ mod mac {
                     );
                 }
                 Some(Poll::Disabled) => break GpsOutcome::fail("permission_denied", "Location Services are turned off"),
+                Some(Poll::Undecided) => std::thread::sleep(Duration::from_millis(250)),
                 // Prefer a position newer than the start of this request; an older cached one is only
                 // returned (as stale) if nothing fresher arrives.
                 Some(Poll::Fix(f)) if f.time >= since => break outcome(f, req.max_age_s),

@@ -318,3 +318,12 @@ describe("Save & Add Another (2.1)", () => {
     expect(next.reported_location).toBeNull();
   });
 });
+
+import { maidenhead } from "../lib/location";
+describe("maidenhead (2.1)", () => {
+  it("matches the core's locator for known points", () => {
+    expect(maidenhead(33.8121, -84.4011)).toBe("EM73tt");
+    expect(maidenhead(41.714775, -72.72726)).toBe("FN31pr");
+    expect(maidenhead(-33.86, 151.21)).toBe("QF56od");
+  });
+});

@@ -59,7 +59,7 @@
   }
 </script>
 
-<Modal title="Switch operator" {onclose} {busy}>
+<Modal title="Switch operator" {onclose} {busy} dirty={() => !!profileId || !!note.trim() || at !== null}>
   <p class="muted" style="margin:0">
     Same logbook, same station{app.station?.tactical_id ? ` (${app.station.tactical_id})` : ""}. Entries
     already saved keep the operator who logged them. The operational period and ICS forms are not changed.

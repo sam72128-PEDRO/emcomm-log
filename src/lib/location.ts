@@ -37,3 +37,12 @@ export function formatCoord(lat: number | null, lon: number | null): string {
   if (lat == null || lon == null) return "";
   return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 }
+
+/** 6-character Maidenhead locator, computed locally (same rule as the core's `gps::maidenhead`). */
+export function maidenhead(lat: number, lon: number): string {
+  const x = Math.min(Math.max(lon + 180, 0), 359.999999);
+  const y = Math.min(Math.max(lat + 90, 0), 179.999999);
+  const A = (v: number) => String.fromCharCode(65 + Math.floor(v));
+  const a = (v: number) => String.fromCharCode(97 + Math.floor(v));
+  return `${A(x / 20)}${A(y / 10)}${Math.floor((x % 20) / 2)}${Math.floor(y % 10)}${a((x % 2) * 12)}${a((y % 1) * 24)}`;
+}
