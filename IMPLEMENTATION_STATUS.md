@@ -52,9 +52,18 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
   the full Tauri app crate.
 - **Windows:** clippy with `-D warnings` is clean on the core for `x86_64-pc-windows-gnu` (Geolocator code
   included). Nothing ran on Windows itself.
-- **GitHub Actions:** not run for 2.1. By the product owner's decision, Windows/Linux builds and CI wait
-  until the macOS version is finished, so the Windows/Linux installers and installed-app E2E are **not yet
-  run** for 2.1.
+- **GitHub Actions (2026-11-04), after macOS was finished:**
+  - CI [41880906914](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41880906914) is green on
+    windows-latest and ubuntu-22.04: format, lint, typecheck, frontend tests, clippy, all Rust tests,
+    independent export and form validation, installers, and Linux⇄Windows `.emlog` round trips.
+  - Installer smoke and installed-app E2E
+    [41884022605](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41884022605): every
+    Windows/Linux installer format launches offline; **60/60 on Windows (`.msi`) and 60/60 on Linux
+    (`.deb`)**, including axe on 12 screens.
+  - The first run caught two defects, both fixed: a lint error, and the 4-writer stress test exceeding the
+    5 s lock wait on the slower Windows disk (the test now waits longer; the app's timeout is unchanged).
+  - The E2E suite does not yet drive the 2.1 screens (Station, Switch Operator, Capture GPS, ADIF presets).
+    Those were tested by hand on macOS.
 - **Hands-on (macOS release build, scratch data, 2026-11-03):** clicked through:
   - first-run setup and a second operator profile;
   - the Station dialog: tactical ID, station callsign normalised, default park, typed default position;
