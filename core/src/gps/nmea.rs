@@ -183,6 +183,8 @@ pub struct Fix {
 pub struct FixBuilder {
     rmc: Option<Rmc>,
     gga: Option<Gga>,
+    /// Consecutive valid RMC epochs without a GGA for the same time (receivers that send GGA rarely).
+    unmatched: u32,
     pub sentences: u32,
     pub rejected: u32,
 }
@@ -204,8 +206,26 @@ impl FixBuilder {
 
     pub fn push(&mut self, s: Sentence) -> Option<Fix> {
         match s {
-            Sentence::Rmc(r) => self.rmc = Some(r),
-            Sentence::Gga(g) => self.gga = Some(g),
+            Sentence::Rmc(r) => {
+                self.rmc = Some(r);
+                // Many receivers (u-blox among them) send RMC before the GGA of the same second: wait for
+                // that GGA so satellites and altitude are not lost, unless GGA keeps not arriving.
+                if let Some(rt) = self.rmc.as_ref().and_then(|r| r.time)
+                    && self.gga.is_some()
+                    && self.gga.as_ref().and_then(|g| g.time) != Some(rt)
+                {
+                    self.unmatched += 1;
+                    if self.unmatched <= 2 {
+                        return None;
+                    }
+                }
+            }
+            Sentence::Gga(g) => {
+                if g.time.is_some() && g.time == self.rmc.as_ref().and_then(|r| r.time) {
+                    self.unmatched = 0;
+                }
+                self.gga = Some(g);
+            }
             _ => return None,
         }
         self.current()
@@ -241,6 +261,25 @@ mod tests {
     /// Build a line with a correct checksum.
     pub fn line(body: &str) -> String {
         format!("${body}*{:02X}", body.bytes().fold(0u8, |a, b| a ^ b))
+    }
+
+    #[test]
+    fn rmc_before_gga_keeps_satellites_and_altitude() {
+        // u-blox order: RMC, VTG, GGA for each second.
+        let rmc = |t: &str| line(&format!("GNRMC,{t},A,2847.40984,N,08131.63662,W,0.1,,041126,,,A,V"));
+        let gga = |t: &str| line(&format!("GNGGA,{t},2847.40984,N,08131.63662,W,1,04,3.10,35.2,M,-30.1,M,,"));
+        let mut b = FixBuilder::default();
+        assert!(b.push_line(&gga("023800.00")).is_none(), "GGA alone is not a fix");
+        assert!(b.push_line(&rmc("023801.00")).is_none(), "wait for this second's GGA");
+        let f = b.push_line(&gga("023801.00")).expect("fix once GGA arrives");
+        assert_eq!((f.satellites, f.altitude_m), (Some(4), Some(35.2)));
+        // A receiver whose GGA stops arriving still yields a fix (without them) after two seconds.
+        let mut b = FixBuilder::default();
+        b.push_line(&gga("010000.00"));
+        assert!(b.push_line(&rmc("010001.00")).is_none());
+        assert!(b.push_line(&rmc("010002.00")).is_none());
+        let f = b.push_line(&rmc("010003.00")).expect("fallback");
+        assert_eq!(f.satellites, None);
     }
 
     #[test]
