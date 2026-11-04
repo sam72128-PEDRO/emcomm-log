@@ -104,6 +104,7 @@ pub fn age_s(fix_time: DateTime<Utc>, now: DateTime<Utc>) -> f64 {
     ((now - fix_time).num_milliseconds() as f64 / 1000.0).max(0.0)
 }
 
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn source_for(kind: SerialKind) -> LocationSource {
     match kind {
         SerialKind::Usb => LocationSource::ExternalUsbNmea,

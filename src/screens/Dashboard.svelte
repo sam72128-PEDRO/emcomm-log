@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID } from "../lib/platform";
   import {
     CloudLightning,
     Radio,
@@ -313,6 +314,7 @@
             >{/if}
           <button
             class="small"
+            hidden={IS_ANDROID}
             onclick={() => api.revealPath(info.path).catch((e) => app.toast("error", toAppError(e).message))}
             ><FolderSearch size={14} />Reveal</button
           >

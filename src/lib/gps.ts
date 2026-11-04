@@ -1,5 +1,6 @@
 // GPS settings helpers (2.1). One fix on request; never tracking.
 import type * as T from "./types";
+import { IS_ANDROID } from "./platform";
 
 export const DEFAULT_GPS: T.GpsSettings = {
   preferred: "auto",
@@ -9,7 +10,8 @@ export const DEFAULT_GPS: T.GpsSettings = {
   gpsd_endpoint: "127.0.0.1:2947",
 };
 
-export const GPS_TIMEOUT_S = 30;
+// A tablet's GPS starting cold (no network assistance) can take well over 30 s outdoors.
+export const GPS_TIMEOUT_S = IS_ANDROID ? 90 : 30;
 export const GPS_MAX_AGE_S = 10;
 
 /** Which source "Capture GPS" uses first: a configured receiver, else the OS location service. */

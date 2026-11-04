@@ -1,7 +1,8 @@
 # EMCOMM LOG 2.0
 
 Offline, single-user desktop communications log for routine logging, amateur radio (HAM), and emergency
-activations. Windows, macOS, and Linux. Tauri 2 + Svelte 5/TypeScript UI, Rust core, SQLite storage.
+activations. Windows, macOS, Linux, and Android tablets. Tauri 2 + Svelte 5/TypeScript UI, Rust core, SQLite
+storage.
 
 - Every **Save Entry / Save Changes** commits directly to the logbook's SQLite database in the folder you
   chose (WAL + `synchronous=FULL`, verified on open). There is no "Save Logbook" step.
@@ -97,6 +98,12 @@ To check a Windows/Linux `.emlog` on the Mac, download a CI `emlog-fixture-*` ar
 
 `EMCOMM_DATA_DIR=<folder>` relocates the local app-data folder (settings, profiles, presets, drafts),
 for testing or portable use.
+
+## Android tablet
+
+A signed APK for large Android tablets (Android 11+, arm64; built and tested for a Galaxy Tab S7 FE) is
+built on the Mac with `npx tauri android build --apk --target aarch64`. Install, storage, microSD
+backups, signing and code layout: [docs/ANDROID_TABLET.md](docs/ANDROID_TABLET.md).
 
 ## Signing
 

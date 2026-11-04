@@ -134,3 +134,36 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     pre-migration copy) only when unarchived.
 37. **Recents are a query, not a table**: the newest 2000 active entries, grouped per field, newest first then
     most used, 30 values, offered through `<datalist>` so a value is applied only when picked.
+
+## Android tablet decisions
+
+38. **Tablet only, Android 11+ (API 30), arm64.** The manifest declares large/xlarge screens only
+    (`requiresSmallestWidthDp=600`). Package id `org.emcommlog.tablet` via `tauri.android.conf.json`,
+    so the desktop identifier and its app-data folder are unchanged.
+39. **Live logbooks live in app-private internal storage.** Android gives apps real paths, file locks
+    and atomic renames only there; SAF `content://` documents cannot back a live SQLite database. The
+    lock, location checks and WAL/`synchronous=FULL` behave as on desktop (`fsutil` treats Android as
+    "not a network file system"; no code change needed).
+40. **Backups go to the microSD card's app-specific folder** (`getExternalFilesDirs`) or to internal
+    storage. That folder is a real path, so the existing verified backup code runs unchanged. Android
+    deletes it on uninstall, so copies that must outlive the app are `.emlog` packages saved through SAF.
+41. **Files in and out go through the app cache.** Picked documents are copied into the cache before
+    the core reads them; exports are written to the cache (temp + rename as on desktop) and then copied
+    to the document chosen with "Save to…". Only `cache/shared/` is exposed through the FileProvider.
+42. **No INTERNET permission and `allowBackup=false`:** the app cannot use the network, and Android cloud
+    backup never copies its data.
+43. **Android lifecycle.** Leaving the foreground flushes drafts, checkpoints the WAL and runs an
+    automatic backup (skipped if unchanged), because Android may end the process without a close event.
+    When the activity finishes, the process ends, so a launch never reuses a process without a webview.
+    The last open logbook is reopened on launch (remembered per device in WebView storage).
+44. **Back button** closes the top dialog, then returns to the Dashboard/Logbooks screen, then offers
+    Exit, which runs the normal close workflow. Text inputs keep the system's own Back (hide keyboard).
+45. **Release signing key** is kept outside the repository (`~/.emcomm-android/`), referenced by a
+    git-ignored `keystore.properties`.
+46. **Tablet location instead of external GPS (2.1 on Android).** External receivers (serial NMEA, gpsd)
+    are not used on the tablet; the core already leaves `serialport` out of Android builds. The 2.1 "OS
+    location" source maps to Android's `LocationManager.getCurrentLocation`: the GPS provider when the
+    tablet has one (works offline → *internal GNSS* / Device GPS), otherwise the network provider
+    (*OS position*). No Google Play services, no tracking: one fix per explicit Capture/Test, the
+    permission requested only then, the desktop freshness rule (`gps::os::outcome`) applied, a
+    satellite count of 0 treated as not reported, and a 90 s timeout for cold GPS starts.
