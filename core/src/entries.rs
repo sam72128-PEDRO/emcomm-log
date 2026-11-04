@@ -14,9 +14,11 @@ pub const MAX_PAGE: u32 = 500;
 const ENTRY_SELECT: &str = "SELECT e.id, e.sequence_no, e.kind, e.event_at_utc, e.event_timezone, e.event_utc_offset_min,
     e.recorded_at_utc, e.updated_at_utc, e.status, e.voided_at_utc, e.void_reason, e.direction, e.priority, e.handling,
     e.flagged, e.from_text, e.to_text, e.subject, e.body, e.channel, e.location, e.operator_snapshot_json, e.tags_json,
-    e.current_revision, e.op_id, (f.entry_id IS NOT NULL),
+    e.current_revision, e.op_id, e.station_snapshot_json, e.operator_location_json, e.reported_location_json,
+    (f.entry_id IS NOT NULL),
     h.entry_id, h.their_call, h.station_call, h.operator_call, h.qso_start_utc, h.qso_end_utc, h.frequency_hz, h.band,
     h.mode, h.submode, h.rst_sent, h.rst_rcvd, h.my_grid, h.their_grid, h.qso_notes,
+    h.my_pota_ref, h.pota_ref, h.my_sota_ref, h.sota_ref,
     m.entry_id, m.record_type, m.incident_name, m.incident_number, m.operational_period, m.message_number, m.precedence,
     m.originator, m.originator_position, m.recipient, m.recipient_position, m.sender, m.receiver, m.sent_at_utc,
     m.received_at_utc, m.reply_requested, m.action_requested, m.response, m.resource_unit, m.assignment,
@@ -65,6 +67,9 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
     let tags_json: String = g!();
     let current_revision: i64 = g!();
     let op_id: Option<String> = g!();
+    let station_json: String = g!();
+    let op_loc_json: Option<String> = g!();
+    let rep_loc_json: Option<String> = g!();
     let favorite: bool = g!();
     let ham_id: Option<String> = g!();
     let ham = if ham_id.is_some() {
@@ -83,9 +88,13 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
             my_grid: g!(),
             their_grid: g!(),
             qso_notes: g!(),
+            my_pota_ref: g!(),
+            pota_ref: g!(),
+            my_sota_ref: g!(),
+            sota_ref: g!(),
         })
     } else {
-        c += 14;
+        c += 18;
         None
     };
     let em_id: Option<String> = g!();
@@ -155,6 +164,16 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
         emergency,
         attachments: vec![],
         op_id,
+        station_snapshot: serde_json::from_str(&station_json).unwrap_or_default(),
+        operator_location: op_loc_json.and_then(|j| serde_json::from_str(&j).ok()),
+        reported_location: rep_loc_json.and_then(|j| serde_json::from_str(&j).ok()),
+    })
+}
+
+fn location_json(l: &Option<Location>) -> AppResult<Option<String>> {
+    Ok(match l {
+        Some(l) => Some(serde_json::to_string(l)?),
+        None => None,
     })
 }
 
@@ -213,8 +232,8 @@ fn check_request_id(id: &str) -> AppResult<()> {
 fn insert_ham(c: &Connection, id: &str, h: &HamFields) -> AppResult<()> {
     c.execute(
         "INSERT INTO entry_ham(entry_id, their_call, station_call, operator_call, qso_start_utc, qso_end_utc, frequency_hz, band,
-            mode, submode, rst_sent, rst_rcvd, my_grid, their_grid, qso_notes)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+            mode, submode, rst_sent, rst_rcvd, my_grid, their_grid, qso_notes, my_pota_ref, pota_ref, my_sota_ref, sota_ref)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
         params![
             id,
             h.their_call,
@@ -230,7 +249,11 @@ fn insert_ham(c: &Connection, id: &str, h: &HamFields) -> AppResult<()> {
             h.rst_rcvd,
             h.my_grid,
             h.their_grid,
-            h.qso_notes
+            h.qso_notes,
+            h.my_pota_ref,
+            h.pota_ref,
+            h.my_sota_ref,
+            h.sota_ref
         ],
     )?;
     Ok(())
@@ -529,8 +552,9 @@ impl Logbook {
             tx.execute(
                 "INSERT INTO entries(id, logbook_id, sequence_no, kind, event_at_utc, event_timezone, event_utc_offset_min,
                     recorded_at_utc, updated_at_utc, status, direction, priority, handling, flagged, from_text, to_text, subject,
-                    body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id, op_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21,?22)",
+                    body, channel, location, operator_snapshot_json, tags_json, current_revision, client_request_id, op_id,
+                    station_snapshot_json, operator_location_json, reported_location_json)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8,'active',?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,1,?21,?22,?23,?24,?25)",
                 params![
                     id,
                     logbook_id,
@@ -553,7 +577,10 @@ impl Logbook {
                     serde_json::to_string(operator)?,
                     serde_json::to_string(&v.tags)?,
                     request_id,
-                    v.op_id
+                    v.op_id,
+                    serde_json::to_string(&crate::station::read_station(&tx)?.snapshot())?,
+                    location_json(&v.operator_location)?,
+                    location_json(&v.reported_location)?
                 ],
             )?;
             if let Some(h) = &v.ham {
@@ -649,7 +676,8 @@ impl Logbook {
             tx.execute(
                 "UPDATE entries SET kind=?2, event_at_utc=?3, event_timezone=?4, event_utc_offset_min=?5, updated_at_utc=?6,
                     direction=?7, priority=?8, handling=?9, flagged=?10, from_text=?11, to_text=?12, subject=?13, body=?14,
-                    channel=?15, location=?16, tags_json=?17, current_revision=?18, op_id=?19
+                    channel=?15, location=?16, tags_json=?17, current_revision=?18, op_id=?19,
+                    operator_location_json=?20, reported_location_json=?21
                  WHERE id=?1",
                 params![
                     entry_id,
@@ -670,7 +698,9 @@ impl Logbook {
                     v.location,
                     serde_json::to_string(&v.tags)?,
                     new_rev,
-                    v.op_id
+                    v.op_id,
+                    location_json(&v.operator_location)?,
+                    location_json(&v.reported_location)?
                 ],
             )?;
             tx.execute("DELETE FROM entry_ham WHERE entry_id=?1", params![entry_id])?;
@@ -971,6 +1001,15 @@ pub fn build_filter(q: &EntryQuery) -> AppResult<(String, Vec<SqlValue>)> {
         for _ in 0..6 {
             p.push(SqlValue::Text(pat.clone()));
         }
+    }
+    let operator = q.operator.trim();
+    if !operator.is_empty() {
+        // A profile id, or the snapshot name for entries whose profile is not on this computer.
+        clauses.push(
+            "(json_extract(e.operator_snapshot_json, '$.profile_id') = ? OR json_extract(e.operator_snapshot_json, '$.name') = ?)".into(),
+        );
+        p.push(SqlValue::Text(operator.to_string()));
+        p.push(SqlValue::Text(operator.to_string()));
     }
     for t in &q.tags {
         let t = t.trim();

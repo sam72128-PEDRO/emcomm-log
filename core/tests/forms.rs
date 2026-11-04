@@ -144,13 +144,14 @@ fn a17_v1_logbook_and_package_upgrade_with_a_kept_copy() {
     export_package(&dir, &pkg).unwrap();
 
     let lb = Logbook::open(&dir).unwrap();
-    assert!(lb.notices.iter().any(|n| n.contains("upgraded from schema 1 to 3")), "{:?}", lb.notices);
+    let latest = migrate::latest_version(LOGBOOK_MIGRATIONS);
+    assert!(lb.notices.iter().any(|n| n.contains(&format!("upgraded from schema 1 to {latest}"))), "{:?}", lb.notices);
     let copies: Vec<_> = fs::read_dir(dir.join(PRE_MIGRATION_DIR)).unwrap().flatten().collect();
     assert_eq!(copies.len(), 1);
     let old = Connection::open(copies[0].path()).unwrap();
     assert_eq!(migrate::current_version(&old).unwrap(), 1, "the kept copy is the untouched V1 database");
     let info = lb.info().unwrap();
-    assert_eq!(info.schema_version, 3);
+    assert_eq!(info.schema_version, latest);
     assert_eq!(info.incident.operational_period, "OP03 1200-2000", "free-text period preserved, not converted");
     assert!(lb.periods().unwrap().is_empty(), "nothing is guessed from the free text");
     let page = lb.list_entries(&all_query()).unwrap();
@@ -161,7 +162,7 @@ fn a17_v1_logbook_and_package_upgrade_with_a_kept_copy() {
     let other = tempfile::tempdir().unwrap();
     let imp = import_package(&pkg, other.path(), Some("Imported V1"), &[]).unwrap();
     let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
-    assert_eq!(lb2.info().unwrap().schema_version, 3);
+    assert_eq!(lb2.info().unwrap().schema_version, migrate::latest_version(LOGBOOK_MIGRATIONS));
     assert_eq!(lb2.list_entries(&all_query()).unwrap().items.len(), 1);
 }
 

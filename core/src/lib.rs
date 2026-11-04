@@ -15,6 +15,7 @@ pub mod models;
 pub mod package;
 pub mod periods;
 pub mod snapshot;
+pub mod station;
 pub mod validate;
 
 pub use error::{AppError, AppResult, ErrorCode};

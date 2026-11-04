@@ -246,12 +246,15 @@ impl AppDb {
             organization: short("organization", &p.organization, 120)?,
             position: short("position", &p.position, 80)?,
             grid: validate::normalize_grid("grid", &p.grid)?,
+            license_country: short("license_country", &p.license_country, 60)?,
+            unit: short("unit", &p.unit, 120)?,
         })
     }
 
     pub fn list_profiles(&self) -> AppResult<Vec<Profile>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, callsign, license_class, organization, position, grid, active, created_at_utc, updated_at_utc
+            "SELECT id, name, callsign, license_class, organization, position, grid, active, created_at_utc, updated_at_utc,
+                    license_country, unit
              FROM profiles ORDER BY active DESC, name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -263,6 +266,8 @@ impl AppDb {
                 organization: r.get(4)?,
                 position: r.get(5)?,
                 grid: r.get(6)?,
+                license_country: r.get(10)?,
+                unit: r.get(11)?,
                 active: r.get(7)?,
                 created_at_utc: r.get(8)?,
                 updated_at_utc: r.get(9)?,
@@ -280,9 +285,10 @@ impl AppDb {
         let id = fsutil::new_uuid();
         let now = now_utc();
         self.conn.execute(
-            "INSERT INTO profiles(id, name, callsign, license_class, organization, position, grid, active, created_at_utc, updated_at_utc)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?8)",
-            params![id, p.name, p.callsign, p.license_class, p.organization, p.position, p.grid, now],
+            "INSERT INTO profiles(id, name, callsign, license_class, organization, position, grid, active, created_at_utc, updated_at_utc,
+                license_country, unit)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?8, ?9, ?10)",
+            params![id, p.name, p.callsign, p.license_class, p.organization, p.position, p.grid, now, p.license_country, p.unit],
         )?;
         self.get_profile(&id)
     }
@@ -291,8 +297,9 @@ impl AppDb {
     pub fn update_profile(&mut self, id: &str, p: &ProfileInput) -> AppResult<Profile> {
         let p = Self::validate_profile(p)?;
         let n = self.conn.execute(
-            "UPDATE profiles SET name=?2, callsign=?3, license_class=?4, organization=?5, position=?6, grid=?7, updated_at_utc=?8 WHERE id=?1",
-            params![id, p.name, p.callsign, p.license_class, p.organization, p.position, p.grid, now_utc()],
+            "UPDATE profiles SET name=?2, callsign=?3, license_class=?4, organization=?5, position=?6, grid=?7, updated_at_utc=?8,
+                license_country=?9, unit=?10 WHERE id=?1",
+            params![id, p.name, p.callsign, p.license_class, p.organization, p.position, p.grid, now_utc(), p.license_country, p.unit],
         )?;
         if n == 0 {
             return Err(AppError::not_found("Operator profile not found"));

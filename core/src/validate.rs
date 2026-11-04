@@ -231,6 +231,10 @@ pub fn validate_ham(h: &HamFields, require_qso: bool) -> AppResult<HamFields> {
         my_grid: normalize_grid("ham.my_grid", &h.my_grid)?,
         their_grid: normalize_grid("ham.their_grid", &h.their_grid)?,
         qso_notes: multi_line("ham.qso_notes", &h.qso_notes, MAX_LONG)?,
+        my_pota_ref: normalize_pota_ref("ham.my_pota_ref", &h.my_pota_ref)?,
+        pota_ref: normalize_pota_ref("ham.pota_ref", &h.pota_ref)?,
+        my_sota_ref: normalize_sota_ref("ham.my_sota_ref", &h.my_sota_ref)?,
+        sota_ref: normalize_sota_ref("ham.sota_ref", &h.sota_ref)?,
     };
     check_order("ham.qso_end_utc", &out.qso_start_utc, &out.qso_end_utc)?;
     if let (Some(hz), false) = (out.frequency_hz, out.band.is_empty()) {
@@ -378,6 +382,8 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
             }
             other => other.clone(),
         },
+        operator_location: input.operator_location.as_ref().map(|l| validate_location("operator_location", l)).transpose()?,
+        reported_location: input.reported_location.as_ref().map(|l| validate_location("reported_location", l)).transpose()?,
     })
 }
 
@@ -485,6 +491,106 @@ pub fn validate_preset_config(c: &PresetConfig, book: LogbookType) -> AppResult<
             .collect(),
         templates,
     })
+}
+
+// ---------- 2.1: locations and activation references ----------
+
+/// Validate a location value: coordinates both or neither, finite and in WGS84 range; quality fields
+/// non-negative; times RFC 3339. Coordinates keep their full precision.
+pub fn validate_location(field: &str, l: &Location) -> AppResult<Location> {
+    let f = |name: &str| format!("{field}.{name}");
+    match (l.latitude_deg, l.longitude_deg) {
+        (Some(lat), Some(lon)) => {
+            if !lat.is_finite() || !(-90.0..=90.0).contains(&lat) {
+                return Err(AppError::validation(&f("latitude_deg"), "Latitude must be between -90 and 90 degrees"));
+            }
+            if !lon.is_finite() || !(-180.0..=180.0).contains(&lon) {
+                return Err(AppError::validation(&f("longitude_deg"), "Longitude must be between -180 and 180 degrees"));
+            }
+        }
+        (None, None) => {}
+        _ => return Err(AppError::validation(&f("latitude_deg"), "Enter both latitude and longitude, or neither")),
+    }
+    let out = Location {
+        latitude_deg: l.latitude_deg,
+        longitude_deg: l.longitude_deg,
+        label: single_line(&f("label"), &l.label, MAX_MEDIUM)?,
+        maidenhead: normalize_grid(&f("maidenhead"), &l.maidenhead)?,
+        source: l.source,
+        provider_id: single_line(&f("provider_id"), &l.provider_id, MAX_MEDIUM)?,
+        captured_at_utc: opt_time(&f("captured_at_utc"), &l.captured_at_utc)?,
+        accuracy_m: match l.accuracy_m {
+            Some(a) if !a.is_finite() || a < 0.0 => {
+                return Err(AppError::validation(&f("accuracy_m"), "Accuracy must be a positive number of metres"));
+            }
+            a => a,
+        },
+        altitude_m: match l.altitude_m {
+            Some(a) if !a.is_finite() || !(-1000.0..=100_000.0).contains(&a) => {
+                return Err(AppError::validation(&f("altitude_m"), "Altitude is out of range"));
+            }
+            a => a,
+        },
+        satellites: match l.satellites {
+            Some(n) if n > 200 => return Err(AppError::validation(&f("satellites"), "Satellite count is out of range")),
+            n => n,
+        },
+        notes: multi_line(&f("notes"), &l.notes, MAX_LONG)?,
+    };
+    if out.latitude_deg.is_none() && out.label.is_empty() && out.maidenhead.is_empty() {
+        return Err(AppError::validation(&f("label"), "A location needs coordinates, a grid locator or a place name"));
+    }
+    Ok(out)
+}
+
+/// POTA park reference (ADIF 3.1.8 POTARef): program prefix (1–4 letters/digits), "-", 4–5 digits, and an
+/// optional "@" + ISO 3166-2 code. Accepts current (US-0005) and older (K-0005) prefixes; upper-cases.
+pub fn normalize_pota_ref(field: &str, s: &str) -> AppResult<String> {
+    let t = s.trim().to_uppercase();
+    if t.is_empty() {
+        return Ok(t);
+    }
+    let (main, loc) = match t.split_once('@') {
+        Some((m, l)) => (m, Some(l)),
+        None => (t.as_str(), None),
+    };
+    let ok_main = main.split_once('-').is_some_and(|(p, n)| {
+        (1..=4).contains(&p.len())
+            && p.chars().all(|c| c.is_ascii_alphanumeric())
+            && (4..=5).contains(&n.len())
+            && n.chars().all(|c| c.is_ascii_digit())
+    });
+    let ok_loc = loc.is_none_or(|l| {
+        (4..=6).contains(&l.len())
+            && l.split_once('-').is_some_and(|(c, r)| {
+                c.len() == 2 && c.chars().all(|c| c.is_ascii_alphabetic()) && !r.is_empty() && r.chars().all(|c| c.is_ascii_alphanumeric())
+            })
+    });
+    if ok_main && ok_loc {
+        Ok(t)
+    } else {
+        Err(AppError::validation(field, format!("'{}' is not a POTA park reference (e.g. US-0005)", s.trim())))
+    }
+}
+
+/// SOTA summit reference (ADIF SOTARef): association (prefix + optional region letters), "/", region code,
+/// "-", 3 digits — e.g. W2/WE-003, G/LD-003, VK3/VC-001. Upper-cases.
+pub fn normalize_sota_ref(field: &str, s: &str) -> AppResult<String> {
+    let t = s.trim().to_uppercase();
+    if t.is_empty() {
+        return Ok(t);
+    }
+    let ok = t.split_once('/').is_some_and(|(assoc, rest)| {
+        (1..=4).contains(&assoc.len())
+            && assoc.chars().all(|c| c.is_ascii_alphanumeric())
+            && rest.split_once('-').is_some_and(|(region, num)| {
+                (2..=3).contains(&region.len())
+                    && region.chars().all(|c| c.is_ascii_alphanumeric())
+                    && num.len() == 3
+                    && num.chars().all(|c| c.is_ascii_digit())
+            })
+    });
+    if ok { Ok(t) } else { Err(AppError::validation(field, format!("'{}' is not a SOTA summit reference (e.g. W2/WE-003)", s.trim()))) }
 }
 
 #[cfg(test)]

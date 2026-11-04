@@ -170,6 +170,9 @@ pub struct Logbook {
     lock: Option<LockGuard>,
     db_identity: Option<FileIdentity>,
     pub notices: Vec<String>,
+    /// An archived logbook made by an older version is shown from an upgraded temporary copy, so the
+    /// archived file itself is never changed (2.1 spec §8.2). Unarchiving upgrades it in place.
+    view_copy: Option<PathBuf>,
 }
 
 pub struct CreateParams {
@@ -368,7 +371,18 @@ impl Logbook {
         }
         let from = migrate::current_version(&conn)?;
         let to = migrate::latest_version(LOGBOOK_MIGRATIONS);
-        if from > 0 && from < to {
+        let archived_now: bool = conn.query_row("SELECT archived_at_utc IS NOT NULL FROM logbook", [], |r| r.get(0)).unwrap_or(false);
+        let mut view_copy = None;
+        if from > 0 && from < to && archived_now {
+            let tmp = std::env::temp_dir().join(format!("emcomm-archived-view-{}.sqlite", fsutil::new_uuid()));
+            conn.execute("VACUUM INTO ?1", params![tmp.to_string_lossy()])?;
+            conn = Connection::open(&tmp)?;
+            configure_connection(&conn, false)?;
+            view_copy = Some(tmp);
+            notices.push(format!(
+                "This archived logbook was made by an older version (schema {from}). It is shown from an upgraded temporary copy; the archived file is not changed. Unarchive it to upgrade it in place."
+            ));
+        } else if from > 0 && from < to {
             let copy = pre_migration_copy(&conn, dir, from)?;
             notices.push(format!(
                 "This logbook was upgraded from schema {from} to {to} for this version of EMCOMM LOG. A copy of the previous version was kept at {}.",
@@ -393,6 +407,7 @@ impl Logbook {
             app_version: APP_VERSION.into(),
         };
         match read_descriptor(dir) {
+            _ if view_copy.is_some() => {}
             Some(d)
                 if d.logbook_id == expected.logbook_id
                     && d.name == expected.name
@@ -420,6 +435,7 @@ impl Logbook {
             lock: Some(lock),
             db_identity,
             notices,
+            view_copy,
         })
     }
 
@@ -440,6 +456,7 @@ impl Logbook {
             lock: None,
             db_identity: file_identity(&dir.join(DB_FILE)),
             notices: vec![],
+            view_copy: None,
         })
     }
 
@@ -617,6 +634,9 @@ impl Logbook {
     /// Archive state is stored in the database; files are never moved or deleted.
     pub fn set_archived(&mut self, archived: bool) -> AppResult<()> {
         self.check_storage()?;
+        if !archived && self.view_copy.is_some() {
+            self.upgrade_in_place()?;
+        }
         let tx = self.conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         if archived {
             tx.execute("UPDATE logbook SET archived_at_utc=?1, updated_at_utc=?1 WHERE archived_at_utc IS NULL", params![now_utc()])?;
@@ -669,8 +689,42 @@ impl Logbook {
     }
 
     /// Checkpoint the WAL into the main file and release the lock cleanly.
+    /// Unarchiving asks to edit an archived older-version logbook: upgrade the real file now (keeping a
+    /// verified pre-upgrade copy) and switch from the temporary view copy to it.
+    fn upgrade_in_place(&mut self) -> AppResult<()> {
+        let mut live = Connection::open(self.db_path())?;
+        configure_connection(&live, false)?;
+        let from = migrate::current_version(&live)?;
+        let copy = pre_migration_copy(&live, &self.dir, from)?;
+        migrate::migrate(&mut live, LOGBOOK_MIGRATIONS)?;
+        let (name, ty, created): (String, String, String) =
+            live.query_row("SELECT name, type, created_at_utc FROM logbook", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        write_descriptor(
+            &self.dir,
+            &Descriptor {
+                format: "EMCOMM-LOG-LIVE".into(),
+                descriptor_version: 1,
+                logbook_id: self.id.clone(),
+                name,
+                logbook_type: LogbookType::parse(&ty).unwrap_or(self.logbook_type),
+                schema_version: migrate::latest_version(LOGBOOK_MIGRATIONS),
+                created_at_utc: created,
+                app_version: APP_VERSION.into(),
+            },
+        )?;
+        self.conn = live;
+        if let Some(tmp) = self.view_copy.take() {
+            let _ = fs::remove_file(tmp);
+        }
+        self.notices.push(format!("The logbook was upgraded in place. A copy of the previous version was kept at {}.", copy.display()));
+        Ok(())
+    }
+
     pub fn close(mut self) -> AppResult<()> {
         let _ = self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+        if let Some(tmp) = self.view_copy.take() {
+            let _ = fs::remove_file(tmp);
+        }
         if let Some(l) = self.lock.take() {
             l.release_clean();
         }
@@ -737,6 +791,9 @@ impl Logbook {
 
 impl Drop for Logbook {
     fn drop(&mut self) {
+        if let Some(tmp) = self.view_copy.take() {
+            let _ = fs::remove_file(tmp);
+        }
         // Unclean drop (e.g. panic) leaves lock content so the next open runs an integrity check.
         if let Some(l) = self.lock.take() {
             let _ = l.file.unlock();

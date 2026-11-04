@@ -104,6 +104,10 @@ pub struct ProfileInput {
     pub organization: String,
     pub position: String,
     pub grid: String,
+    #[serde(default)]
+    pub license_country: String,
+    #[serde(default)]
+    pub unit: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -115,6 +119,10 @@ pub struct Profile {
     pub organization: String,
     pub position: String,
     pub grid: String,
+    #[serde(default)]
+    pub license_country: String,
+    #[serde(default)]
+    pub unit: String,
     pub active: bool,
     pub created_at_utc: String,
     pub updated_at_utc: String,
@@ -130,6 +138,8 @@ pub struct OperatorSnapshot {
     pub organization: String,
     pub position: String,
     pub grid: String,
+    pub license_country: String,
+    pub unit: String,
 }
 
 impl From<&Profile> for OperatorSnapshot {
@@ -142,6 +152,8 @@ impl From<&Profile> for OperatorSnapshot {
             organization: p.organization.clone(),
             position: p.position.clone(),
             grid: p.grid.clone(),
+            license_country: p.license_country.clone(),
+            unit: p.unit.clone(),
         }
     }
 }
@@ -300,6 +312,11 @@ pub struct HamFields {
     pub my_grid: String,
     pub their_grid: String,
     pub qso_notes: String,
+    /// Activation references (schema v4): this station's park/summit and the other station's.
+    pub my_pota_ref: String,
+    pub pota_ref: String,
+    pub my_sota_ref: String,
+    pub sota_ref: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -404,6 +421,10 @@ pub struct EntryInput {
     pub new_attachments: Vec<StagedAttachment>,
     /// Operational period (schema v2); None = assigned by event time when forms are made.
     pub op_id: Option<String>,
+    /// Where the logging station was (schema v4); never filled automatically.
+    pub operator_location: Option<Location>,
+    /// A place reported in the traffic, kept apart from the station's own position.
+    pub reported_location: Option<Location>,
 }
 
 impl Default for EntryInput {
@@ -428,6 +449,8 @@ impl Default for EntryInput {
             emergency: None,
             new_attachments: vec![],
             op_id: None,
+            operator_location: None,
+            reported_location: None,
         }
     }
 }
@@ -476,6 +499,96 @@ pub struct Entry {
     pub attachments: Vec<Attachment>,
     #[serde(default)]
     pub op_id: Option<String>,
+    #[serde(default)]
+    pub station_snapshot: StationSnapshot,
+    #[serde(default)]
+    pub operator_location: Option<Location>,
+    #[serde(default)]
+    pub reported_location: Option<Location>,
+}
+
+// ---------- Station, operator shifts, locations (schema v4) ----------
+
+// Where a position came from. OS location is never labelled as GNSS: the OS may use Wi-Fi.
+str_enum!(LocationSource {
+    InternalGnss => "internal_gnss",
+    ExternalUsbNmea => "external_usb_nmea",
+    ExternalBluetoothNmea => "external_bluetooth_nmea",
+    Gpsd => "gpsd",
+    OsPosition => "os_position",
+    Manual => "manual",
+    LogbookDefault => "logbook_default",
+    Reported => "reported",
+    Unknown => "unknown"
+});
+
+/// An immutable location value. Coordinates are WGS84 decimal degrees, both or neither; quality
+/// fields are only set when the source actually reported them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Location {
+    pub latitude_deg: Option<f64>,
+    pub longitude_deg: Option<f64>,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub maidenhead: String,
+    pub source: LocationSource,
+    /// Receiver/port or provider description (e.g. "/dev/cu.usbserial-1410 @ 4800").
+    #[serde(default)]
+    pub provider_id: String,
+    pub captured_at_utc: Option<String>,
+    pub accuracy_m: Option<f64>,
+    pub altitude_m: Option<f64>,
+    pub satellites: Option<u32>,
+    #[serde(default)]
+    pub notes: String,
+}
+
+/// The logbook's station / assignment: a desk, position or portable station, separate from the person.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct StationSnapshot {
+    pub label: String,
+    /// Tactical identifier such as "MARC-5 COMMS" (not a licensed callsign).
+    pub tactical_id: String,
+    /// The licensed station callsign used on the air, if any (club or personal). Never assumed.
+    pub station_callsign: String,
+    pub agency: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct Station {
+    pub label: String,
+    pub tactical_id: String,
+    pub station_callsign: String,
+    pub agency: String,
+    pub default_location: Option<Location>,
+    /// HAM session defaults: this station's POTA park / SOTA summit while activating.
+    pub pota_ref: String,
+    pub sota_ref: String,
+    pub updated_at_utc: String,
+}
+
+impl Station {
+    pub fn snapshot(&self) -> StationSnapshot {
+        StationSnapshot {
+            label: self.label.clone(),
+            tactical_id: self.tactical_id.clone(),
+            station_callsign: self.station_callsign.clone(),
+            agency: self.agency.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperatorSession {
+    pub id: String,
+    pub profile_id: Option<String>,
+    pub operator: OperatorSnapshot,
+    pub started_at_utc: String,
+    pub ended_at_utc: Option<String>,
+    pub note: String,
 }
 
 // ---------- Operational periods (schema v2) ----------
@@ -554,6 +667,8 @@ pub struct EntryQuery {
     pub flagged_only: bool,
     /// Restrict to specific entry ids (Export Selection).
     pub ids: Vec<String>,
+    /// Operator: a profile id, or a name for entries whose profile is not on this computer.
+    pub operator: String,
     /// "event" (default) or "recorded"
     pub sort: String,
     pub descending: bool,
