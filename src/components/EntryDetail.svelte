@@ -6,7 +6,6 @@
     Undo2,
     Copy,
     Download,
-    Paperclip,
     History,
     CircleAlert,
     FileText,
@@ -25,6 +24,7 @@
   import { changeFlags } from "../lib/handling";
   import DirectoryDialog from "./DirectoryDialog.svelte";
   import RelatedEntries from "./RelatedEntries.svelte";
+  import AttachmentGallery from "./AttachmentGallery.svelte";
   import { formatInstant, offsetLabel } from "../lib/time";
 
   let entry = $state<T.Entry | null>(null);
@@ -448,21 +448,7 @@
       {#if entry.attachments.length}
         <fieldset>
           <legend>Attachments</legend>
-          <ul class="atts">
-            {#each entry.attachments as a (a.id)}
-              <li>
-                <button
-                  class="link"
-                  onclick={() =>
-                    api.openAttachment(a.id).catch((e) => app.toast("error", toAppError(e).message))}
-                  ><Paperclip size={13} />{a.display_name}</button
-                >
-                <span class="muted"
-                  >{Math.ceil(a.size_bytes / 1024)} KB · SHA-256 {a.sha256.slice(0, 12)}…</span
-                >
-              </li>
-            {/each}
-          </ul>
+          <AttachmentGallery attachments={entry.attachments} />
         </fieldset>
       {/if}
       <RelatedEntries {entry} />
@@ -565,10 +551,6 @@
     margin: 0;
     max-height: 320px;
     overflow: auto;
-  }
-  .atts {
-    margin: 0;
-    padding-left: 18px;
   }
   .timeline {
     margin: 0;

@@ -1081,6 +1081,7 @@ dependencies = [
 name = "emcomm-log"
 version = "2.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "emcomm-core",
  "serde",

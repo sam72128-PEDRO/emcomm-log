@@ -324,11 +324,25 @@ export interface LogbookIndexRow {
   available: boolean;
 }
 
+export type AttachmentSource = "file" | "drag_drop" | "paste" | "camera" | "photo_picker" | "document_picker" | "import";
 export interface StagedAttachment {
   staging_id: string;
   display_name: string;
   size_bytes: number;
   sha256: string;
+  source?: AttachmentSource;
+  caption?: string;
+  mime?: string;
+}
+export interface PickedFile {
+  path: string;
+  name: string;
+  size_bytes: number;
+}
+export interface AttachProgress {
+  token: string;
+  done: number;
+  total: number;
 }
 
 export interface Attachment {
@@ -340,6 +354,8 @@ export interface Attachment {
   sha256: string;
   added_at_utc: string;
   added_in_revision: number;
+  caption?: string;
+  source?: AttachmentSource;
 }
 
 export interface EntryInput {
@@ -361,6 +377,8 @@ export interface EntryInput {
   ham: HamFields | null;
   emergency: EmergencyFields | null;
   new_attachments: StagedAttachment[];
+  remove_attachments?: string[];
+  attachment_captions?: { id: string; caption: string }[];
   op_id: string | null;
   operator_location: Location | null;
   reported_location: Location | null;

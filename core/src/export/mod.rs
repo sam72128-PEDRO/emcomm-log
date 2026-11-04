@@ -274,8 +274,13 @@ pub fn preview(conn: &Connection, book: LogbookType, req: &ExportRequest) -> App
 
 pub type Col = (&'static str, fn(&Entry, DisplayZone) -> String);
 
+/// Names (and 2.2 captions) only: report files never embed attachment contents or their metadata.
 fn attachment_names(e: &Entry) -> String {
-    e.attachments.iter().map(|a| a.display_name.as_str()).collect::<Vec<_>>().join("; ")
+    e.attachments
+        .iter()
+        .map(|a| if a.caption.is_empty() { a.display_name.clone() } else { format!("{} ({})", a.display_name, a.caption) })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Stable export column order. Documented in docs/EXPORT_FORMATS.md; append only.
