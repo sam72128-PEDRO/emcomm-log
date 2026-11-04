@@ -2,6 +2,7 @@
 //! The Tauri shell is a thin command layer over this crate.
 
 pub mod appdb;
+pub mod attach;
 pub mod backup;
 pub mod directory;
 pub mod drafts;

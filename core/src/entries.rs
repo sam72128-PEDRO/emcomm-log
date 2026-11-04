@@ -212,8 +212,8 @@ fn location_json(l: &Option<Location>) -> AppResult<Option<String>> {
 
 pub fn load_attachments(conn: &Connection, entry_id: &str) -> AppResult<Vec<Attachment>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT id, rel_path, display_name, mime, size_bytes, sha256, added_at_utc, added_in_revision
-         FROM attachments WHERE entry_id=?1 ORDER BY added_at_utc, display_name, id",
+        "SELECT id, rel_path, display_name, mime, size_bytes, sha256, added_at_utc, added_in_revision, caption, source
+         FROM attachments WHERE entry_id=?1 AND removed_in_revision IS NULL ORDER BY added_at_utc, display_name, id",
     )?;
     let rows = stmt.query_map(params![entry_id], |r| {
         Ok(Attachment {
@@ -225,6 +225,8 @@ pub fn load_attachments(conn: &Connection, entry_id: &str) -> AppResult<Vec<Atta
             sha256: r.get(5)?,
             added_at_utc: r.get(6)?,
             added_in_revision: r.get(7)?,
+            caption: r.get(8)?,
+            source: r.get(9)?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
@@ -406,6 +408,9 @@ struct FinalizedAttachment {
     display_name: String,
     size: u64,
     sha256: String,
+    caption: String,
+    source: String,
+    mime: String,
 }
 
 /// Copy a staged file into the live attachments directory (content addressed), verifying its hash.
@@ -454,26 +459,33 @@ fn finalize_attachment(dir: &Path, staged: &StagedAttachment, created: &mut Vec<
     }
     Ok(FinalizedAttachment {
         rel_path,
-        display_name: if staged.display_name.is_empty() { meta.display_name } else { staged.display_name.clone() },
+        display_name: if staged.display_name.is_empty() { meta.display_name.clone() } else { staged.display_name.clone() },
         size: meta.size_bytes,
         sha256: meta.sha256,
+        caption: staged.caption.clone(),
+        // The source and detected type come from staging (the core's record), not from the request.
+        source: if crate::attach::SOURCES.contains(&meta.source.as_str()) { meta.source } else { "file".into() },
+        mime: if meta.mime.is_empty() { guess_mime(&meta.display_name).to_string() } else { meta.mime },
     })
 }
 
 fn insert_attachment(c: &Connection, entry_id: &str, f: &FinalizedAttachment, revision: i64) -> AppResult<()> {
     c.execute(
-        "INSERT INTO attachments(id, entry_id, rel_path, display_name, mime, size_bytes, sha256, added_at_utc, added_in_revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO attachments(id, entry_id, rel_path, display_name, mime, size_bytes, sha256, added_at_utc, added_in_revision,
+            caption, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             fsutil::new_uuid(),
             entry_id,
             f.rel_path,
             f.display_name,
-            guess_mime(&f.display_name),
+            f.mime,
             f.size as i64,
             f.sha256,
             now_utc(),
-            revision
+            revision,
+            f.caption,
+            f.source
         ],
     )?;
     Ok(())
@@ -557,6 +569,9 @@ impl Logbook {
         check_request_id(request_id)?;
         self.ensure_writable()?;
         let mut v = validate_entry_input(input, self.logbook_type, chrono::Utc::now())?;
+        if !v.remove_attachments.is_empty() || !v.attachment_captions.is_empty() {
+            return Err(AppError::validation("attachments", "A new entry has no saved attachments to change"));
+        }
         let dir = self.dir.clone();
         let logbook_id = self.id.clone();
         let mut created: Vec<PathBuf> = Vec::new();
@@ -750,6 +765,26 @@ impl Logbook {
             }
             for f in &finals {
                 insert_attachment(&tx, entry_id, f, new_rev)?;
+            }
+            // 2.2: removals and caption changes are part of this revision. Rows and files stay (history,
+            // backups); a removed attachment simply no longer belongs to the current entry.
+            for id in &v.remove_attachments {
+                let n = tx.execute(
+                    "UPDATE attachments SET removed_in_revision=?3 WHERE id=?1 AND entry_id=?2 AND removed_in_revision IS NULL",
+                    params![id, entry_id, new_rev],
+                )?;
+                if n == 0 {
+                    return Err(AppError::validation("attachments", "That attachment is not on this entry"));
+                }
+            }
+            for c in &v.attachment_captions {
+                let n = tx.execute(
+                    "UPDATE attachments SET caption=?3 WHERE id=?1 AND entry_id=?2 AND removed_in_revision IS NULL",
+                    params![c.id, entry_id, c.caption],
+                )?;
+                if n == 0 {
+                    return Err(AppError::validation("attachments", "That attachment is not on this entry"));
+                }
             }
             let after = load_entry(&tx, entry_id)?;
             if content_view(&after) == content_view(&before) {
