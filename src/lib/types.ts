@@ -593,6 +593,21 @@ export interface ExportRequest {
   filter: EntryQuery | null;
   include_voided: boolean;
   display_zone: "local" | "utc";
+  adif_preset?: AdifPreset;
+  /** Shared files withhold precise coordinates (and 8-character grids) unless this is true. */
+  include_precise_coordinates?: boolean;
+}
+
+export type AdifPreset = "general" | "pota_activator" | "sota_activator" | "sota_chaser";
+
+export interface AdifSummary {
+  eligible: number;
+  skipped: { sequence_no: number; reason: string }[];
+  station_callsigns: string[];
+  operators: string[];
+  refs: string[];
+  first_utc: string | null;
+  last_utc: string | null;
 }
 
 export interface ExportPreview {
@@ -600,6 +615,7 @@ export interface ExportPreview {
   description: string;
   adif_eligible: number | null;
   adif_skipped: number | null;
+  adif?: AdifSummary | null;
 }
 
 export interface ExportResult {

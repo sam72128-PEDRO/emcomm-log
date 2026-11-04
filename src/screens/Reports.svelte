@@ -24,9 +24,23 @@
     { id: "xlsx", label: "Excel (XLSX)", desc: "Spreadsheet with filters and typed UTC times", ext: "xlsx" },
     { id: "csv", label: "CSV", desc: "UTF-8 comma-separated values", ext: "csv" },
     { id: "txt", label: "Text (TXT)", desc: "Readable chronological log", ext: "txt" },
-    { id: "adif", label: "ADIF (.adi)", desc: "Qualifying QSOs only, ADIF 3.1.4", ext: "adi", ham: true },
+    { id: "adif", label: "ADIF (.adi)", desc: "Qualifying QSOs only, ADIF 3.1.8", ext: "adi", ham: true },
   ];
   const available = formats.filter((f) => !f.ham || info.logbook_type === "ham");
+  const presets: { id: T.AdifPreset; label: string; desc: string }[] = [
+    {
+      id: "general",
+      label: "General / QRZ",
+      desc: "Every qualifying QSO, for QRZ, LoTW (via TQSL), Club Log and others",
+    },
+    {
+      id: "pota_activator",
+      label: "POTA activator",
+      desc: "QSOs with your park (My POTA); adds MY_SIG/SIG for POTA's uploader",
+    },
+    { id: "sota_activator", label: "SOTA activator", desc: "QSOs with your summit (My SOTA)" },
+    { id: "sota_chaser", label: "SOTA chaser", desc: "QSOs with a summit worked (SOTA reference)" },
+  ];
 
   let form214 = $state(false);
   let form309 = $state(false);
@@ -36,6 +50,9 @@
   let to = $state(todayDateString(app.zone));
   let includeVoided = $state(app.reportScope === "filter" ? app.logQuery.status !== "active" : false);
   let zone = $state<"local" | "utc">(app.zone);
+  let adifPreset = $state<T.AdifPreset>("general");
+  let preciseCoords = $state(false);
+  let skipAck = $state(false);
   let preview = $state<T.ExportPreview | null>(null);
   let previewErr = $state<string | null>(null);
   let running = $state(false);
@@ -52,13 +69,18 @@
     filter: scope === "filter" ? { ...app.logQuery, limit: 0, offset: 0 } : null,
     include_voided: includeVoided,
     display_zone: zone,
+    adif_preset: adifPreset,
+    include_precise_coordinates: preciseCoords,
   });
+  const summary = $derived(format === "adif" ? (preview?.adif ?? null) : null);
+  const needsAck = $derived(!!summary && summary.skipped.length > 0);
 
   $effect(() => {
     const r = request;
     void app.dataVersion;
     preview = null;
     previewErr = null;
+    skipAck = false;
     api
       .exportPreview(r)
       .then((p) => (preview = p))
@@ -168,12 +190,37 @@
               ><option value="local">Local time</option><option value="utc">UTC</option></select
             >
           </div>
+          <label class="check"
+            ><input type="checkbox" bind:checked={preciseCoords} /> Include precise coordinates</label
+          >
+          <span class="hint" style="margin-top:-4px"
+            >Off by default: place names and 6-character grids are kept, latitude/longitude are withheld. Turn
+            on only when the recipient needs exact positions.{#if format === "adif"}
+              For ADIF this writes MY_LAT/MY_LON from the station position only.{/if}</span
+          >
           <span class="hint"
             >Every report includes the logbook name and type, generated time and zone, the scope description,
             entry numbers, event and recorded times, and status.</span
           >
         </fieldset>
       </div>
+      {#if format === "adif"}
+        <fieldset>
+          <legend>ADIF preset</legend>
+          <div class="formats" role="radiogroup" aria-label="ADIF preset">
+            {#each presets as p (p.id)}
+              <label class="fmt" class:sel={adifPreset === p.id}>
+                <input type="radio" name="adifp" value={p.id} bind:group={adifPreset} class="sr-only" />
+                <strong>{p.label}</strong><span class="muted">{p.desc}</span>
+              </label>
+            {/each}
+          </div>
+          <span class="hint"
+            >One standard ADIF file; the preset only chooses which QSOs qualify. Nothing is uploaded — import
+            the file on the service's own website.</span
+          >
+        </fieldset>
+      {/if}
       <div class="summary" aria-live="polite">
         {#if previewErr}<span class="field-error"><CircleAlert size={15} /> {previewErr}</span>
         {:else if preview}
@@ -182,6 +229,36 @@
             · <strong>{preview.adif_eligible}</strong> eligible QSO(s), {preview.adif_skipped} will be skipped with
             reasons{/if}
           <div class="hint">{preview.description}</div>
+          {#if summary && summary.eligible > 0}
+            <dl class="kv adif-sum">
+              {#if summary.station_callsigns.length}<dt>Station callsign</dt>
+                <dd class="mono">{summary.station_callsigns.join(", ")}</dd>{/if}
+              {#if summary.operators.length}<dt>Operator</dt>
+                <dd class="mono">{summary.operators.join(", ")}</dd>{/if}
+              {#if summary.refs.length}<dt>References</dt>
+                <dd class="mono">{summary.refs.join(", ")}</dd>{/if}
+              {#if summary.first_utc}<dt>UTC span</dt>
+                <dd class="mono">
+                  {summary.first_utc.slice(0, 16).replace("T", " ")} – {(summary.last_utc ?? "")
+                    .slice(0, 16)
+                    .replace("T", " ")} UTC
+                </dd>{/if}
+            </dl>
+          {/if}
+          {#if needsAck && summary}
+            <details open={summary.skipped.length <= 10}>
+              <summary
+                >{summary.skipped.length} entr{summary.skipped.length === 1 ? "y" : "ies"} will be left out</summary
+              >
+              <ul class="skips">
+                {#each summary.skipped as sk (sk.sequence_no)}<li>#{sk.sequence_no}: {sk.reason}</li>{/each}
+              </ul>
+            </details>
+            <label class="check"
+              ><input type="checkbox" bind:checked={skipAck} /> Export without these {summary.skipped.length}
+              entr{summary.skipped.length === 1 ? "y" : "ies"}</label
+            >
+          {/if}
         {:else}<span class="muted">Counting…</span>{/if}
       </div>
       <div class="row">
@@ -191,6 +268,7 @@
           disabled={running ||
             !!previewErr ||
             !preview ||
+            (needsAck && !skipAck) ||
             (format === "adif" ? preview.adif_eligible === 0 : preview.count === 0)}
         >
           {#if running}<LoaderCircle size={16} class="spin" />Exporting…{:else}<FileDown size={16} />Export {formats.find(
@@ -356,5 +434,13 @@
   }
   .small {
     font-size: 12.5px;
+  }
+  .adif-sum {
+    margin: 8px 0 4px;
+  }
+  .skips {
+    max-height: 200px;
+    overflow: auto;
+    margin: 4px 0;
   }
 </style>

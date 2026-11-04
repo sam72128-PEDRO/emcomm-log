@@ -16,6 +16,7 @@
   import KindBadge from "./KindBadge.svelte";
   import Form213Dialog from "./Form213Dialog.svelte";
   import { periodById } from "../lib/periods";
+  import { describeSource, formatCoord } from "../lib/location";
   import { app } from "../lib/state.svelte";
   import { api, newId, toAppError } from "../lib/api";
   import { confirm } from "../lib/confirm.svelte";
@@ -274,8 +275,40 @@
         <dd>
           {entry.operator_snapshot.name}{entry.operator_snapshot.callsign
             ? ` (${entry.operator_snapshot.callsign})`
-            : ""}
+            : ""}{entry.operator_snapshot.license_class ? ` · ${entry.operator_snapshot.license_class}` : ""}
         </dd>
+        {#if entry.station_snapshot && (entry.station_snapshot.tactical_id || entry.station_snapshot.label || entry.station_snapshot.station_callsign)}
+          <dt>Station</dt>
+          <dd>
+            {[
+              entry.station_snapshot.tactical_id,
+              entry.station_snapshot.label,
+              entry.station_snapshot.station_callsign,
+              entry.station_snapshot.agency,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </dd>
+        {/if}
+        {#each [["Station position", entry.operator_location], ["Reported location", entry.reported_location]] as const as [title, l] (title)}
+          {#if l}
+            <dt>{title}</dt>
+            <dd>
+              {[l.label, formatCoord(l.latitude_deg, l.longitude_deg), l.maidenhead]
+                .filter(Boolean)
+                .join(" · ")}
+              <span class="muted"
+                >— {describeSource(l.source)}{l.captured_at_utc
+                  ? `, fix ${fmt(l.captured_at_utc)}`
+                  : ""}{l.accuracy_m != null
+                  ? `, ±${Math.round(l.accuracy_m)} m`
+                  : l.latitude_deg != null && !["manual", "reported"].includes(l.source)
+                    ? ", accuracy unknown"
+                    : ""}{l.satellites != null ? `, ${l.satellites} satellites` : ""}</span
+              >
+            </dd>
+          {/if}
+        {/each}
       </dl>
       {#if entry.body}<pre class="body">{entry.body}</pre>{/if}
       {#if entry.ham}

@@ -57,6 +57,8 @@ fn scale_100k_entries() {
                 filter: None,
                 include_voided: false,
                 display_zone: "utc".into(),
+                adif_preset: Default::default(),
+                include_precise_coordinates: false,
             },
             &parent.path().join(format!("big.{}", f.extension())),
         )

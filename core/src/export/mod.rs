@@ -11,7 +11,7 @@ pub mod pdf;
 pub mod txt;
 pub mod xlsx;
 
-use crate::entries::{count_entries, for_each_entry};
+use crate::entries::count_entries;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::fsutil::{self, short_uuid};
 use crate::models::*;
@@ -58,6 +58,13 @@ pub struct ExportRequest {
     pub include_voided: bool,
     /// "local" or "utc"
     pub display_zone: String,
+    /// ADIF preset (2.1): "general" (QRZ), "pota_activator", "sota_activator", "sota_chaser".
+    #[serde(default)]
+    pub adif_preset: adif::AdifPreset,
+    /// Shared exports leave precise coordinates out unless this is set (2.1 spec §4.2). Place names and
+    /// grid squares are always included.
+    #[serde(default)]
+    pub include_precise_coordinates: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +73,9 @@ pub struct ExportPreview {
     pub description: String,
     pub adif_eligible: Option<i64>,
     pub adif_skipped: Option<i64>,
+    /// ADIF preview (2.1): what will be exported and every record left out, with the reason.
+    #[serde(default)]
+    pub adif: Option<adif::AdifSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,24 +257,17 @@ pub fn describe_filter(q: &EntryQuery) -> String {
 pub fn preview(conn: &Connection, book: LogbookType, req: &ExportRequest) -> AppResult<ExportPreview> {
     let (q, description) = resolve_query(req)?;
     let count = count_entries(conn, &q)?;
-    let (mut eligible, mut skipped) = (None, None);
+    let (mut eligible, mut skipped, mut summary) = (None, None, None);
     if req.format == ExportFormat::Adif {
         if book != LogbookType::Ham {
             return Err(AppError::validation("format", "ADIF export is only available for HAM logbooks"));
         }
-        let (mut e, mut s) = (0i64, 0i64);
-        for_each_entry(conn, &q, |entry| {
-            if adif::eligibility(entry).is_ok() {
-                e += 1
-            } else {
-                s += 1
-            }
-            Ok(())
-        })?;
-        eligible = Some(e);
-        skipped = Some(s);
+        let sm = adif::summarize(conn, &q, req.adif_preset)?;
+        eligible = Some(sm.eligible);
+        skipped = Some(sm.skipped.len() as i64);
+        summary = Some(sm);
     }
-    Ok(ExportPreview { count, description, adif_eligible: eligible, adif_skipped: skipped })
+    Ok(ExportPreview { count, description, adif_eligible: eligible, adif_skipped: skipped, adif: summary })
 }
 
 // ---------- column map ----------
@@ -350,7 +353,69 @@ pub fn columns(book: LogbookType) -> Vec<Col> {
         ]),
         LogbookType::General => {}
     }
+    // 2.1 columns, appended so earlier column positions never move.
+    if book == LogbookType::Ham {
+        cols.extend::<Vec<Col>>(vec![
+            ("My POTA", |e, _| e.ham.as_ref().map(|h| h.my_pota_ref.clone()).unwrap_or_default()),
+            ("POTA", |e, _| e.ham.as_ref().map(|h| h.pota_ref.clone()).unwrap_or_default()),
+            ("My SOTA", |e, _| e.ham.as_ref().map(|h| h.my_sota_ref.clone()).unwrap_or_default()),
+            ("SOTA", |e, _| e.ham.as_ref().map(|h| h.sota_ref.clone()).unwrap_or_default()),
+        ]);
+    }
+    cols.extend::<Vec<Col>>(vec![
+        ("Station", |e, _| {
+            let s = &e.station_snapshot;
+            [s.tactical_id.as_str(), s.label.as_str(), s.station_callsign.as_str()]
+                .iter()
+                .filter(|v| !v.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" / ")
+        }),
+        ("Station Position", |e, _| location_text(&e.operator_location)),
+        ("Reported Location", |e, _| location_text(&e.reported_location)),
+    ]);
     cols
+}
+
+thread_local! {
+    /// Set for the duration of one export (exports run on one thread). Default: no precise coordinates.
+    static INCLUDE_COORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run an export with the chosen coordinate policy; the policy resets afterwards.
+pub fn with_coordinate_policy<R>(include: bool, f: impl FnOnce() -> R) -> R {
+    INCLUDE_COORDS.with(|c| c.set(include));
+    let r = f();
+    INCLUDE_COORDS.with(|c| c.set(false));
+    r
+}
+
+pub fn coordinates_included() -> bool {
+    INCLUDE_COORDS.with(|c| c.get())
+}
+
+/// A location for shared reports: place name and grid always; coordinates only when allowed; the
+/// source always, so a reader can tell a GPS fix from a typed place.
+pub fn location_text(l: &Option<crate::models::Location>) -> String {
+    let Some(l) = l else { return String::new() };
+    let mut parts: Vec<String> = Vec::new();
+    if !l.label.is_empty() {
+        parts.push(l.label.clone());
+    }
+    if !l.maidenhead.is_empty() {
+        // An 8-character grid locates to a few hundred metres; shared files keep 6 unless the operator
+        // chose to include precise coordinates.
+        let g: String = if coordinates_included() { l.maidenhead.clone() } else { l.maidenhead.chars().take(6).collect() };
+        parts.push(g);
+    }
+    if let (Some(lat), Some(lon), true) = (l.latitude_deg, l.longitude_deg, coordinates_included()) {
+        parts.push(format!("{lat:.6}, {lon:.6}"));
+    } else if l.latitude_deg.is_some() && parts.is_empty() {
+        parts.push("(coordinates withheld)".into());
+    }
+    parts.push(format!("[{}]", l.source.as_str()));
+    parts.join(" · ")
 }
 
 pub fn fmt_offset(min: i32) -> String {
@@ -407,14 +472,14 @@ pub fn run_export(conn: &Connection, info: &LogbookInfo, req: &ExportRequest, de
     let tmp: PathBuf =
         parent.join(format!(".{}.tmp-{}", dest.file_name().and_then(|n| n.to_str()).unwrap_or("export"), short_uuid(&fsutil::new_uuid())));
     let res = (|| -> AppResult<(i64, Vec<SkippedRecord>, Vec<String>)> {
-        let out = match req.format {
+        let out = with_coordinate_policy(req.include_precise_coordinates, || match req.format {
             ExportFormat::Csv => csv_out::write(conn, &q, &ctx, &tmp).map(|n| (n, vec![], vec![])),
             ExportFormat::Txt => txt::write(conn, &q, &ctx, &tmp).map(|n| (n, vec![], vec![])),
             ExportFormat::Xlsx => xlsx::write(conn, &q, &ctx, &tmp).map(|(n, w)| (n, vec![], w)),
             ExportFormat::Docx => docx::write(conn, &q, &ctx, &tmp).map(|n| (n, vec![], vec![])),
             ExportFormat::Pdf => pdf::write(conn, &q, &ctx, &tmp).map(|n| (n, vec![], vec![])),
-            ExportFormat::Adif => adif::write(conn, &q, &ctx, &tmp),
-        }?;
+            ExportFormat::Adif => adif::write(conn, &q, &ctx, &tmp, req.adif_preset, req.include_precise_coordinates),
+        })?;
         crate::faults::check("export.before_publish")?;
         fsutil::sync_file(&tmp)?;
         fs::rename(&tmp, dest)?;
