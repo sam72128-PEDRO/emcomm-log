@@ -571,6 +571,9 @@ pub struct Entry {
     pub important: bool,
     #[serde(default)]
     pub follow_up: FollowUp,
+    /// Active links to or from this entry (2.2); not part of the entry's history.
+    #[serde(default)]
+    pub related_count: i64,
 }
 
 // ---------- Station, operator shifts, locations (schema v4) ----------

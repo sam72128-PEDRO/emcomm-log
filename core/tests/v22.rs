@@ -317,3 +317,66 @@ fn dir_per_logbook_directory_snapshots_and_travels() {
     assert_eq!(items.len(), 2);
     assert!(items.iter().any(|d| d.identifier == "W4CLB" && d.kind == DirectoryKind::AmateurCallsign));
 }
+
+#[test]
+fn rel_links_are_one_hop_audited_and_never_change_entries() {
+    use emcomm_core::links::Relation::*;
+    use emcomm_core::package::export_package;
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Emergency, "Links");
+    let mut lb = Logbook::open(&dir).unwrap();
+    let ids: Vec<Entry> = (1..=11).map(|i| lb.save_new(&input(&format!("Msg {i}")), &rid(), &operator()).unwrap().entry).collect();
+    let (e8, e10, e11) = (&ids[7], &ids[9], &ids[10]);
+    let rev_before: Vec<i64> = ids.iter().map(|e| e.current_revision).collect();
+
+    let a = lb.add_link(&e10.id, &e8.id, RelayOf, "via MARC-5", &operator()).unwrap();
+    assert!(a.outgoing && a.counterpart.sequence_no == 8);
+    lb.add_link(&e11.id, &e10.id, ResponseTo, "", &operator()).unwrap();
+    // Rejections leave the database as it was.
+    assert!(lb.add_link(&e8.id, &e8.id, RelatedTo, "", &operator()).is_err(), "self-link");
+    assert!(lb.add_link(&e10.id, &e8.id, RelayOf, "", &operator()).is_err(), "duplicate");
+    assert!(lb.add_link(&e8.id, &e10.id, RelayOf, "", &operator()).is_err(), "two-way loop");
+    lb.add_link(&e8.id, &e11.id, RelatedTo, "", &operator()).unwrap();
+    assert!(lb.add_link(&e11.id, &e8.id, RelatedTo, "", &operator()).is_err(), "symmetric stored once");
+    assert!(lb.add_link(&e8.id, "no-such-entry", RelatedTo, "", &operator()).is_err());
+    // A different relation between the same two entries is allowed (a multi-step chain).
+    lb.add_link(&e10.id, &e8.id, FollowUpTo, "", &operator()).unwrap();
+
+    // One hop from #10: relay of #8, follow-up to #8, answered by #11.
+    let v10 = lb.entry_links(&e10.id, false).unwrap();
+    assert_eq!(v10.len(), 3);
+    assert!(v10.iter().any(|v| v.link.relation == ResponseTo && !v.outgoing && v.counterpart.sequence_no == 11));
+    let page = lb.list_entries(&all_query()).unwrap();
+    let count = |n: i64| page.items.iter().find(|e| e.sequence_no == n).unwrap().related_count;
+    assert_eq!((count(8), count(10), count(11), count(1)), (3, 3, 2, 0));
+
+    // Linking changed no entry: same revisions, same numbers, no new entries.
+    let now: Vec<i64> = (1..=11).map(|i| page.items.iter().find(|e| e.sequence_no == i).unwrap().current_revision).collect();
+    assert_eq!(now, rev_before);
+    assert_eq!(page.total, 11);
+
+    // Voiding #8 keeps the link, shown as voided.
+    lb.void_entry(&e8.id, "wrong station", &rid(), &operator()).unwrap();
+    let v10 = lb.entry_links(&e10.id, false).unwrap();
+    assert!(v10.iter().filter(|v| v.counterpart.sequence_no == 8).all(|v| v.counterpart.status == EntryStatus::Void));
+
+    // Removing a link is recorded on the link; it stays visible in the full history.
+    lb.remove_link(&a.link.id, &operator()).unwrap();
+    assert!(lb.remove_link(&a.link.id, &operator()).is_err(), "already removed");
+    assert_eq!(lb.entry_links(&e10.id, false).unwrap().len(), 2);
+    let all = lb.entry_links(&e10.id, true).unwrap();
+    let removed = all.iter().find(|v| v.link.id == a.link.id).unwrap();
+    assert!(removed.link.removed_at_utc.is_some() && removed.link.removed_by.is_some());
+    // The database refuses to delete or rewrite a link.
+    assert!(lb.conn.execute("DELETE FROM entry_links", []).is_err());
+    assert!(lb.conn.execute("UPDATE entry_links SET relation='corrects'", []).is_err());
+
+    // Links travel in the package with both ends present.
+    drop(lb);
+    let pkg = t.path().join("links.emlog");
+    export_package(&dir, &pkg).unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let imp = import_package(&pkg, dest.path(), None, &[]).unwrap();
+    let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
+    assert_eq!(lb2.entry_links(&e10.id, true).unwrap().len(), 3);
+}

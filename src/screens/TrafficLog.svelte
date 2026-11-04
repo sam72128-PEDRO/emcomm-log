@@ -16,6 +16,7 @@
     ArrowRightLeft,
     CircleAlert,
     CalendarClock,
+    Link2,
   } from "@lucide/svelte";
   import { app, defaultQuery } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -548,6 +549,12 @@
                 >
               {:else}<span class="badge ok">Logged</span>{/if}
               {#if e.flagged}<Flag size={14} class="flag" aria-label="Flagged for report" />{/if}
+              {#if e.related_count}<span
+                  class="rel-count"
+                  title="{e.related_count} related entr{e.related_count === 1 ? 'y' : 'ies'}"
+                  ><Link2 size={13} aria-hidden="true" /><span class="sr-only">Related entries:</span
+                  >{e.related_count}</span
+                >{/if}
               {#if e.important}<span title="Important"
                   ><CircleAlert size={14} class="important" aria-label="Important" /></span
                 >{/if}
@@ -745,6 +752,15 @@
     color: var(--danger);
     vertical-align: middle;
     margin-left: 4px;
+  }
+  .rel-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
+    font-size: 12px;
+    color: var(--text-2);
+    vertical-align: middle;
   }
   :global(.important) {
     color: var(--warn);

@@ -16,6 +16,8 @@ const ENTRY_SELECT: &str = "SELECT e.id, e.sequence_no, e.kind, e.event_at_utc, 
     e.flagged, e.from_text, e.to_text, e.subject, e.body, e.channel, e.location, e.operator_snapshot_json, e.tags_json,
     e.current_revision, e.op_id, e.station_snapshot_json, e.operator_location_json, e.reported_location_json,
     e.important, e.follow_up_state, e.follow_up_due_utc, e.follow_up_note, e.follow_up_resolved_utc,
+    (SELECT COUNT(*) FROM entry_links l WHERE l.removed_at_utc IS NULL
+        AND (l.source_entry_id = e.id OR l.target_entry_id = e.id)),
     (f.entry_id IS NOT NULL),
     h.entry_id, h.their_call, h.station_call, h.operator_call, h.qso_start_utc, h.qso_end_utc, h.frequency_hz, h.band,
     h.mode, h.submode, h.rst_sent, h.rst_rcvd, h.my_grid, h.their_grid, h.qso_notes,
@@ -74,6 +76,7 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
     let important: bool = g!();
     let fu_state: String = g!();
     let follow_up = FollowUp { state: FollowUpState::parse(&fu_state).unwrap_or_default(), due_utc: g!(), note: g!(), resolved_utc: g!() };
+    let related_count: i64 = g!();
     let favorite: bool = g!();
     let ham_id: Option<String> = g!();
     let ham = if ham_id.is_some() {
@@ -173,6 +176,7 @@ fn row_to_entry(r: &Row) -> rusqlite::Result<Entry> {
         reported_location: rep_loc_json.and_then(|j| serde_json::from_str(&j).ok()),
         important,
         follow_up,
+        related_count,
     })
 }
 
@@ -238,6 +242,8 @@ pub fn snapshot(e: &Entry) -> serde_json::Value {
     let mut v = serde_json::to_value(e).unwrap_or(serde_json::Value::Null);
     if let Some(o) = v.as_object_mut() {
         o.remove("favorite");
+        // Links live in their own audit trail; adding one is not an edit of the entry.
+        o.remove("related_count");
     }
     v
 }

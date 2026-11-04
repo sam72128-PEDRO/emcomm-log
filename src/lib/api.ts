@@ -119,6 +119,11 @@ export const api = {
   getStation: () => call<T.Station>("get_station"),
   setStation: (station: T.Station) => call<T.Station>("set_station", { station }),
   recentValues: (fields: T.RecentField[]) => call<T.Recents>("recent_values", { fields }),
+  entryLinks: (entryId: string, includeRemoved = false) =>
+    call<T.LinkView[]>("entry_links", { entryId, includeRemoved }),
+  addLink: (sourceId: string, targetId: string, relation: T.Relation, note: string) =>
+    call<T.LinkView>("add_link", { sourceId, targetId, relation, note }),
+  removeLink: (linkId: string) => call<void>("remove_link", { linkId }),
   listDirectory: (query: string) => call<T.DirectoryEntry[]>("list_directory", { query }),
   saveDirectory: (id: string | null, input: T.DirectoryInput) =>
     call<T.DirectorySaveResult>("save_directory", { id, input }),
