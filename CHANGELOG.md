@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.2.0 — 2026-11-04
+
+Six additions from the V2.2 handoff package (EMLOG-2.2-SHARED-2026-11-04). Logbooks upgrade from 2.1
+(schema 4 → 5) with a verified pre-migration copy; nothing is removed or renumbered. **A 2.2 logbook or
+`.emlog` package cannot be opened by 2.1**; 2.1 refuses it as a newer format rather than losing the new data.
+
+**Attachments**
+- One Attachments box in the editor: Attach files… (several at once), drag and drop from Finder/Explorer/
+  file manager, or paste a screenshot into its paste field. Files are copied into the logbook at once, with
+  progress and Cancel and a warning above 25 MB.
+- Captions; where the file came from (file, dropped, pasted); type detected from the content.
+- Removing an attachment is a recorded change (Save Changes); the file is kept for history and backups.
+- Entry Detail shows thumbnails (small re-encoded copies without EXIF), captions, Open and Save As.
+  Programs and scripts are never opened, whatever they are named.
+
+**Related entries**
+- Link an entry to another: Related to, Response to, Follow-up to, Relay of, Corrects. One-hop list in
+  Entry Detail, link search by number or text, counts in the Traffic Log. Links never change either entry
+  and are kept (with who removed them) when removed.
+
+**Important and follow-up**
+- Important and Follow-up needed (with due time and note), separate from Flag for report and from message
+  status. Resolve/Reopen from Entry Detail. Traffic Log filters; Dashboard Open Follow-ups card (with overdue
+  count) opens the filtered log. Every change is a revision. No reminders or notifications are sent.
+
+**Logbook directory**
+- Per-logbook list of stations, tactical identifiers and organizations (Settings → Logbook Directory, or
+  Save to Directory from an entry). Offered first while typing; "Use these" fills channel/frequency/mode only
+  when you click it. Editing the directory never changes saved entries. Travels with the logbook.
+
+**ADIF import (HAM logbooks)**
+- Reports → Import ADIF…: preview every QSO with possible duplicates (call, UTC minute, band, mode, station
+  and park/summit) and anything that cannot be imported with the reason; choose which to import; all are
+  saved together or none. POTA (including park-to-park and multi-park lists), SOTA, separate station and
+  operator callsigns, UTC dates across midnight, unknown fields kept. Re-importing a file doubles nothing.
+
+**Review before export**
+- Every export and ICS 213/214/309 shows exactly which entries it will contain; uncheck any; excluded entries
+  are listed with the reason. If an entry is edited or voided before the file is written, the export stops.
+  ICS 214 can start from a Traffic Log selection; entries outside the period are blocked, never added.
+  Reviewing never changes an entry.
+
 ## 2.1.0 — 2026-11-03
 
 Desktop enhancement (spec EMLOG-DESKTOP-ENH-2026-11-03). Logbooks upgrade from 2.0 (schema 3 → 4) with a

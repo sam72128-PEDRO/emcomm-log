@@ -108,6 +108,52 @@ Exports leave out precise latitude/longitude by default and shorten grids to 6 c
 stay. Tick **Include precise coordinates** on the Reports screen to include them. `.emlog` packages and
 backups are full copies and always contain them.
 
+### Attachments (2.2)
+
+The **Attachments** box (full Quick Entry and Edit) takes files three ways: **Attach files…** (choose several),
+**drag and drop** onto the box from Finder / File Explorer / your file manager, or **paste** a screenshot: click
+the small *paste an image* field in the box and press `Ctrl/Cmd+V` (pasting anywhere else still pastes text as
+usual). Each file is copied into the logbook straight away, so the original may be on a USB stick or deleted
+later. Large files (25 MB and up) ask first; a copy in progress shows a progress bar and **Cancel**.
+
+Add a **caption** to any attachment. A new entry's attachments belong to it only when you save it; until then
+they are kept with the recovery draft. On a saved entry, **Remove** marks an attachment for removal and Save
+Changes records it as a change; the file itself is kept for history and backups.
+
+Entry Detail shows small previews of photos (made without the photo's hidden EXIF data, such as the GPS
+position), the caption, size and where it came from, with **Open** and **Save As…**. EMCOMM LOG never opens a
+file by itself, and never opens programs or scripts at all (use Save As). Reports list attachment names and
+captions only; the files themselves are never put in a report. A `.emlog` package or backup contains the
+original files, including any location data inside photos.
+
+### Important and follow-up (2.2)
+
+Next to *Flag for report* are **Important** and **Follow-up needed**. A follow-up can have a due time and a
+short note, and is *Open* until you mark it *Resolved*. In Entry Detail: **Mark Important**, **Follow-up
+needed**, **Resolve follow-up**, **Reopen follow-up**; each is saved at once as a new revision. These are
+separate from Flag for report (which ICS reports use) and from the message status (Pending, Acknowledged…):
+resolving a follow-up is not an acknowledgement. The Dashboard's **Open Follow-ups** card counts them (and how
+many are overdue) and opens the Traffic Log filtered to them. No reminders or notifications are sent.
+
+### Related entries (2.2)
+
+In Entry Detail, **Related entries** lists links to other entries in this logbook: *Related to*, *Response to*,
+*Follow-up to*, *Relay of*, *Corrects* (a new message correcting an earlier one; to fix a typo, Edit the entry
+instead). **Link existing entry…** searches by number (`#12` or `12`) or text; ↑ ↓ and Enter work. Click a
+number to open that entry. A link changes neither entry and adds nothing to the log; removing a link asks first
+and is recorded. A voided entry keeps its links, shown as VOIDED. The Traffic Log shows how many links each
+entry has.
+
+### Logbook directory (2.2)
+
+**Settings → Logbook Directory** (while a logbook is open) holds the stations you work with in *this*
+logbook: a name, type (amateur callsign, tactical identifier, station, organization, other), identifier,
+agency, preferred channel/frequency/mode, also-known-as names, tags and notes. **Save to Directory…** in Entry
+Detail starts one from an entry. While typing From/To or a callsign, directory items are suggested first
+(marked *Directory*); when the text matches one, **Use these** fills its channel, frequency and mode, only if you
+click it. Editing or removing a directory item never changes entries already saved. Each logbook has its own
+directory, and it travels in `.emlog` packages.
+
 ## 4. Traffic Log, corrections, void
 
 `Ctrl/Cmd+3` (search: `Ctrl/Cmd+F`). Filter by text, type, station/callsign, period, status, and *More filters*
@@ -162,6 +208,31 @@ inclusive date range, or the current Traffic Log filter/selection. Voided entrie
 Before exporting you see the station callsign(s), operators, references and UTC span, and **every entry that
 will be left out with its reason**; tick *Export without these* to go ahead. EMCOMM LOG never uploads: import
 the file on the service's website.
+
+### Review before export (2.2)
+
+**Review and export…** lists every entry the export would contain, with a checkbox for each. Uncheck what you
+do not want, or use *Select all eligible* / *Deselect all*; entries that cannot be included (voided, not a QSO
+for ADIF, missing data for the preset) are listed with the reason. Press Enter on a row to open that entry.
+Then choose where to save. If someone edits or voids one of the reviewed entries before the file is written,
+the export stops and names the entry; review it again. Reviewing never changes an entry. Above 10,000 entries
+the review shows the counts only and exports the whole selection.
+
+The ICS 213, 214 and 309 dialogs show the same review. **ICS 214** can also start from a Traffic Log selection
+(**ICS 214…**): entries outside the chosen operational period are shown as blocked and are never put on the
+form.
+
+### Import QSOs from ADIF (HAM logbooks, 2.2)
+
+**Reports → Import ADIF…**, then choose an `.adi` file from QRZ, LoTW, POTA, SOTA or another program. Before
+anything is saved you see every QSO: **New**, **Duplicate?** (same callsign, UTC minute, band, mode, station
+callsign and park/summit as a QSO already in the log, earlier in the file, or imported before) and **Cannot
+import** (with the reason, e.g. a bad date). New QSOs are ticked; tick a duplicate to import it anyway. If the
+file has no station or operator callsign for a QSO, you can give one; values in the file always win, and your
+profile and this logbook's station are not changed. Each QSO becomes a new entry with the next number and the
+QSO's UTC start as its time; you are recorded as who imported it. All chosen QSOs are saved together, or none
+are if anything fails. A record listing several parks becomes one QSO per park. Fields EMCOMM LOG does not use
+are kept with each QSO. The result shows a summary you can copy.
 
 ### Operational periods and ICS forms (Emergency logbooks)
 

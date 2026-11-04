@@ -134,3 +134,39 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
     pre-migration copy) only when unarchived.
 37. **Recents are a query, not a table**: the newest 2000 active entries, grouped per field, newest first then
     most used, 30 values, offered through `<datalist>` so a value is applied only when picked.
+
+## 2.2 decisions (EMLOG-2.2-SHARED-2026-11-04)
+
+38. **Schema v5 is additive.** New columns on `entries` (Important, follow-up) and `attachments` (caption,
+    source, `removed_in_revision`); new tables `entry_links`, `station_directory`, `adif_import_batches`,
+    `entry_import_source`. No table is rebuilt; the `entry_revisions` CHECK list is untouched.
+39. **Link history lives on the link.** `entry_revisions.action` only allows create/edit/void/restore and SQLite
+    cannot widen a CHECK without rebuilding the table, so link changes are recorded on `entry_links` itself:
+    rows are never deleted (trigger), removal sets who/when, and the core columns are immutable (trigger).
+    `related_to` is stored once in canonical order. Linking is not an entry edit (no revision, and the
+    related-entry count is excluded from revision snapshots).
+40. **Follow-up and Important are entry fields saved through Save Changes**, so each change is a normal revision
+    with before/after. `resolved_utc` is owned by the core. Voided entries are never counted as open.
+41. **Attachments are removed, not deleted.** A removal marks the row with the revision that removed it; the file
+    stays for history, backups and packages (`cleanup_orphans` counts every row as a reference). Thumbnails are
+    decoded with pixel/size/allocation limits and re-encoded as PNG, so they carry no EXIF. "Open" is refused for
+    programs and scripts detected by content or by name; Save As is offered instead. Pasted images reach the
+    core as raw bytes in the request body.
+42. **The directory is per logbook and copies text.** Choosing an item never links an entry to it; editing or
+    deleting an item never changes entries. Channel/frequency/mode are offered with an explicit "Use these".
+43. **ADIF import is one transaction with provenance.** The file is analysed again at import and must match the
+    previewed SHA-256. Duplicate key: call, UTC minute, band (or band from frequency), resolved mode, station
+    callsign, and both park and summit references; records already imported (by canonical record hash) are
+    duplicates. Multi-park lists are split one QSO per park pair (max 16). Imported QSOs record their own
+    station callsign in the station snapshot, not the logbook's current station; the importer is the entry's
+    operator snapshot. Field lengths are read as bytes, falling back to characters when bytes would split a
+    UTF-8 character. ADX/XML is not supported.
+44. **Review is a snapshot by id and revision.** Exports and forms carry the approved `{id, revision}` list; the
+    core re-checks it before writing and refuses on any change. Above 10,000 entries the review shows counts
+    only and the whole scope is exported. Image appendices in PDF/DOCX are not in 2.2: reports list attachment
+    names and captions only.
+45. **Genuine 2.1 fixtures.** `core/tests/fixtures/v21/` was written by the 2.1.0 code itself (not simulated by
+    rolling back migrations) and is used for the v5 migration and package tests.
+46. **Android adapters are separate work.** Camera, Photo Picker, SAF picking and `ACTION_CREATE_DOCUMENT` belong
+    on the Android branch, rebased onto 2.2; the core (schema, parser, duplicate rules, review) is shared.
+

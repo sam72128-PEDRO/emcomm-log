@@ -25,6 +25,12 @@ SOTA**. A location is written as `place · grid · lat, lon · [source]`. By def
 omitted (`(coordinates withheld)` when nothing else describes the place) and grids are cut to 6 characters;
 *Include precise coordinates* writes them in full (6 decimals).
 
+### Columns added in 2.2
+
+All logbook types append **Important** (Yes/blank), **Follow-up** (Open/Resolved/blank), **Follow-up Due**
+and **Follow-up Note**. The **Attachments** column now reads `name (caption)` when a caption exists. Report
+files never contain attachment contents. Official ICS forms do not use Important or follow-up.
+
 ## Scope and ordering
 
 - Entire logbook / inclusive date range / current Traffic Log filter (including an explicit selection).
@@ -77,3 +83,12 @@ Field lengths are the byte counts of the ASCII data. Skipped entries are listed 
 `scripts/validate_exports.py` opens the fixtures with independent parsers (Python `csv`, openpyxl,
 python-docx, pypdf, adif-io) and checks counts, ordering, escaping, typed dates, long-text integrity,
 Unicode, page headings and numbering, and ADIF parsing.
+
+## Review Export (2.2)
+
+When an export is reviewed, the request carries the approved `{id, revision}` list. Only those entries are
+written (in the usual event order), the scope description ends with "N entries chosen in review", and the
+export is refused if any listed entry's revision changed (edited, voided) or it no longer exists. ICS
+213/214/309 apply their own eligibility first; a reviewed entry that is not eligible is refused, and eligible
+entries that were unchecked are reported as "left out in review".
+
