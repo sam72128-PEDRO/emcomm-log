@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { IS_ANDROID, shownPath } from "../lib/platform";
   import {
     ChartColumn,
     FileDown,
     PackagePlus,
     FileText,
     FolderSearch,
+    Share2,
     CircleAlert,
     CircleCheck,
     LoaderCircle,
@@ -195,8 +197,8 @@
           >
           <span class="hint" style="margin-top:-4px"
             >Off by default: place names and 6-character grids are kept, latitude/longitude are withheld. Turn
-            on only when the recipient needs exact positions.{#if format === "adif"}{" For ADIF"}
-              this writes MY_LAT/MY_LON from the station position only.{/if}</span
+            on only when the recipient needs exact positions.{#if format === "adif"}&nbsp;For ADIF this writes
+              MY_LAT/MY_LON from the station position only.{/if}</span
           >
           <span class="hint"
             >Every report includes the logbook name and type, generated time and zone, the scope description,
@@ -288,7 +290,8 @@
         <div class="banner ok">
           <CircleCheck size={18} class="icon" />
           <div class="grow">
-            <strong>Exported {result.exported} record(s)</strong> to <span class="mono">{result.path}</span>
+            <strong>Exported {result.exported} record(s)</strong> to
+            <span class="mono">{shownPath(result.path)}</span>
             ({Math.ceil(result.bytes / 1024)} KB).
             {#if result.skipped.length}
               <details>
@@ -320,7 +323,7 @@
             class="small"
             onclick={() =>
               api.revealPath(result!.path).catch((e) => app.toast("error", toAppError(e).message))}
-            ><FolderSearch size={14} />Reveal</button
+            >{#if IS_ANDROID}<Share2 size={14} />Share{:else}<FolderSearch size={14} />Reveal{/if}</button
           >
         </div>
       {/if}
@@ -354,7 +357,7 @@
     <div class="panel-body col">
       <p class="muted" style="margin:0">
         A complete copy of this logbook — every entry including voided ones, revision history, templates,
-        favorites, logbook settings and attachments — for moving to another computer. Report filters do not
+        favorites, logbook settings and attachments — for moving to another device. Report filters do not
         apply. Your operator profiles and local settings are not included. It also contains every recorded
         station and reported position at full precision — share it only with people who should have them.
       </p>
@@ -376,7 +379,7 @@
             class="small"
             onclick={() =>
               api.revealPath(pkgResult!.path).catch((e) => app.toast("error", toAppError(e).message))}
-            ><FolderSearch size={14} />Reveal</button
+            >{#if IS_ANDROID}<Share2 size={14} />Share{:else}<FolderSearch size={14} />Reveal{/if}</button
           >
         {/if}
       </div>

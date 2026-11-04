@@ -5,6 +5,13 @@
   import { api, toAppError } from "./lib/api";
   import { runAction, keyToAction, handleCloseRequested } from "./lib/actions";
   import type { BackupStatus } from "./lib/types";
+  import { IS_ANDROID } from "./lib/platform";
+  import {
+    installAndroidShell,
+    syncSystemBars,
+    rememberOpenLogbook,
+    reopenLastLogbook,
+  } from "./lib/androidShell";
   import TopBar from "./components/TopBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Toasts from "./components/Toasts.svelte";
@@ -29,6 +36,11 @@
     (async () => {
       try {
         app.applyBootstrap(await api.getBootstrap());
+        if (IS_ANDROID) {
+          installAndroidShell();
+          // Android ends background apps without warning; come back to the logbook in use.
+          if (app.settings?.wizard_completed && !app.active) await reopenLastLogbook();
+        }
         app.screen = !app.settings?.wizard_completed ? "wizard" : app.active ? "dashboard" : "home";
         loaded = true;
       } catch (e) {
@@ -73,6 +85,7 @@
     const apply = () => {
       const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
+      if (IS_ANDROID) syncSystemBars(dark);
     };
     apply();
     if (t === "system") {
@@ -93,6 +106,7 @@
   let lastBook: string | null = null;
   $effect(() => {
     const id = app.active?.info.id ?? null;
+    if (IS_ANDROID && loaded) rememberOpenLogbook(id);
     if (id && id !== lastBook) {
       for (const n of app.active?.notices ?? []) app.toast("warn", n, 12000);
       if (app.active?.drafts.length) {
@@ -168,6 +182,9 @@
     flex: 1;
     min-width: 0;
     overflow: auto;
+    /* Contain absolutely positioned descendants (e.g. .sr-only labels) in this scroller, so they
+       never stretch the page itself — visible on short windows such as a tablet with its keyboard up. */
+    position: relative;
     padding: 18px 20px;
   }
   .fatal {

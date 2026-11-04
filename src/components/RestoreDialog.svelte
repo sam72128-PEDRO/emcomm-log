@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID } from "../lib/platform";
   import { onMount } from "svelte";
   import { FolderOpen, CircleAlert, ShieldCheck } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
@@ -97,7 +98,7 @@
     <label for="rs-source">Backup location</label>
     <div class="row">
       <input id="rs-source" type="text" readonly value={source} placeholder="Choose a folder" />
-      <button onclick={chooseSource}><FolderOpen size={16} />Browse…</button>
+      <button onclick={chooseSource}><FolderOpen size={16} />{IS_ANDROID ? "Choose…" : "Browse…"}</button>
     </div>
   </div>
   {#if listErr}<div class="banner error"><CircleAlert size={18} class="icon" />{listErr}</div>{/if}
@@ -155,7 +156,7 @@
         <label for="rs-parent">Restore into folder</label>
         <div class="row">
           <input id="rs-parent" type="text" readonly value={parent} />
-          <button onclick={browseParent}><FolderOpen size={16} />Browse…</button>
+          {#if !IS_ANDROID}<button onclick={browseParent}><FolderOpen size={16} />Browse…</button>{/if}
         </div>
       </div>
     </div>

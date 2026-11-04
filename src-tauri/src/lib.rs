@@ -1,6 +1,9 @@
 //! Tauri shell: typed commands over `emcomm_core`, native menus, file dialogs (Rust-side, so the
 //! webview needs no filesystem capability), backup scheduling, and the close workflow.
 
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(desktop)]
 mod menu;
 
 use emcomm_core::appdb::{AppDb, BackupRun};
@@ -21,6 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
+#[cfg(not(target_os = "android"))]
 use tauri_plugin_dialog::DialogExt;
 
 pub struct AppState {
@@ -203,10 +207,12 @@ async fn check_folder(state: State<'_, AppState>, path: String, purpose: String)
 
 #[derive(Deserialize)]
 pub struct DialogFilter {
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     name: String,
     extensions: Vec<String>,
 }
 
+#[cfg(not(target_os = "android"))]
 fn file_dialog(
     app: &AppHandle,
     title: &str,
@@ -221,24 +227,57 @@ fn file_dialog(
     if let Some(dir) = start.filter(|d| Path::new(d).is_dir()) {
         d = d.set_directory(dir);
     }
+    #[cfg(desktop)]
     if let Some(w) = app.get_webview_window("main") {
         d = d.set_parent(&w);
     }
     d
 }
 
+/// Android spike: there is no folder picker that yields a real filesystem path (SAF gives
+/// `content://` tree URIs, and SQLite needs a path), so "choose a folder" resolves to a fixed
+/// folder in app-private storage. Backups and exports get their own app-private folders.
+#[cfg(mobile)]
+fn mobile_private_dir(app: &AppHandle, kind: &str) -> AppResult<PathBuf> {
+    let base = app.state::<AppState>().data_dir.clone();
+    let dir = base.join(kind);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+#[cfg(not(target_os = "android"))]
 fn to_path(p: tauri_plugin_dialog::FilePath) -> Option<String> {
     p.into_path().ok().map(|p| p.to_string_lossy().to_string())
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 async fn pick_folder(app: AppHandle, title: String, start: Option<String>) -> Cmd<Option<String>> {
     Ok(file_dialog(&app, &title, &[], start.as_deref()).blocking_pick_folder().and_then(to_path))
 }
 
+#[cfg(mobile)]
+#[tauri::command]
+async fn pick_folder(app: AppHandle, title: String, start: Option<String>) -> Cmd<Option<String>> {
+    let _ = start;
+    let kind = if title.to_lowercase().contains("backup") { "backups" } else { "logbooks" };
+    Ok(Some(mobile_private_dir(&app, kind)?.to_string_lossy().to_string()))
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn pick_file(app: AppHandle, title: String, filters: Vec<DialogFilter>) -> Cmd<Option<String>> {
     Ok(file_dialog(&app, &title, &filters, None).blocking_pick_file().and_then(to_path))
+}
+
+/// Android: the system picker returns a `content://` document; the bridge copies it into the
+/// app cache so the core can validate and read a real file.
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn pick_file(app: AppHandle, title: String, filters: Vec<DialogFilter>) -> Cmd<Option<String>> {
+    let _ = title;
+    let exts: Vec<String> = filters.into_iter().flat_map(|f| f.extensions).collect();
+    android::pick_document(&app, &exts)
 }
 
 #[tauri::command]
@@ -250,6 +289,14 @@ async fn pick_save_file(
     start: Option<String>,
 ) -> Cmd<Option<String>> {
     let safe = fsutil::safe_component(&default_name, 120);
+    #[cfg(target_os = "android")]
+    {
+        // Android "Save to…" (system document picker). The export is written to the app cache
+        // and copied to the chosen document when it is complete (see `delivered`).
+        let _ = (title, filters, start);
+        android::choose_save_target(&app, &safe)
+    }
+    #[cfg(desktop)]
     Ok(file_dialog(&app, &title, &filters, start.as_deref()).set_file_name(safe).blocking_save_file().and_then(to_path))
 }
 
@@ -605,7 +652,14 @@ fn allowed_reveal_roots(state: &AppState) -> AppResult<Vec<PathBuf>> {
     Ok(roots)
 }
 
-fn os_open(path: &Path, reveal: bool) -> AppResult<()> {
+/// Android: "open" hands the file to another app; "reveal" opens the share sheet.
+#[cfg(target_os = "android")]
+fn os_open(app: &AppHandle, path: &Path, reveal: bool) -> AppResult<()> {
+    if reveal { android::share_file(app, path) } else { android::view_file(app, path) }
+}
+
+#[cfg(not(target_os = "android"))]
+fn os_open(_app: &AppHandle, path: &Path, reveal: bool) -> AppResult<()> {
     use std::process::Command;
     let status = if cfg!(target_os = "macos") {
         let mut c = Command::new("open");
@@ -627,7 +681,7 @@ fn os_open(path: &Path, reveal: bool) -> AppResult<()> {
 }
 
 #[tauri::command]
-async fn reveal_path(state: State<'_, AppState>, path: String) -> Cmd<()> {
+async fn reveal_path(app: AppHandle, state: State<'_, AppState>, path: String) -> Cmd<()> {
     let p = PathBuf::from(&path);
     if !p.exists() {
         return Err(AppError::new(ErrorCode::StorageUnavailable, "That location is not available"));
@@ -635,23 +689,23 @@ async fn reveal_path(state: State<'_, AppState>, path: String) -> Cmd<()> {
     if !allowed_reveal_roots(&state)?.iter().any(|r| fsutil::is_within(&p, r)) {
         return Err(AppError::new(ErrorCode::PermissionDenied, "Only logbook, backup, and export locations can be revealed"));
     }
-    os_open(&p, true)
+    os_open(&app, &p, true)
 }
 
 /// Open a file this session exported (e.g. a PDF for printing) in the default application.
 #[tauri::command]
-async fn open_export(state: State<'_, AppState>, path: String) -> Cmd<()> {
+async fn open_export(app: AppHandle, state: State<'_, AppState>, path: String) -> Cmd<()> {
     let p = PathBuf::from(&path);
     if !lock(&state.reveal_allow).contains(&p) || !p.is_file() {
         return Err(AppError::new(ErrorCode::PermissionDenied, "Only files exported in this session can be opened"));
     }
-    os_open(&p, false)
+    os_open(&app, &p, false)
 }
 
 #[tauri::command]
-async fn open_attachment(state: State<'_, AppState>, attachment_id: String) -> Cmd<()> {
+async fn open_attachment(app: AppHandle, state: State<'_, AppState>, attachment_id: String) -> Cmd<()> {
     let p = with_book(&state, |lb| lb.attachment_path(&attachment_id))?;
-    os_open(&p, false)
+    os_open(&app, &p, false)
 }
 
 // ---------- entries ----------
@@ -731,7 +785,11 @@ async fn set_favorite(state: State<'_, AppState>, id: String, favorite: bool) ->
 #[tauri::command]
 async fn stage_attachment(app: AppHandle, state: State<'_, AppState>) -> Cmd<Option<StagedAttachment>> {
     with_book(&state, |lb| lb.ensure_writable())?;
-    let Some(path) = file_dialog(&app, "Attach a file", &[], None).blocking_pick_file().and_then(to_path) else { return Ok(None) };
+    #[cfg(not(target_os = "android"))]
+    let picked = file_dialog(&app, "Attach a file", &[], None).blocking_pick_file().and_then(to_path);
+    #[cfg(target_os = "android")]
+    let picked = android::pick_document(&app, &[])?;
+    let Some(path) = picked else { return Ok(None) };
     with_book(&state, |lb| lb.stage_attachment(Path::new(&path))).map(Some)
 }
 
@@ -844,11 +902,28 @@ async fn restore_backup(state: State<'_, AppState>, path: String, parent_dir: St
         .ok_or_else(|| AppError::internal("restored logbook not registered"))
 }
 
+/// Android: copy a finished export to the document chosen with "Save to…". No-op elsewhere.
+#[cfg(target_os = "android")]
+fn delivered<T>(app: &AppHandle, dest: &str, r: AppResult<T>) -> AppResult<T> {
+    match r {
+        Ok(v) => android::deliver_export(app, dest).map(|_| v),
+        Err(e) => {
+            android::forget_export(dest);
+            Err(e)
+        }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn delivered<T>(_app: &AppHandle, _dest: &str, r: AppResult<T>) -> AppResult<T> {
+    r
+}
+
 // ---------- packages ----------
 
 /// Export the open logbook, or any listed logbook by id (read through a consistent snapshot).
 #[tauri::command]
-async fn export_package(state: State<'_, AppState>, id: Option<String>, dest: String) -> Cmd<ExportPackageResult> {
+async fn export_package(app: AppHandle, state: State<'_, AppState>, id: Option<String>, dest: String) -> Cmd<ExportPackageResult> {
     let active = lock(&state.book).as_ref().map(|lb| (lb.id.clone(), lb.dir.clone()));
     let dir = match (id, active) {
         (None, Some((_, d))) => d,
@@ -861,7 +936,9 @@ async fn export_package(state: State<'_, AppState>, id: Option<String>, dest: St
     let d = dest.clone();
     let r = tauri::async_runtime::spawn_blocking(move || package::export_package(&dir, Path::new(&d)))
         .await
-        .map_err(|e| AppError::internal(e.to_string()))??;
+        .map_err(|e| AppError::internal(e.to_string()))
+        .and_then(|r| r);
+    let r = delivered(&app, &dest, r)?;
     lock(&state.reveal_allow).insert(PathBuf::from(dest));
     Ok(r)
 }
@@ -909,7 +986,7 @@ async fn export_preview(state: State<'_, AppState>, req: ExportRequest) -> Cmd<E
 }
 
 #[tauri::command]
-async fn run_export(state: State<'_, AppState>, req: ExportRequest, dest: String) -> Cmd<ExportResult> {
+async fn run_export(app: AppHandle, state: State<'_, AppState>, req: ExportRequest, dest: String) -> Cmd<ExportResult> {
     let (db_path, info) = with_book(&state, |lb| Ok((lb.db_path(), lb.info()?)))?;
     let d = dest.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
@@ -917,7 +994,9 @@ async fn run_export(state: State<'_, AppState>, req: ExportRequest, dest: String
         export::run_export(&conn, &info, &req, Path::new(&d))
     })
     .await
-    .map_err(|e| AppError::internal(e.to_string()))??;
+    .map_err(|e| AppError::internal(e.to_string()))
+    .and_then(|r| r);
+    let r = delivered(&app, &dest, r)?;
     lock(&state.reveal_allow).insert(PathBuf::from(dest));
     Ok(r)
 }
@@ -965,6 +1044,15 @@ async fn switch_operator(state: State<'_, AppState>, profile_id: String, at_utc:
 #[tauri::command]
 async fn gps_sources() -> Cmd<Vec<emcomm_core::gps::GpsSource>> {
     let mut out = Vec::new();
+    // Android tablet: the tablet's own location only (no external receivers, by design).
+    #[cfg(target_os = "android")]
+    out.push(emcomm_core::gps::GpsSource {
+        provider: "os".into(),
+        path: String::new(),
+        label: "Tablet location".into(),
+        serial_kind: None,
+        detail: "The tablet's GPS when it has one (works offline); otherwise Android's network location".into(),
+    });
     #[cfg(not(target_os = "android"))]
     out.extend(tauri::async_runtime::spawn_blocking(emcomm_core::gps::list_serial).await.unwrap_or_default());
     if cfg!(target_os = "linux") {
@@ -1001,6 +1089,9 @@ async fn gps_acquire(app: AppHandle, state: State<'_, AppState>, req: emcomm_cor
             #[cfg(not(target_os = "android"))]
             "serial" => emcomm_core::gps::acquire_serial(&req, &cancel),
             "gpsd" => emcomm_core::gps::acquire_gpsd(&req, &cancel),
+            #[cfg(target_os = "android")]
+            "os" => android::tablet_location(&app, &req),
+            #[cfg(not(target_os = "android"))]
             "os" => {
                 let main = |f: Box<dyn FnOnce() + Send>| {
                     let _ = app.run_on_main_thread(f);
@@ -1018,8 +1109,12 @@ async fn gps_acquire(app: AppHandle, state: State<'_, AppState>, req: emcomm_cor
 }
 
 #[tauri::command]
-async fn gps_cancel(state: State<'_, AppState>) -> Cmd<()> {
+async fn gps_cancel(app: AppHandle, state: State<'_, AppState>) -> Cmd<()> {
     state.gps_cancel.store(true, Ordering::SeqCst);
+    #[cfg(target_os = "android")]
+    android::cancel_tablet_location(&app);
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     Ok(())
 }
 
@@ -1099,6 +1194,7 @@ async fn form214_preview(state: State<'_, AppState>, req: forms::Form214Request)
 
 /// Build an ICS form from a read-only connection off the UI thread, then publish it atomically.
 async fn run_form(
+    app: &AppHandle,
     state: &AppState,
     dest: String,
     build: impl FnOnce(&emcomm_core::rusqlite::Connection, &LogbookInfo, &Path) -> AppResult<forms::FormResult> + Send + 'static,
@@ -1110,14 +1206,16 @@ async fn run_form(
         build(&conn, &info, Path::new(&d))
     })
     .await
-    .map_err(|e| AppError::internal(e.to_string()))??;
+    .map_err(|e| AppError::internal(e.to_string()))
+    .and_then(|r| r);
+    let r = delivered(app, &dest, r)?;
     lock(&state.reveal_allow).insert(PathBuf::from(dest));
     Ok(r)
 }
 
 #[tauri::command]
-async fn export_form213(state: State<'_, AppState>, req: forms::Form213Request, dest: String) -> Cmd<forms::FormResult> {
-    run_form(&state, dest, move |c, i, p| forms::export_213(c, i, &req, p)).await
+async fn export_form213(app: AppHandle, state: State<'_, AppState>, req: forms::Form213Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&app, &state, dest, move |c, i, p| forms::export_213(c, i, &req, p)).await
 }
 
 #[tauri::command]
@@ -1126,13 +1224,13 @@ async fn form309_preview(state: State<'_, AppState>, req: ics309::Form309Request
 }
 
 #[tauri::command]
-async fn export_form309(state: State<'_, AppState>, req: ics309::Form309Request, dest: String) -> Cmd<forms::FormResult> {
-    run_form(&state, dest, move |c, i, p| ics309::export_309(c, i, &req, p)).await
+async fn export_form309(app: AppHandle, state: State<'_, AppState>, req: ics309::Form309Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&app, &state, dest, move |c, i, p| ics309::export_309(c, i, &req, p)).await
 }
 
 #[tauri::command]
-async fn export_form214(state: State<'_, AppState>, req: forms::Form214Request, dest: String) -> Cmd<forms::FormResult> {
-    run_form(&state, dest, move |c, i, p| forms::export_214(c, i, &req, p)).await
+async fn export_form214(app: AppHandle, state: State<'_, AppState>, req: forms::Form214Request, dest: String) -> Cmd<forms::FormResult> {
+    run_form(&app, &state, dest, move |c, i, p| forms::export_214(c, i, &req, p)).await
 }
 
 // ---------- app lifecycle ----------
@@ -1145,8 +1243,62 @@ async fn quit_app(app: AppHandle, state: State<'_, AppState>) -> Cmd<()> {
         let _ = lb.close();
     }
     state.allow_exit.store(true, Ordering::SeqCst);
-    app.exit(0);
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        // Finish the activity; MainActivity ends the process once it is destroyed.
+        android::exit_app(&app)?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    {
+        app.exit(0);
+        Ok(())
+    }
+}
+
+/// The app went to the background (Android). Drafts were flushed by the UI; make the live file
+/// self-contained, refresh the logbook list's counts, and take an automatic backup if anything
+/// changed — the process may be killed without any close event.
+#[tauri::command]
+async fn app_backgrounded(app: AppHandle, state: State<'_, AppState>) -> Cmd<BackupOutcome> {
+    {
+        let g = lock(&state.book);
+        let Some(lb) = g.as_ref() else {
+            return Ok(BackupOutcome { ok: true, skipped: true, path: None, error: None });
+        };
+        let _ = lb.checkpoint();
+        let _ = refresh_index(&state, lb);
+    }
+    let a = app.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || run_backup_kind(&a, "auto", true))
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?;
+    Ok(out)
+}
+
+/// Storage locations offered instead of folder pickers on Android; null on desktop.
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn device_locations(app: AppHandle, state: State<'_, AppState>) -> Cmd<Option<android::Locations>> {
+    android::locations(&app, &state.data_dir).map(Some)
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn device_locations() -> Cmd<Option<()>> {
+    Ok(None)
+}
+
+/// Match Android's status/navigation bar area to the app theme. No-op on desktop.
+#[tauri::command]
+async fn set_system_bars(app: AppHandle, dark: bool, color: String) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    return android::set_system_bars(&app, dark, &color);
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, dark, color);
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -1211,6 +1363,7 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(desktop)]
 /// The default 1440x900 window can exceed small displays (e.g. 1366x768 laptops); shrink to fit.
 fn fit_window_to_screen(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
@@ -1233,8 +1386,10 @@ fn fit_window_to_screen(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android::init());
+    builder
         .setup(|app| {
             // EMCOMM_DATA_DIR relocates local settings/profiles/drafts (testing, portable installs).
             let data_dir = match std::env::var_os("EMCOMM_DATA_DIR") {
@@ -1259,20 +1414,24 @@ pub fn run() {
                 gps_cancel: Arc::new(AtomicBool::new(false)),
             });
             create_main_window(app)?;
+            #[cfg(desktop)]
             fit_window_to_screen(app.handle());
-            let m = menu::build(app.handle())?;
-            app.set_menu(m)?;
-            app.on_menu_event(|app, event| {
-                let id = event.id().0.clone();
-                if id == "quit" {
-                    if handle_close_request(app) {
-                        app.state::<AppState>().allow_exit.store(true, Ordering::SeqCst);
-                        app.exit(0);
+            #[cfg(desktop)]
+            {
+                let m = menu::build(app.handle())?;
+                app.set_menu(m)?;
+                app.on_menu_event(|app, event| {
+                    let id = event.id().0.clone();
+                    if id == "quit" {
+                        if handle_close_request(app) {
+                            app.state::<AppState>().allow_exit.store(true, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                        return;
                     }
-                    return;
-                }
-                let _ = app.emit("menu", id);
-            });
+                    let _ = app.emit("menu", id);
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1369,6 +1528,9 @@ pub fn run() {
             export_form309,
             quit_app,
             cancel_close,
+            app_backgrounded,
+            device_locations,
+            set_system_bars,
         ])
         .build(tauri::generate_context!())
         .expect("error while building EMCOMM LOG")

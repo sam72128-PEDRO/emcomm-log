@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0 tablet (Android) — 2026-11-04
+
+All of 2.1.0 on the Android tablet build, on top of the 2.0 tablet port (`docs/ANDROID_TABLET.md`):
+- External GPS receivers are not used on the tablet; **Capture GPS** uses the tablet's own location
+  (satellite GPS labelled *Device GPS*, otherwise *OS position*), with the location permission asked on
+  first use. Manual entry and the station default always work.
+- The tablet app now requests the location permission (it still has no network permission).
+- ADIF files saved through Android's "Save to…" keep their `.adi` name.
+
 ## 2.1.0 — 2026-11-03
 
 Desktop enhancement (spec EMLOG-DESKTOP-ENH-2026-11-03). Logbooks upgrade from 2.0 (schema 3 → 4) with a

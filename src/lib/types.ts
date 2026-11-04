@@ -523,6 +523,14 @@ export interface Bootstrap {
   active: ActiveView | null;
 }
 
+/** Android storage locations offered instead of folder pickers (null on desktop). */
+export interface DeviceLocations {
+  logbooks: string;
+  tablet_backups: string;
+  sd_backups: string | null;
+  sd_state: string | null;
+}
+
 export interface FolderCheck {
   ok: boolean;
   kind: "local" | "network" | "cloud_sync";

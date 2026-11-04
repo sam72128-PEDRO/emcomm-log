@@ -1,6 +1,7 @@
 <script lang="ts">
   import GpsCaptureDialog from "../components/GpsCaptureDialog.svelte";
   import { DEFAULT_GPS, GPS_MAX_AGE_S, GPS_TIMEOUT_S } from "../lib/gps";
+  import { IS_ANDROID, DEVICE } from "../lib/platform";
   import {
     Settings as SettingsIcon,
     FolderOpen,
@@ -329,6 +330,7 @@
           <label for="st-live">Default folder for new logbooks</label>
           <div class="row">
             <input id="st-live" type="text" readonly value={s.default_logbook_parent ?? ""} /><button
+              hidden={IS_ANDROID}
               onclick={chooseLive}><FolderOpen size={16} />Browse…</button
             >
           </div>
@@ -372,7 +374,7 @@
           >
         </div>
         <p class="muted">
-          Profiles live only on this computer. New entries record a snapshot of the active profile, so editing
+          Profiles live only on this {DEVICE}. New entries record a snapshot of the active profile, so editing
           a profile never changes logged history.
         </p>
         <table class="data">
@@ -465,7 +467,7 @@
                     <button
                       class="small icon-only"
                       aria-label="Delete preset {p.name}"
-                      title={p.in_use ? "Used by a logbook on this computer" : "Delete"}
+                      title={p.in_use ? `Used by a logbook on this ${DEVICE}` : "Delete"}
                       disabled={p.in_use}
                       onclick={() => deletePreset(p)}><Trash2 size={14} /></button
                     >
@@ -491,7 +493,8 @@
               readonly
               value={s.backup.destination ?? ""}
               placeholder="Not configured"
-            /><button onclick={chooseBackup}><FolderOpen size={16} />Browse…</button
+            /><button onclick={chooseBackup}
+              ><FolderOpen size={16} />{IS_ANDROID ? "Choose…" : "Browse…"}</button
             >{#if s.backup.destination}<button onclick={() => (s.backup.destination = null)}>Turn off</button
               >{/if}
           </div>
@@ -569,6 +572,7 @@
               ><RefreshCw size={14} />Refresh</button
             ><button
               class="small"
+              hidden={IS_ANDROID}
               onclick={() =>
                 api
                   .revealPath(app.settings!.backup.destination!)
@@ -611,6 +615,7 @@
             <span class="mono">{app.dataDir}</span>
             <button
               class="small"
+              hidden={IS_ANDROID}
               onclick={() =>
                 api.revealPath(app.dataDir).catch((e) => app.toast("error", toAppError(e).message))}
               ><FolderSearch size={14} />Reveal</button
@@ -683,77 +688,91 @@
         <div class="field">
           <label for="gps-pref">Preferred source</label>
           <select id="gps-pref" bind:value={g.preferred} style="max-width:420px">
-            <option value="auto">Auto — a configured receiver first, then the computer's location</option>
-            <option value="serial">External / built-in GPS on a serial port (USB or Bluetooth)</option>
-            {#if app.platform === "linux"}<option value="gpsd">gpsd on this computer</option>{/if}
-            <option value="os">Computer's location service (may be Wi-Fi based)</option>
-            <option value="manual">Manual only (never use a receiver)</option>
+            {#if IS_ANDROID}
+              <option value="auto">Tablet location (GPS when the tablet has it)</option>
+              <option value="manual">Manual only (never use location)</option>
+            {:else}
+              <option value="auto">Auto — a configured receiver first, then the computer's location</option>
+              <option value="serial">External / built-in GPS on a serial port (USB or Bluetooth)</option>
+              {#if app.platform === "linux"}<option value="gpsd">gpsd on this computer</option>{/if}
+              <option value="os">Computer's location service (may be Wi-Fi based)</option>
+              <option value="manual">Manual only (never use a receiver)</option>
+            {/if}
           </select>
         </div>
-        <fieldset>
-          <legend>Serial receiver (NMEA 0183)</legend>
-          <div class="row wrap">
-            <button class="small" onclick={detectReceivers}>Detect receivers</button>
-            {#if gpsSources}<span class="hint"
-                >{gpsSources.filter((x) => x.provider === "serial").length} serial port(s) found</span
-              >{/if}
-          </div>
-          {#if gpsSources?.some((x) => x.provider === "serial")}
-            <ul class="ports">
-              {#each gpsSources.filter((x) => x.provider === "serial") as src (src.path)}
-                <li>
-                  <label class="check"
-                    ><input
-                      type="radio"
-                      name="gps-port"
-                      checked={g.serial_path === src.path}
-                      onchange={() => {
-                        g.serial_path = src.path;
-                        if (src.serial_kind && src.serial_kind !== "unknown") g.serial_kind = src.serial_kind;
-                      }}
-                    />
-                    <span class="mono">{src.path}</span>{src.detail ? ` — ${src.detail}` : ""}</label
-                  >
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          <div class="grid-3">
-            <div class="field">
-              <label for="gps-path">Port</label>
-              <input
-                id="gps-path"
-                type="text"
-                bind:value={g.serial_path}
-                placeholder={app.platform === "windows" ? "COM3" : "/dev/cu.usbserial-1410"}
-              />
+        {#if IS_ANDROID}
+          <p class="muted" style="margin:0">
+            The tablet's own location is used: its satellite GPS when it has one, which works with no network,
+            and otherwise Android's network location (labelled as an OS position). Android asks for permission
+            the first time you press Capture or Test. External receivers are not used on the tablet.
+          </p>
+        {:else}
+          <fieldset>
+            <legend>Serial receiver (NMEA 0183)</legend>
+            <div class="row wrap">
+              <button class="small" onclick={detectReceivers}>Detect receivers</button>
+              {#if gpsSources}<span class="hint"
+                  >{gpsSources.filter((x) => x.provider === "serial").length} serial port(s) found</span
+                >{/if}
             </div>
-            <div class="field">
-              <label for="gps-baud">Baud rate</label>
-              <select id="gps-baud" bind:value={g.baud}>
-                <option value={0}>Detect (4800, then 9600)</option>
-                {#each [4800, 9600, 19200, 38400, 57600, 115200] as b (b)}<option value={b}>{b}</option
-                  >{/each}
-              </select>
+            {#if gpsSources?.some((x) => x.provider === "serial")}
+              <ul class="ports">
+                {#each gpsSources.filter((x) => x.provider === "serial") as src (src.path)}
+                  <li>
+                    <label class="check"
+                      ><input
+                        type="radio"
+                        name="gps-port"
+                        checked={g.serial_path === src.path}
+                        onchange={() => {
+                          g.serial_path = src.path;
+                          if (src.serial_kind && src.serial_kind !== "unknown")
+                            g.serial_kind = src.serial_kind;
+                        }}
+                      />
+                      <span class="mono">{src.path}</span>{src.detail ? ` — ${src.detail}` : ""}</label
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            <div class="grid-3">
+              <div class="field">
+                <label for="gps-path">Port</label>
+                <input
+                  id="gps-path"
+                  type="text"
+                  bind:value={g.serial_path}
+                  placeholder={app.platform === "windows" ? "COM3" : "/dev/cu.usbserial-1410"}
+                />
+              </div>
+              <div class="field">
+                <label for="gps-baud">Baud rate</label>
+                <select id="gps-baud" bind:value={g.baud}>
+                  <option value={0}>Detect (4800, then 9600)</option>
+                  {#each [4800, 9600, 19200, 38400, 57600, 115200] as b (b)}<option value={b}>{b}</option
+                    >{/each}
+                </select>
+              </div>
+              <div class="field">
+                <label for="gps-kind">Receiver is</label>
+                <select id="gps-kind" bind:value={g.serial_kind}>
+                  <option value="usb">External, USB</option>
+                  <option value="bluetooth">External, Bluetooth (serial)</option>
+                  <option value="internal">Built into this computer</option>
+                  <option value="unknown">Not sure</option>
+                </select>
+              </div>
             </div>
-            <div class="field">
-              <label for="gps-kind">Receiver is</label>
-              <select id="gps-kind" bind:value={g.serial_kind}>
-                <option value="usb">External, USB</option>
-                <option value="bluetooth">External, Bluetooth (serial)</option>
-                <option value="internal">Built into this computer</option>
-                <option value="unknown">Not sure</option>
-              </select>
-            </div>
-          </div>
-          <span class="hint"
-            >Bluetooth receivers work when the system shows them as a serial port (pair them first). Receivers
-            that only speak Bluetooth LE or a proprietary format are not supported. EMCOMM LOG never sends
-            commands to the receiver.{app.platform === "linux"
-              ? " On Linux your user needs to be in the 'dialout' group to open serial ports."
-              : ""}</span
-          >
-        </fieldset>
+            <span class="hint"
+              >Bluetooth receivers work when the system shows them as a serial port (pair them first).
+              Receivers that only speak Bluetooth LE or a proprietary format are not supported. EMCOMM LOG
+              never sends commands to the receiver.{app.platform === "linux"
+                ? " On Linux your user needs to be in the 'dialout' group to open serial ports."
+                : ""}</span
+            >
+          </fieldset>
+        {/if}
         {#if app.platform === "linux"}
           <div class="field">
             <label for="gps-gpsd">gpsd address (this computer only)</label>

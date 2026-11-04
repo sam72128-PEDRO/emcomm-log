@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID } from "../lib/platform";
   import { FolderOpen, CircleAlert, CircleCheck, Radio, NotebookPen, Siren } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import { app } from "../lib/state.svelte";
@@ -148,7 +149,7 @@
           value={parent}
           aria-invalid={errors.parent ? "true" : undefined}
         />
-        <button onclick={browse}><FolderOpen size={16} />Browse…</button>
+        {#if !IS_ANDROID}<button onclick={browse}><FolderOpen size={16} />Browse…</button>{/if}
       </div>
       {#if errors.parent}<span class="field-error">{errors.parent}</span>{:else if parentCheck}<span
           class={parentCheck.ok ? "hint" : "field-error"}

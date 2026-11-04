@@ -688,6 +688,14 @@ impl Logbook {
         Ok(removed)
     }
 
+    /// Checkpoint the WAL into the main file while the logbook stays open (e.g. before a mobile
+    /// app goes to the background, where the process may be killed without a close). Committed
+    /// data is already durable in the WAL; this only makes the main file self-contained.
+    pub fn checkpoint(&self) -> AppResult<()> {
+        self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     /// Checkpoint the WAL into the main file and release the lock cleanly.
     /// Unarchiving asks to edit an archived older-version logbook: upgrade the real file now (keeping a
     /// verified pre-upgrade copy) and switch from the temporary view copy to it.
