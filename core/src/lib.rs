@@ -15,6 +15,7 @@ pub mod migrate;
 pub mod models;
 pub mod package;
 pub mod periods;
+pub mod recents;
 pub mod snapshot;
 pub mod station;
 pub mod validate;

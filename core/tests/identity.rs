@@ -273,3 +273,25 @@ fn desk_mig_01_v3_logbook_upgrades_and_package_round_trips_identity_and_location
     assert_eq!(new.operator_location.as_ref().unwrap().latitude_deg, Some(35.5));
     assert_eq!(new.station_snapshot.station_callsign, "W4CLB");
 }
+
+#[test]
+fn desk_qe_recents_are_local_ordered_and_skip_voided() {
+    use emcomm_core::recents::RecentField::*;
+    let parent = tempfile::tempdir().unwrap();
+    let dir = create_book(parent.path(), LogbookType::Ham, "Recents");
+    let mut lb = Logbook::open(&dir).unwrap();
+    for (call, mode) in [("W1AW", "CW"), ("K1ABC", "SSB"), ("W1AW", "CW"), ("N0VOID", "FT8")] {
+        let mut q = qso(call, "2026-11-02T19:00:00Z", Some(14_062_000), "20m", mode);
+        q.ham.as_mut().unwrap().pota_ref = if call == "K1ABC" { "US-0005".into() } else { String::new() };
+        let s = lb.save_new(&q, &rid(), &operator()).unwrap();
+        if call == "N0VOID" {
+            lb.void_entry(&s.entry.id, "bad", &rid(), &operator()).unwrap();
+        }
+    }
+    let r = lb.recent_values(&[TheirCall, Mode, PotaRef, FrequencyHz, Station]).unwrap();
+    assert_eq!(r[&TheirCall], vec!["W1AW", "K1ABC"], "newest first, voided excluded, distinct");
+    assert_eq!(r[&Mode], vec!["CW", "SSB"]);
+    assert_eq!(r[&PotaRef], vec!["US-0005"]);
+    assert_eq!(r[&FrequencyHz], vec!["14062000"]);
+    assert!(r[&Station].is_empty());
+}

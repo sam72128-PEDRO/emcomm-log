@@ -935,6 +935,14 @@ async fn set_station(state: State<'_, AppState>, station: Station) -> Cmd<Statio
 }
 
 #[tauri::command]
+async fn recent_values(
+    state: State<'_, AppState>,
+    fields: Vec<emcomm_core::recents::RecentField>,
+) -> Cmd<std::collections::BTreeMap<emcomm_core::recents::RecentField, Vec<String>>> {
+    with_book(&state, |lb| lb.recent_values(&fields))
+}
+
+#[tauri::command]
 async fn operator_sessions(state: State<'_, AppState>) -> Cmd<Vec<OperatorSession>> {
     with_book(&state, |lb| lb.operator_sessions())
 }
@@ -1339,6 +1347,7 @@ pub fn run() {
             gps_cancel,
             get_station,
             set_station,
+            recent_values,
             operator_sessions,
             active_operator,
             switch_operator,
