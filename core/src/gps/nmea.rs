@@ -211,7 +211,6 @@ impl FixBuilder {
                 // Many receivers (u-blox among them) send RMC before the GGA of the same second: wait for
                 // that GGA so satellites and altitude are not lost, unless GGA keeps not arriving.
                 if let Some(rt) = self.rmc.as_ref().and_then(|r| r.time)
-                    && self.gga.is_some()
                     && self.gga.as_ref().and_then(|g| g.time) != Some(rt)
                 {
                     self.unmatched += 1;
@@ -228,6 +227,11 @@ impl FixBuilder {
             }
             _ => return None,
         }
+        self.current()
+    }
+
+    /// The best fix available now, without waiting for a GGA of the same second.
+    pub fn pending(&self) -> Option<Fix> {
         self.current()
     }
 
@@ -261,6 +265,19 @@ mod tests {
     /// Build a line with a correct checksum.
     pub fn line(body: &str) -> String {
         format!("${body}*{:02X}", body.bytes().fold(0u8, |a, b| a ^ b))
+    }
+
+    #[test]
+    fn real_ublox_m8_lines() {
+        let mut b = FixBuilder::default();
+        let lines = [
+            "$GNRMC,024344.00,A,2847.41666,N,08131.65156,W,0.260,,041126,,,A,V*07",
+            "$GNGGA,024344.00,2847.41666,N,08131.65156,W,1,08,1.84,27.5,M,-29.6,M,,*40",
+        ];
+        let out: Vec<_> = lines.iter().map(|l| b.push_line(l)).collect();
+        eprintln!("{out:?} sentences={} rejected={}", b.sentences, b.rejected);
+        let f = out[1].clone().expect("fix after GGA");
+        assert_eq!((f.satellites, f.altitude_m), (Some(8), Some(27.5)));
     }
 
     #[test]
@@ -332,9 +349,12 @@ mod tests {
     #[test]
     fn rmc_only_receivers_still_give_a_fix() {
         let mut b = FixBuilder::default();
-        let f = b.push_line(&line("GPRMC,235959.50,A,0001.0000,S,00001.0000,E,0,,311226,,,D")).unwrap();
+        assert!(b.push_line(&line("GPRMC,235959.50,A,0001.0000,S,00001.0000,E,0,,311226,,,D")).is_none());
+        let f = b.pending().expect("held RMC fix");
         assert!((f.lat + 1.0 / 60.0).abs() < 1e-9);
         assert_eq!(f.time.to_rfc3339(), "2026-12-31T23:59:59.500+00:00");
         assert_eq!(f.satellites, None, "unknown, not invented");
+        assert!(b.push_line(&line("GPRMC,235958.50,A,0001.0000,S,00001.0000,E,0,,311226,,,D")).is_none());
+        assert!(b.push_line(&line("GPRMC,235957.50,A,0001.0000,S,00001.0000,E,0,,311226,,,D")).is_some(), "fallback");
     }
 }
