@@ -138,3 +138,102 @@ fn data_genuine_v21_emergency_logbook_and_package_upgrade() {
     assert_eq!(lb.info().unwrap().schema_version, 5);
     assert_eq!(lb.list_entries(&EntryQuery { status: "all".into(), ..all_query() }).unwrap().items.len(), 3);
 }
+
+/// Turn a saved entry back into an input for Save Changes (what the editor does).
+fn as_input(e: &Entry) -> EntryInput {
+    EntryInput {
+        kind: e.kind,
+        event_at_utc: e.event_at_utc.clone(),
+        event_timezone: e.event_timezone.clone(),
+        event_utc_offset_min: e.event_utc_offset_min,
+        direction: e.direction,
+        priority: e.priority,
+        handling: e.handling,
+        flagged: e.flagged,
+        from_text: e.from_text.clone(),
+        to_text: e.to_text.clone(),
+        subject: e.subject.clone(),
+        body: e.body.clone(),
+        channel: e.channel.clone(),
+        location: e.location.clone(),
+        tags: e.tags.clone(),
+        ham: e.ham.clone(),
+        emergency: e.emergency.clone(),
+        op_id: e.op_id.clone(),
+        operator_location: e.operator_location.clone(),
+        reported_location: e.reported_location.clone(),
+        important: e.important,
+        follow_up: e.follow_up.clone(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn flag_important_and_follow_up_lifecycle_is_independent_and_recorded() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Emergency, "Flags");
+    let mut lb = Logbook::open(&dir).unwrap();
+    let mut m = input("Shelter needs cots");
+    m.kind = EntryKind::Message;
+    m.handling = Some(Handling::AwaitingAck);
+    m.important = true;
+    m.follow_up = FollowUp {
+        state: FollowUpState::Open,
+        due_utc: Some("2026-11-02T22:00:00Z".into()),
+        note: "Confirm delivery with Red Cross".into(),
+        resolved_utc: Some("2000-01-01T00:00:00Z".into()), // ignored: the core owns it
+    };
+    let a = lb.save_new(&m, &rid(), &operator()).unwrap().entry;
+    assert!(a.important && !a.flagged, "Important is not Flag for Report");
+    assert_eq!((a.follow_up.state, a.follow_up.resolved_utc.as_deref()), (FollowUpState::Open, None));
+    assert_eq!(a.follow_up.due_utc.as_deref(), Some("2026-11-02T22:00:00.000Z"));
+    lb.save_new(&input("Routine check-in"), &rid(), &operator()).unwrap();
+    let v = lb
+        .save_new(
+            &EntryInput { follow_up: FollowUp { state: FollowUpState::Open, ..Default::default() }, ..input("Voided") },
+            &rid(),
+            &operator(),
+        )
+        .unwrap();
+    lb.void_entry(&v.entry.id, "duplicate", &rid(), &operator()).unwrap();
+
+    let q = |fu: &str, imp: bool| EntryQuery { follow_up: fu.into(), important_only: imp, status: "active".into(), ..all_query() };
+    assert_eq!(lb.list_entries(&q("open", false)).unwrap().total, 1, "voided entries are not open follow-ups");
+    assert_eq!(lb.list_entries(&q("", true)).unwrap().total, 1);
+
+    // Resolve: a recorded change; message handling and Flag for Report untouched.
+    let mut i = as_input(&a);
+    i.follow_up.state = FollowUpState::Resolved;
+    let r = lb.save_changes(&a.id, a.current_revision, &i, "", &rid(), &operator()).unwrap().entry;
+    assert_eq!(r.follow_up.state, FollowUpState::Resolved);
+    let resolved_at = r.follow_up.resolved_utc.clone().expect("resolved time set");
+    assert_eq!(r.handling, Some(Handling::AwaitingAck), "resolving is not an acknowledgement");
+    assert!(!r.flagged);
+    assert_eq!(lb.list_entries(&q("open", false)).unwrap().total, 0);
+    assert_eq!(lb.list_entries(&q("resolved", false)).unwrap().total, 1);
+    // Editing something else keeps the original resolved time.
+    let mut i2 = as_input(&r);
+    i2.follow_up.note = "Delivered 21:40".into();
+    let r2 = lb.save_changes(&r.id, r.current_revision, &i2, "", &rid(), &operator()).unwrap().entry;
+    assert_eq!(r2.follow_up.resolved_utc.as_deref(), Some(resolved_at.as_str()));
+    // Reopen: resolved time cleared; history keeps every state.
+    let mut i3 = as_input(&r2);
+    i3.follow_up.state = FollowUpState::Open;
+    let r3 = lb.save_changes(&r2.id, r2.current_revision, &i3, "", &rid(), &operator()).unwrap().entry;
+    assert_eq!((r3.follow_up.state, r3.follow_up.resolved_utc.as_deref()), (FollowUpState::Open, None));
+    let states: Vec<String> =
+        lb.revisions(&a.id).unwrap().iter().map(|rv| rv.after["follow_up"]["state"].as_str().unwrap().to_string()).collect();
+    assert_eq!(states, vec!["open", "resolved", "resolved", "open"]);
+    // Clearing the follow-up drops its due time and note.
+    let mut i4 = as_input(&r3);
+    i4.follow_up.state = FollowUpState::None;
+    let r4 = lb.save_changes(&r3.id, r3.current_revision, &i4, "", &rid(), &operator()).unwrap().entry;
+    assert_eq!(r4.follow_up, FollowUp::default());
+    // Bad due time is a validation error, not a silent drop.
+    let mut bad = as_input(&r4);
+    bad.follow_up = FollowUp { state: FollowUpState::Open, due_utc: Some("tomorrow".into()), ..Default::default() };
+    assert_eq!(
+        lb.save_changes(&r4.id, r4.current_revision, &bad, "", &rid(), &operator()).unwrap_err().field.as_deref(),
+        Some("follow_up.due_utc")
+    );
+}

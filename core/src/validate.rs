@@ -384,7 +384,22 @@ pub fn validate_entry_input(input: &EntryInput, book: LogbookType, now: DateTime
         },
         operator_location: input.operator_location.as_ref().map(|l| validate_location("operator_location", l)).transpose()?,
         reported_location: input.reported_location.as_ref().map(|l| validate_location("reported_location", l)).transpose()?,
+        important: input.important,
+        follow_up: validate_follow_up(&input.follow_up)?,
     })
+}
+
+/// 2.2 FLAG-02: state, optional due time (UTC), short note. `resolved_utc` is owned by the core.
+pub fn validate_follow_up(f: &FollowUp) -> AppResult<FollowUp> {
+    let due_utc = match f.due_utc.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(d) => Some(
+            parse_utc(d)
+                .ok_or_else(|| AppError::validation("follow_up.due_utc", "Enter a valid due date and time"))?
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        ),
+    };
+    Ok(FollowUp { state: f.state, due_utc, note: single_line("follow_up.note", &f.note, 500)?, resolved_utc: None })
 }
 
 /// Template defaults never carry timestamps; strip them and validate formats only.
