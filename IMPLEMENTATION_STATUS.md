@@ -65,7 +65,8 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | DESK-GPS-06 Bad data never gives a fake fix | **passing** | NMEA tests: bad checksum, RMC `V`, GGA quality 0, stale fix, never-ending garbage, missing port, cancellation. |
 | DESK-GPS-07 Internal GNSS when present | **partial** | Windows: a satellite-sourced Geolocator position maps to *internal GNSS*; a built-in serial GNSS uses the serial path. A missing device is a normal outcome. Not run on hardware. |
 | DESK-GPS-08 Manual and default location with no GPS/network | **passing (core, all 3 OS builds compile)** | `identity::desk_loc_01_*`, `validate_location` tests. |
-| DESK-OP-01/02/03/04 | **passing** | `identity.rs` covers the station surviving a switch, periods untouched, and profile edits not rewriting entries. The unsaved-entry choice is in `SwitchOperatorDialog` (vitest-covered state). |
+| DESK-OP-01/02/03 | **passing** | `identity.rs`: the station survives a switch, periods are untouched, and profile edits do not rewrite entries. |
+| DESK-OP-04 Unsaved entry at handover | **partial** | Implemented in `SwitchOperatorDialog` (save under the outgoing operator, or leave it for the incoming one). Not covered by an automated test; not yet clicked through by hand. |
 | DESK-LOC-01/02 | **passing** | Two independent locations. Every GPS failure is a typed outcome and saving never depends on it. |
 | DESK-QE-01 | **passing** | `recents` test (local, newest first, voided excluded); vitest Save & Add Another retention and no leakage; HAM station callsign comes from the station. |
 | DESK-QE-02 | **passing** | V1 save contract unchanged (A03–A06 suites). |
