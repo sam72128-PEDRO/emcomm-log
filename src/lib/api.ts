@@ -110,6 +110,9 @@ export const api = {
   importPackage: (path: string, parentDir: string, name: string | null) =>
     call<T.ImportOutcome>("import_package", { path, parentDir, name }),
 
+  exportReview: (req: T.ExportRequest) => call<T.ExportReview>("export_review", { req }),
+  formReview: (form: "213" | "214" | "309", req: unknown) =>
+    call<T.ExportReview>("form_review", { form, req }),
   exportPreview: (req: T.ExportRequest) => call<T.ExportPreview>("export_preview", { req }),
   runExport: (req: T.ExportRequest, dest: string) => call<T.ExportResult>("run_export", { req, dest }),
 

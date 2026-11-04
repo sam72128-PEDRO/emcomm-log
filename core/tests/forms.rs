@@ -59,7 +59,7 @@ fn activity(subject: &str, at: &str) -> EntryInput {
 }
 
 fn r213(ids: Vec<String>) -> Form213Request {
-    Form213Request { entry_ids: ids, display_zone: "utc".into() }
+    Form213Request { entry_ids: ids, display_zone: "utc".into(), reviewed: None }
 }
 
 #[test]

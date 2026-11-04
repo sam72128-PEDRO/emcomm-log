@@ -3,6 +3,9 @@
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
   import FormResultBanner from "./FormResultBanner.svelte";
+  import ExportReviewPanel from "./ExportReviewPanel.svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import { reviewedRefs } from "../lib/review";
   import { app } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
   import type * as T from "../lib/types";
@@ -10,15 +13,22 @@
   let { entryIds, onclose }: { entryIds: string[]; onclose: () => void } = $props();
 
   let zone = $state<"local" | "utc">(app.zone);
-  let preview = $state<T.FormPreview | null>(null);
+  let preview = $state<T.ExportReview | null>(null);
+  const checked = new SvelteSet<string>();
   let previewErr = $state<string | null>(null);
   let busy = $state(false);
   let result = $state<T.FormResult | null>(null);
   let resultErr = $state<string | null>(null);
 
   api
-    .form213Preview(untrack(() => ({ entry_ids: entryIds, display_zone: zone })))
-    .then((p) => (preview = p))
+    .formReview(
+      "213",
+      untrack(() => ({ entry_ids: entryIds, display_zone: zone })),
+    )
+    .then((p) => {
+      preview = p;
+      for (const r of p.rows) if (r.eligible) checked.add(r.id);
+    })
     .catch((e) => (previewErr = toAppError(e).message));
 
   async function run() {
@@ -33,7 +43,10 @@
     result = null;
     resultErr = null;
     try {
-      result = await api.exportForm213({ entry_ids: entryIds, display_zone: zone }, dest);
+      result = await api.exportForm213(
+        { entry_ids: entryIds, display_zone: zone, reviewed: reviewedRefs(preview, checked) },
+        dest,
+      );
       app.toast("ok", `ICS 213 saved (${result.exported} message${result.exported === 1 ? "" : "s"})`);
     } catch (e) {
       resultErr = toAppError(e).message;
@@ -58,18 +71,7 @@
   <div aria-live="polite">
     {#if previewErr}<span class="field-error"><CircleAlert size={15} /> {previewErr}</span>
     {:else if preview}
-      <strong>{preview.count} message{preview.count === 1 ? "" : "s"}</strong> will be filled in.
-      {#if preview.skipped.length}
-        <details open={preview.count === 0}>
-          <summary
-            >{preview.skipped.length} selected entr{preview.skipped.length === 1 ? "y" : "ies"} can't go on an ICS
-            213</summary
-          >
-          <ul>
-            {#each preview.skipped as s (s.sequence_no)}<li>#{s.sequence_no}: {s.reason}</li>{/each}
-          </ul>
-        </details>
-      {/if}
+      <ExportReviewPanel review={preview} {checked} label="messages" />
     {:else}<span class="muted">Checking the selection…</span>{/if}
   </div>
   {#if resultErr}<div class="banner error" role="alert">
@@ -79,7 +81,7 @@
   {#if result}<FormResultBanner {result} noun="ICS 213 saved" />{/if}
   {#snippet footer()}
     <button onclick={onclose}>{result ? "Close" : "Cancel"}</button>
-    <button class="primary" onclick={run} disabled={busy || !preview || preview.count === 0}>
+    <button class="primary" onclick={run} disabled={busy || !preview || checked.size === 0}>
       {#if busy}<LoaderCircle size={16} class="spin" />Saving…{:else}<FileDown size={16} />Save ICS 213…{/if}
     </button>
   {/snippet}

@@ -635,6 +635,8 @@ export interface ExportRequest {
   adif_preset?: AdifPreset;
   /** Shared files withhold precise coordinates (and 8-character grids) unless this is true. */
   include_precise_coordinates?: boolean;
+  /** 2.2: the entries (and revisions) approved in Review Export. */
+  reviewed?: ReviewRef[] | null;
 }
 
 export type AdifPreset = "general" | "pota_activator" | "sota_activator" | "sota_chaser";
@@ -706,6 +708,7 @@ export interface OpResource {
 export interface Form213Request {
   entry_ids: string[];
   display_zone: "local" | "utc";
+  reviewed?: ReviewRef[] | null;
 }
 
 export interface Form214Request {
@@ -718,6 +721,8 @@ export interface Form214Request {
   prepared_by_name: string;
   prepared_by_position: string;
   display_zone: "local" | "utc";
+  entry_ids?: string[];
+  reviewed?: ReviewRef[] | null;
 }
 
 export interface Form309Request {
@@ -731,6 +736,7 @@ export interface Form309Request {
   prepared_by_name: string;
   prepared_by_call: string;
   display_zone: "local" | "utc";
+  reviewed?: ReviewRef[] | null;
 }
 
 export interface FormPreview {
@@ -929,4 +935,32 @@ export interface AdifImportResult {
   skipped: number;
   first_sequence: number | null;
   last_sequence: number | null;
+}
+
+// ---------- 2.2 Review Export ----------
+export interface ReviewRef {
+  id: string;
+  revision: number;
+}
+export interface ReviewRow {
+  id: string;
+  sequence_no: number;
+  revision: number;
+  kind: string;
+  event_at_utc: string;
+  subject: string;
+  station: string;
+  operator: string;
+  status: EntryStatus;
+  eligible: boolean;
+  reason: string;
+  attachments: number;
+}
+export interface ExportReview {
+  rows: ReviewRow[];
+  eligible: number;
+  excluded: number;
+  too_many: boolean;
+  total: number;
+  notes: string[];
 }

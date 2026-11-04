@@ -1053,6 +1053,26 @@ async fn export_preview(state: State<'_, AppState>, req: ExportRequest) -> Cmd<E
     with_book(&state, |lb| export::preview(&lb.conn, lb.logbook_type, &req))
 }
 
+/// 2.2 Review Export: every entry in the scope, eligible or not (with the reason). Changes nothing.
+#[tauri::command]
+async fn export_review(state: State<'_, AppState>, req: ExportRequest) -> Cmd<export::review::ExportReview> {
+    with_book(&state, |lb| export::review(&lb.conn, lb.logbook_type, &req))
+}
+
+#[tauri::command]
+async fn form_review(state: State<'_, AppState>, form: String, req: serde_json::Value) -> Cmd<export::review::ExportReview> {
+    let bad = |e: serde_json::Error| AppError::validation("form", format!("Invalid form request: {e}"));
+    with_book(&state, |lb| {
+        let info = lb.info()?;
+        match form.as_str() {
+            "213" => forms::review_213(&lb.conn, &info, &serde_json::from_value(req).map_err(bad)?),
+            "214" => forms::review_214(&lb.conn, &info, &serde_json::from_value(req).map_err(bad)?),
+            "309" => ics309::review_309(&lb.conn, &info, &serde_json::from_value(req).map_err(bad)?),
+            _ => Err(AppError::validation("form", "Unknown form")),
+        }
+    })
+}
+
 #[tauri::command]
 async fn run_export(state: State<'_, AppState>, req: ExportRequest, dest: String) -> Cmd<ExportResult> {
     let (db_path, info) = with_book(&state, |lb| Ok((lb.db_path(), lb.info()?)))?;
@@ -1591,6 +1611,8 @@ pub fn run() {
             preview_package,
             import_package,
             export_preview,
+            export_review,
+            form_review,
             run_export,
             gps_sources,
             gps_acquire,

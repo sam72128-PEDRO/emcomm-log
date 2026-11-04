@@ -600,6 +600,7 @@ fn adif_import_preview_duplicates_atomic_and_idempotent() {
         display_zone: "utc".into(),
         adif_preset: Default::default(),
         include_precise_coordinates: false,
+        reviewed: None,
     };
     r.adif_preset = emcomm_core::export::adif::AdifPreset::General;
     let exp = emcomm_core::export::run_export(&lb.conn, &info, &r, &out).unwrap();
@@ -651,4 +652,108 @@ fn adif_import_1000_qsos_with_parks_and_duplicates() {
     let res = lb.adif_import(file.as_bytes(), "big.adi", &pv.source_sha256, &keys, &ImportOptions::default(), &operator()).unwrap();
     println!("1000-record ADIF: preview {preview_time:?}, import {:?}", started.elapsed());
     assert_eq!((res.imported, res.first_sequence, res.last_sequence), (900, Some(1), Some(900)));
+}
+
+#[test]
+fn exp_review_exact_selection_snapshot_and_ics_eligibility() {
+    use emcomm_core::export::forms::{self, Form213Request, Form214Request};
+    use emcomm_core::export::review::ReviewRef;
+    use emcomm_core::export::{self, ExportFormat, ExportRequest};
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Emergency, "Review");
+    let mut lb = Logbook::open(&dir).unwrap();
+    let op = lb
+        .save_period(
+            None,
+            &OperationalPeriodInput {
+                name: "OP1".into(),
+                start_utc: "2026-11-02T12:00:00Z".into(),
+                end_utc: "2026-11-02T20:00:00Z".into(),
+                notes: String::new(),
+            },
+        )
+        .unwrap()
+        .period;
+    let mut all = Vec::new();
+    for i in 0..12 {
+        let mut e = input(&format!("Entry {i}"));
+        e.kind = if i % 3 == 0 { EntryKind::Traffic } else { EntryKind::Message };
+        e.event_at_utc = if i == 11 { "2026-11-02T22:00:00Z".into() } else { format!("2026-11-02T13:{:02}:00Z", i * 4) };
+        all.push(lb.save_new(&e, &rid(), &operator()).unwrap().entry);
+    }
+    let info = lb.info().unwrap();
+    let refs = |idx: &[usize]| -> Vec<ReviewRef> {
+        idx.iter().map(|&i| ReviewRef { id: all[i].id.clone(), revision: all[i].current_revision }).collect()
+    };
+    let req = |f: ExportFormat, reviewed: Option<Vec<ReviewRef>>| ExportRequest {
+        format: f,
+        scope: "all".into(),
+        range_from: None,
+        range_to: None,
+        filter: None,
+        include_voided: false,
+        display_zone: "utc".into(),
+        adif_preset: Default::default(),
+        include_precise_coordinates: false,
+        reviewed,
+    };
+    // Review lists all 12, all eligible, and changes nothing.
+    let rv = export::review(&lb.conn, info.logbook_type, &req(ExportFormat::Csv, None)).unwrap();
+    assert_eq!((rv.rows.len(), rv.eligible), (12, 12));
+    let revs: Vec<i64> = lb.list_entries(&all_query()).unwrap().items.iter().map(|e| e.current_revision).collect();
+    assert!(revs.iter().all(|&r| r == 1), "reviewing is not an edit");
+    // 5 of 12 -> exactly 5 in every generic format.
+    let five = refs(&[1, 2, 4, 7, 10]);
+    for f in [ExportFormat::Csv, ExportFormat::Txt, ExportFormat::Xlsx, ExportFormat::Docx, ExportFormat::Pdf] {
+        let dest = t.path().join(format!("five.{}", f.extension()));
+        let res = export::run_export(&lb.conn, &info, &req(f, Some(five.clone())), &dest).unwrap();
+        assert_eq!(res.exported, 5, "{f:?}");
+    }
+    let csv = std::fs::read_to_string(t.path().join("five.csv")).unwrap();
+    assert!(csv.contains("Entry 7") && !csv.contains("Entry 3"));
+    // Void one between review and export: blocked, nothing written.
+    lb.void_entry(&all[7].id, "wrong", &rid(), &operator()).unwrap();
+    let dest = t.path().join("blocked.csv");
+    let err = export::run_export(&lb.conn, &info, &req(ExportFormat::Csv, Some(five.clone())), &dest).unwrap_err();
+    assert!(err.message.contains("#8") && err.message.contains("voided"), "{}", err.message);
+    assert!(!dest.exists());
+    // The voided entry now shows in the review as excluded, with the reason.
+    let rv = export::review(&lb.conn, info.logbook_type, &req(ExportFormat::Csv, None)).unwrap();
+    assert!(rv.rows.iter().any(|r| r.sequence_no == 8 && !r.eligible && r.reason.contains("Voided")));
+
+    // ICS 214 from a Traffic Log selection: the out-of-period entry (#12) is blocked, never added.
+    let sel = vec![all[0].id.clone(), all[3].id.clone(), all[11].id.clone()];
+    let r214 = Form214Request {
+        op_id: op.id.clone(),
+        kinds: vec![EntryKind::Traffic, EntryKind::Message],
+        entry_ids: sel.clone(),
+        ..Default::default()
+    };
+    let rv = forms::review_214(&lb.conn, &info, &r214).unwrap();
+    let blocked = rv.rows.iter().find(|r| r.sequence_no == 12).unwrap();
+    assert!(!blocked.eligible && blocked.reason.contains("outside operational period"));
+    // Forcing the blocked entry into the reviewed set is refused.
+    let bad = Form214Request { reviewed: Some(refs(&[0, 11])), ..r214.clone() };
+    assert!(forms::export_214(&lb.conn, &info, &bad, &t.path().join("bad214.pdf")).is_err());
+    // Reviewed set {#1} (unchecked #4): exactly one row exported, #4 reported as left out.
+    let ok = Form214Request { reviewed: Some(refs(&[0])), ..r214 };
+    let res = forms::export_214(&lb.conn, &info, &ok, &t.path().join("ok214.pdf")).unwrap();
+    assert_eq!(res.exported, 1);
+    assert!(res.skipped.iter().any(|s| s.sequence_no == 4 && s.reason == "left out in review"));
+    assert!(res.skipped.iter().any(|s| s.sequence_no == 12));
+
+    // ICS 213: one form per message; the Activity entry is excluded with its reason.
+    let r213 = Form213Request {
+        entry_ids: vec![all[0].id.clone(), all[1].id.clone(), all[2].id.clone()],
+        display_zone: "utc".into(),
+        reviewed: None,
+    };
+    let rv = forms::review_213(&lb.conn, &info, &r213).unwrap();
+    assert_eq!(rv.eligible, 2);
+    assert!(rv.rows.iter().any(|r| r.sequence_no == 1 && r.reason.contains("not a Message")));
+    let res =
+        forms::export_213(&lb.conn, &info, &Form213Request { reviewed: Some(refs(&[2])), ..r213 }, &t.path().join("213.pdf")).unwrap();
+    assert_eq!(res.exported, 1);
+    // Flags were never touched by any of this.
+    assert!(lb.list_entries(&all_query()).unwrap().items.iter().all(|e| !e.flagged && e.follow_up.state == FollowUpState::None));
 }
