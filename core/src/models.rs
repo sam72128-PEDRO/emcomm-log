@@ -26,6 +26,8 @@ str_enum!(EntryStatus { Active => "active", Void => "void" });
 str_enum!(EmergencyRecordType { Message => "message", Activity => "activity", General => "general" });
 str_enum!(FollowUpState { None => "none", Open => "open", Resolved => "resolved" });
 
+// The enum comes from `str_enum!`, so `#[default]` cannot be attached to a variant.
+#[allow(clippy::derivable_impls)]
 impl Default for FollowUpState {
     fn default() -> Self {
         FollowUpState::None

@@ -3,6 +3,7 @@
 
 pub mod appdb;
 pub mod backup;
+pub mod directory;
 pub mod drafts;
 pub mod entries;
 pub mod error;
