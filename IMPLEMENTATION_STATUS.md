@@ -41,6 +41,44 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **passing (automated on Windows and Linux, by hand on macOS); no human screen-reader session** | Installed-app E2E (`scripts/e2e.py`, 50/50 on Windows and Linux): Ctrl+1–5/F/,/Enter shortcuts, Tab order, focus into dialogs and restored after Esc, focus to invalid field, shortcuts blocked under dialogs with announcement, save and validation announced in live regions, native View menu driven by OS automation (pywinauto / xdotool), and the OS accessibility tree (UIA for Narrator/NVDA, AT-SPI for Orca) exposes labelled fields, buttons and combos. axe-core: no serious/critical violations on 10 screens. | macOS release app: native menus with shortcuts, Cmd+1–5/E/Enter, F1, Tab order, Esc and dialog focus verified by hand. Not done: a session with a real screen reader (VoiceOver/NVDA/Orca) by a person. |
 | A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing** | `installer-smoke.yml` on fresh GitHub VMs with the CI installers ([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **Linux** `.deb` (apt), `.AppImage`, and `.rpm` (clean Fedora container) launched with no network, stayed running, created their data store, wizard rendered; **Windows** `.msi` and NSIS `.exe` installed silently and run with the app's outbound traffic blocked by firewall rule, same checks. **macOS** (built locally): `scripts/mac_smoke.sh` mounts the `.dmg`, runs the app with all IP networking denied (Seatbelt), checks it stays up, creates its data store and shows the wizard. | Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
 
+## 2.1.0 — desktop GPS, Quick Entry, HAM presets, operator/station (spec EMLOG-DESKTOP-ENH-2026-11-03)
+
+**Where it was verified (2026-11-03).**
+- **macOS 14.6 (this Mac):** every core and frontend test passes, clippy is clean, and svelte-check is clean.
+  The 2.1.0 `.dmg` passes `scripts/mac_smoke.sh` (runs with networking denied, creates its data store, and
+  `Info.plist` has the location usage strings).
+- **Linux (Debian container, Rust 1.99.1):** all core tests pass, run as a non-root user, including the
+  pseudo-terminal serial test. Clippy with `-D warnings` is clean on the core (GeoClue code included) and on
+  the full Tauri app crate.
+- **Windows:** clippy with `-D warnings` is clean on the core for `x86_64-pc-windows-gnu` (Geolocator code
+  included). Nothing ran on Windows itself.
+- **GitHub Actions:** did not run for 2.1. GitHub refused to start the jobs because of an account billing
+  problem, so the Windows/Linux installers and the installed-app E2E are **not yet run** for 2.1.
+- **Hands-on:** the Mac screen was locked, so the 2.1 UI was not clicked through by hand.
+
+| ID | Status | Evidence |
+|---|---|---|
+| DESK-GPS-01/02 USB NMEA receiver, each OS | **pending (hardware)** | No receiver was available. The serial path is covered by a pty test on Linux and by recorded-NMEA parser tests. |
+| DESK-GPS-03 Bluetooth serial | **pending (hardware)** | Same code path as USB once the OS exposes a port; documented in `docs/GPS_SETUP.md`. |
+| DESK-GPS-04 gpsd over loopback | **passing (simulated gpsd)**, real gpsd **pending** | `gps::tests::gpsd_end_to_end_over_loopback`; non-loopback addresses are refused; absent gpsd → `no_device`. |
+| DESK-GPS-05 OS location, labelled | **partial** | Compiles for macOS and Linux, and type-checks for Windows. The source labels are unit-tested (`os.rs`). The permission prompt and a real fix have not been exercised on any OS. |
+| DESK-GPS-06 Bad data never gives a fake fix | **passing** | NMEA tests: bad checksum, RMC `V`, GGA quality 0, stale fix, never-ending garbage, missing port, cancellation. |
+| DESK-GPS-07 Internal GNSS when present | **partial** | Windows: a satellite-sourced Geolocator position maps to *internal GNSS*; a built-in serial GNSS uses the serial path. A missing device is a normal outcome. Not run on hardware. |
+| DESK-GPS-08 Manual and default location with no GPS/network | **passing (core, all 3 OS builds compile)** | `identity::desk_loc_01_*`, `validate_location` tests. |
+| DESK-OP-01/02/03/04 | **passing** | `identity.rs` covers the station surviving a switch, periods untouched, and profile edits not rewriting entries. The unsaved-entry choice is in `SwitchOperatorDialog` (vitest-covered state). |
+| DESK-LOC-01/02 | **passing** | Two independent locations. Every GPS failure is a typed outcome and saving never depends on it. |
+| DESK-QE-01 | **passing** | `recents` test (local, newest first, voided excluded); vitest Save & Add Another retention and no leakage; HAM station callsign comes from the station. |
+| DESK-QE-02 | **passing** | V1 save contract unchanged (A03–A06 suites). |
+| DESK-HAM-01 | **passing** | `exports::desk_ham_presets_*` and `scripts/validate_exports.py` with adif-io: 52/52, covering the POTA preset, P2P SIG, MY_LAT/MY_LON, UTC midnight and Unicode. |
+| DESK-HAM-02 | **passing** | Invalid POTA/SOTA refs are rejected on save; every QSO a preset leaves out is listed with its reason and needs acknowledgement. |
+| DESK-EXP-01 | **passing (core)** | All V1/V2 export, form and package suites pass on macOS and Linux. |
+| DESK-MIG-01 | **passing** | `identity::desk_mig_01_*`: 2.0 logbook → schema 4 with verified copy; `.emlog` round trip. An archived logbook is viewed via a temporary copy. The Android branch has not yet been rebased onto 2.1. |
+| DESK-PRIV-01 | **passing** | `exports::desk_priv_*`: coordinates withheld and grids cut to 6 by default, opt-in per export. The `.emlog` section warns that it holds precise positions. |
+
+Known limitations in 2.1: there is no SOTA CSV export (only ADIF). Recents look only at the newest 2000
+entries. Accuracy is shown only when the source reports it. A Bluetooth LE-only receiver with no serial port
+is not supported. Builds are unsigned.
+
 ## V2 (2.0.0) — docs/EMCOMM_LOG_V2_Technical_Specification.md
 
 Developed on macOS (Phases 1–4); Phase 5 re-enabled Windows/Linux CI. Final run on all three:
