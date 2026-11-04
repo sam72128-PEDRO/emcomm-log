@@ -1,0 +1,10 @@
+{
+  "format": "EMCOMM-LOG-LIVE",
+  "descriptor_version": 1,
+  "logbook_id": "161c25c1-d3ab-4dd4-8ccc-cf663a10a6fc",
+  "name": "V21 HAM Fixture",
+  "logbook_type": "ham",
+  "schema_version": 4,
+  "created_at_utc": "2026-11-04T20:14:43.509Z",
+  "app_version": "2.1.0"
+}

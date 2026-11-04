@@ -1,0 +1,24 @@
+-- Roll back schema v5 to v4
+DROP INDEX idx_import_source_hash;
+DROP INDEX idx_import_source_batch;
+DROP TABLE entry_import_source;
+DROP TABLE adif_import_batches;
+DROP INDEX idx_directory_label;
+DROP INDEX idx_directory_norm;
+DROP TABLE station_directory;
+DROP TRIGGER entry_links_immutable;
+DROP TRIGGER entry_links_no_delete;
+DROP INDEX idx_entry_links_target;
+DROP INDEX ux_entry_links_active;
+DROP TABLE entry_links;
+DROP INDEX idx_entries_important;
+DROP INDEX idx_entries_follow_up;
+ALTER TABLE entries DROP COLUMN follow_up_resolved_utc;
+ALTER TABLE entries DROP COLUMN follow_up_note;
+ALTER TABLE entries DROP COLUMN follow_up_due_utc;
+ALTER TABLE entries DROP COLUMN follow_up_state;
+ALTER TABLE entries DROP COLUMN important;
+ALTER TABLE attachments DROP COLUMN removed_in_revision;
+ALTER TABLE attachments DROP COLUMN source;
+ALTER TABLE attachments DROP COLUMN caption;
+UPDATE logbook SET schema_version = 4;
