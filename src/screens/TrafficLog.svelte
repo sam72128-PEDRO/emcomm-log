@@ -13,6 +13,7 @@
     ChevronRight,
     Paperclip,
     RotateCcw,
+    ArrowRightLeft,
   } from "@lucide/svelte";
   import { app, defaultQuery } from "../lib/state.svelte";
   import { api, toAppError } from "../lib/api";
@@ -77,6 +78,28 @@
       app.focusSearch = null;
     };
   });
+
+  // Operators seen in this logbook's shifts (2.1): filter by profile id, or by name for imported shifts.
+  const operators = $derived(
+    [...new Map(app.sessions.map((x) => [x.profile_id ?? x.operator.name, x.operator.name])).entries()].map(
+      ([key, name]) => ({ key, name }),
+    ),
+  );
+  // Shift changes (not the first shift) shown between the entries they fall between, in event-time order.
+  const handovers = $derived(
+    app.sessions.slice(1).map((x, k) => ({ ...x, prev: app.sessions[k].operator.name })),
+  );
+  function shiftsBefore(i: number) {
+    if (q.sort === "recorded" || q.operator || q.text) return [];
+    const t = (iso: string) => Date.parse(iso);
+    const cur = t(page.items[i].event_at_utc);
+    const prev = i > 0 ? t(page.items[i - 1].event_at_utc) : null;
+    return handovers.filter((h) => {
+      const at = t(h.started_at_utc);
+      if (q.descending) return at >= cur && (prev === null ? q.offset === 0 : at < prev);
+      return at <= cur && (prev === null ? q.offset === 0 : at > prev);
+    });
+  }
 
   function setQuery(patch: Partial<T.EntryQuery>, resetPage = true) {
     app.logQuery = { ...app.logQuery, ...patch, ...(resetPage ? { offset: 0 } : {}) };
@@ -273,6 +296,17 @@
       <option value="void">Voided only</option>
       <option value="all">Active + voided</option>
     </select>
+    {#if operators.length > 1 || q.operator}
+      <select
+        aria-label="Operator"
+        value={q.operator ?? ""}
+        onchange={(e) => setQuery({ operator: e.currentTarget.value })}
+        style="max-width:170px"
+      >
+        <option value="">All operators</option>
+        {#each operators as o (o.key)}<option value={o.key}>{o.name}</option>{/each}
+      </select>
+    {/if}
     <button
       class="icon-only"
       aria-expanded={showAdvanced}
@@ -414,6 +448,20 @@
       </thead>
       <tbody>
         {#each page.items as e, i (e.id)}
+          {#each shiftsBefore(i) as sh (sh.id)}
+            <tr class="shift" aria-label="Shift change">
+              <td colspan="9"
+                ><ArrowRightLeft size={13} /> Shift change {formatInstant(
+                  sh.started_at_utc,
+                  app.zone,
+                  app.clock,
+                )}:
+                <strong>{sh.operator.name}</strong> on duty{sh.prev ? `, relieving ${sh.prev}` : ""}{sh.note
+                  ? ` — ${sh.note}`
+                  : ""}</td
+              >
+            </tr>
+          {/each}
           <tr
             data-row
             class="clickable"
@@ -556,6 +604,12 @@
   />{/if}
 
 <style>
+  .shift td {
+    font-size: 12.5px;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--cyan) 6%, transparent);
+    padding: 5px 12px;
+  }
   .log {
     display: flex;
     flex-direction: column;

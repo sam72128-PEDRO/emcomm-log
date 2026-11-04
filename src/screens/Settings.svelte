@@ -1,4 +1,6 @@
 <script lang="ts">
+  import GpsCaptureDialog from "../components/GpsCaptureDialog.svelte";
+  import { DEFAULT_GPS, GPS_MAX_AGE_S, GPS_TIMEOUT_S } from "../lib/gps";
   import {
     Settings as SettingsIcon,
     FolderOpen,
@@ -23,17 +25,44 @@
   import Modal from "../components/Modal.svelte";
   import TagInput from "../components/TagInput.svelte";
 
-  type Section = "general" | "profiles" | "presets" | "backups" | "storage";
+  type Section = "general" | "profiles" | "presets" | "backups" | "location" | "storage";
   let section = $state<Section>("general");
   const sections: { id: Section; label: string }[] = [
     { id: "general", label: "General" },
     { id: "profiles", label: "Operator Profiles" },
     { id: "presets", label: "Presets" },
     { id: "backups", label: "Backups" },
+    { id: "location", label: "Location & GPS" },
     { id: "storage", label: "Storage & Recovery" },
   ];
 
-  let s = $state<T.GlobalSettings>(JSON.parse(JSON.stringify(app.settings)));
+  const copySettings = (): T.GlobalSettings => {
+    const c: T.GlobalSettings = JSON.parse(JSON.stringify(app.settings));
+    c.gps ??= { ...DEFAULT_GPS };
+    return c;
+  };
+  let s = $state<T.GlobalSettings>(copySettings());
+  let gpsSources = $state<T.GpsSource[] | null>(null);
+  let gpsTest = $state<T.GpsRequest | null>(null);
+  async function detectReceivers() {
+    gpsSources = null;
+    gpsSources = await api.gpsSources().catch(() => []);
+  }
+  function testRequest(): T.GpsRequest | null {
+    const g = s.gps!;
+    const base = {
+      baud: g.baud,
+      serial_kind: g.serial_kind,
+      gpsd_endpoint: g.gpsd_endpoint,
+      timeout_s: GPS_TIMEOUT_S,
+      max_age_s: GPS_MAX_AGE_S,
+    };
+    if (g.preferred === "serial" || (g.preferred === "auto" && g.serial_path))
+      return { ...base, provider: "serial", path: g.serial_path };
+    if (g.preferred === "gpsd") return { ...base, provider: "gpsd", path: "" };
+    if (g.preferred === "os" || g.preferred === "auto") return { ...base, provider: "os", path: "" };
+    return null;
+  }
   let saving = $state(false);
   let saveErr = $state<string | null>(null);
   let liveCheck = $state<T.FolderCheck | null>(null);
@@ -57,7 +86,7 @@
     }
   }
   function revert() {
-    s = JSON.parse(JSON.stringify(app.settings));
+    s = copySettings();
     saveErr = null;
   }
 
@@ -644,7 +673,102 @@
         {/if}
       {/if}
 
-      {#if section === "general" || section === "backups"}
+      {#if section === "location"}
+        {@const g = s.gps!}
+        <h2>Location &amp; GPS</h2>
+        <p class="muted" style="margin:0">
+          A position is taken only when you press <strong>Capture GPS</strong> on an entry or logbook, one fix at
+          a time. EMCOMM LOG never tracks your position in the background and never uses the internet for location.
+        </p>
+        <div class="field">
+          <label for="gps-pref">Preferred source</label>
+          <select id="gps-pref" bind:value={g.preferred} style="max-width:420px">
+            <option value="auto">Auto — a configured receiver first, then the computer's location</option>
+            <option value="serial">External / built-in GPS on a serial port (USB or Bluetooth)</option>
+            {#if app.platform === "linux"}<option value="gpsd">gpsd on this computer</option>{/if}
+            <option value="os">Computer's location service (may be Wi-Fi based)</option>
+            <option value="manual">Manual only (never use a receiver)</option>
+          </select>
+        </div>
+        <fieldset>
+          <legend>Serial receiver (NMEA 0183)</legend>
+          <div class="row wrap">
+            <button class="small" onclick={detectReceivers}>Detect receivers</button>
+            {#if gpsSources}<span class="hint"
+                >{gpsSources.filter((x) => x.provider === "serial").length} serial port(s) found</span
+              >{/if}
+          </div>
+          {#if gpsSources?.some((x) => x.provider === "serial")}
+            <ul class="ports">
+              {#each gpsSources.filter((x) => x.provider === "serial") as src (src.path)}
+                <li>
+                  <label class="check"
+                    ><input
+                      type="radio"
+                      name="gps-port"
+                      checked={g.serial_path === src.path}
+                      onchange={() => {
+                        g.serial_path = src.path;
+                        if (src.serial_kind && src.serial_kind !== "unknown") g.serial_kind = src.serial_kind;
+                      }}
+                    />
+                    <span class="mono">{src.path}</span>{src.detail ? ` — ${src.detail}` : ""}</label
+                  >
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="grid-3">
+            <div class="field">
+              <label for="gps-path">Port</label>
+              <input
+                id="gps-path"
+                type="text"
+                bind:value={g.serial_path}
+                placeholder={app.platform === "windows" ? "COM3" : "/dev/cu.usbserial-1410"}
+              />
+            </div>
+            <div class="field">
+              <label for="gps-baud">Baud rate</label>
+              <select id="gps-baud" bind:value={g.baud}>
+                <option value={0}>Detect (4800, then 9600)</option>
+                {#each [4800, 9600, 19200, 38400, 57600, 115200] as b (b)}<option value={b}>{b}</option
+                  >{/each}
+              </select>
+            </div>
+            <div class="field">
+              <label for="gps-kind">Receiver is</label>
+              <select id="gps-kind" bind:value={g.serial_kind}>
+                <option value="usb">External, USB</option>
+                <option value="bluetooth">External, Bluetooth (serial)</option>
+                <option value="internal">Built into this computer</option>
+                <option value="unknown">Not sure</option>
+              </select>
+            </div>
+          </div>
+          <span class="hint"
+            >Bluetooth receivers work when the system shows them as a serial port (pair them first). Receivers
+            that only speak Bluetooth LE or a proprietary format are not supported. EMCOMM LOG never sends
+            commands to the receiver.{app.platform === "linux"
+              ? " On Linux your user needs to be in the 'dialout' group to open serial ports."
+              : ""}</span
+          >
+        </fieldset>
+        {#if app.platform === "linux"}
+          <div class="field">
+            <label for="gps-gpsd">gpsd address (this computer only)</label>
+            <input id="gps-gpsd" type="text" bind:value={g.gpsd_endpoint} style="max-width:240px" />
+          </div>
+        {/if}
+        <div class="row">
+          <button onclick={() => (gpsTest = testRequest())} disabled={g.preferred === "manual"}
+            >Test GPS</button
+          >
+          <span class="hint">Shows the source, fix, age and quality without saving anything.</span>
+        </div>
+      {/if}
+
+      {#if section === "general" || section === "backups" || section === "location"}
         {#if saveErr}<div class="banner error" role="alert">
             <CircleAlert size={18} class="icon" />Settings not saved: {saveErr}
           </div>{/if}
@@ -682,7 +806,28 @@
         <label for="pf-lic">License class</label><input
           id="pf-lic"
           type="text"
+          list="pf-lic-list"
           bind:value={profileEdit.input.license_class}
+        />
+        <datalist id="pf-lic-list"
+          >{#each ["Unlicensed", "Technician", "General", "Amateur Extra", "Advanced (legacy)", "Novice (legacy)", "Other"] as c (c)}<option
+              value={c}
+            ></option>{/each}</datalist
+        >
+      </div>
+      <div class="field">
+        <label for="pf-country">Licensing country</label><input
+          id="pf-country"
+          type="text"
+          bind:value={profileEdit.input.license_country}
+          placeholder="e.g. United States"
+        />
+      </div>
+      <div class="field">
+        <label for="pf-unit">Unit / team</label><input
+          id="pf-unit"
+          type="text"
+          bind:value={profileEdit.input.unit}
         />
       </div>
       <div class="field">
@@ -714,6 +859,8 @@
       >{/snippet}
   </Modal>
 {/if}
+
+{#if gpsTest}<GpsCaptureDialog request={gpsTest} onclose={() => (gpsTest = null)} />{/if}
 
 {#if presetEdit}
   {@const pt = presetEdit.input.logbook_type!}
