@@ -28,14 +28,28 @@ pub const LOGBOOK_MIGRATIONS: &[Migration] = &[
         up: include_str!("../migrations/logbook/0003_channel_plan.up.sql"),
         down: include_str!("../migrations/logbook/0003_channel_plan.down.sql"),
     },
+    Migration {
+        version: 4,
+        name: "identity_location",
+        up: include_str!("../migrations/logbook/0004_identity_location.up.sql"),
+        down: include_str!("../migrations/logbook/0004_identity_location.down.sql"),
+    },
 ];
 
-pub const APP_MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    up: include_str!("../migrations/app/0001_init.up.sql"),
-    down: include_str!("../migrations/app/0001_init.down.sql"),
-}];
+pub const APP_MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        up: include_str!("../migrations/app/0001_init.up.sql"),
+        down: include_str!("../migrations/app/0001_init.down.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "profiles_gps",
+        up: include_str!("../migrations/app/0002_profiles_gps.up.sql"),
+        down: include_str!("../migrations/app/0002_profiles_gps.down.sql"),
+    },
+];
 
 /// Checksum of a migration script, independent of the checkout's line endings
 /// (Git on Windows may convert LF to CRLF).
@@ -127,7 +141,11 @@ mod tests {
     #[test]
     fn logbook_migrations_up_down_up() {
         let mut c = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 3);
+        assert_eq!(migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap(), 4);
+        rollback(&mut c, LOGBOOK_MIGRATIONS, 3).unwrap();
+        let n: i64 =
+            c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('station','operator_sessions')", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
         rollback(&mut c, LOGBOOK_MIGRATIONS, 2).unwrap();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='channel_plan'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
@@ -140,7 +158,7 @@ mod tests {
         let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='entries'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
         migrate(&mut c, LOGBOOK_MIGRATIONS).unwrap();
-        assert_eq!(current_version(&c).unwrap(), 3);
+        assert_eq!(current_version(&c).unwrap(), 4);
     }
 
     #[test]
