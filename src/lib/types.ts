@@ -63,6 +63,8 @@ export interface ProfileInput {
   organization: string;
   position: string;
   grid: string;
+  license_country?: string;
+  unit?: string;
 }
 
 export interface Profile extends ProfileInput {
@@ -80,6 +82,8 @@ export interface OperatorSnapshot {
   organization: string;
   position: string;
   grid: string;
+  license_country?: string;
+  unit?: string;
 }
 
 export interface HamFields {
@@ -97,6 +101,10 @@ export interface HamFields {
   my_grid: string;
   their_grid: string;
   qso_notes: string;
+  my_pota_ref: string;
+  pota_ref: string;
+  my_sota_ref: string;
+  sota_ref: string;
 }
 
 export interface EmergencyFields {
@@ -299,6 +307,8 @@ export interface EntryInput {
   emergency: EmergencyFields | null;
   new_attachments: StagedAttachment[];
   op_id: string | null;
+  operator_location: Location | null;
+  reported_location: Location | null;
 }
 
 export interface Entry {
@@ -331,6 +341,9 @@ export interface Entry {
   emergency: EmergencyFields | null;
   attachments: Attachment[];
   op_id: string | null;
+  station_snapshot?: StationSnapshot;
+  operator_location?: Location | null;
+  reported_location?: Location | null;
 }
 
 export interface SaveResult {
@@ -363,6 +376,7 @@ export interface EntryQuery {
   favorites_only: boolean;
   flagged_only: boolean;
   ids: string[];
+  operator?: string;
   sort: "event" | "recorded";
   descending: boolean;
   limit: number;
@@ -653,4 +667,54 @@ export interface PlanSource {
   op_name: string;
   start_utc: string;
   rows: number;
+}
+
+// ---------- 2.1: station, operator shifts, locations ----------
+
+export type LocationSource =
+  | "internal_gnss"
+  | "external_usb_nmea"
+  | "external_bluetooth_nmea"
+  | "gpsd"
+  | "os_position"
+  | "manual"
+  | "logbook_default"
+  | "reported"
+  | "unknown";
+
+export interface Location {
+  latitude_deg: number | null;
+  longitude_deg: number | null;
+  label: string;
+  maidenhead: string;
+  source: LocationSource;
+  provider_id: string;
+  captured_at_utc: string | null;
+  accuracy_m: number | null;
+  altitude_m: number | null;
+  satellites: number | null;
+  notes: string;
+}
+
+export interface StationSnapshot {
+  label: string;
+  tactical_id: string;
+  station_callsign: string;
+  agency: string;
+}
+
+export interface Station extends StationSnapshot {
+  default_location: Location | null;
+  pota_ref: string;
+  sota_ref: string;
+  updated_at_utc: string;
+}
+
+export interface OperatorSession {
+  id: string;
+  profile_id: string | null;
+  operator: OperatorSnapshot;
+  started_at_utc: string;
+  ended_at_utc: string | null;
+  note: string;
 }

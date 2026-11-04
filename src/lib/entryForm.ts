@@ -156,6 +156,10 @@ export function blankHam(): T.HamFields {
     my_grid: "",
     their_grid: "",
     qso_notes: "",
+    my_pota_ref: "",
+    pota_ref: "",
+    my_sota_ref: "",
+    sota_ref: "",
   };
 }
 
@@ -214,6 +218,10 @@ export interface EntryForm {
   attachments: T.StagedAttachment[];
   /** Operational period id, or "" for none (assigned by event time when forms are made). */
   op_id: string;
+  /** Where the logging station was (2.1). Never filled automatically from a receiver. */
+  operator_location: T.Location | null;
+  /** A place reported in the traffic, kept apart from the station position. */
+  reported_location: T.Location | null;
 }
 
 export interface FormContext {
@@ -223,6 +231,8 @@ export interface FormContext {
   incident: T.IncidentFields;
   /** Current operational period for new entries (emergency logbooks). */
   currentOpId?: string | null;
+  /** The logbook's station / assignment (2.1): station callsign and activation defaults. */
+  station?: T.Station | null;
 }
 
 export function newForm(ctx: FormContext): EntryForm {
@@ -232,9 +242,13 @@ export function newForm(ctx: FormContext): EntryForm {
   const now = nowIso();
   const ham = blankHam();
   if (ctx.type === "ham") {
-    ham.station_call = ctx.profile?.callsign ?? "";
+    // The licensed station callsign comes from the station, never from the person (2.1 spec §2.1):
+    // a club or other station callsign is not interchangeable with the operator's own.
+    ham.station_call = ctx.station?.station_callsign ?? "";
     ham.operator_call = ctx.profile?.callsign ?? "";
-    ham.my_grid = ctx.profile?.grid ?? "";
+    ham.my_grid = ctx.station?.default_location?.maidenhead || ctx.profile?.grid || "";
+    ham.my_pota_ref = ctx.station?.pota_ref ?? "";
+    ham.my_sota_ref = ctx.station?.sota_ref ?? "";
     ham.mode = p?.default_mode ?? "";
   }
   const em = blankEmergency();
@@ -262,6 +276,8 @@ export function newForm(ctx: FormContext): EntryForm {
     freqUnit: "MHz",
     attachments: [],
     op_id: ctx.currentOpId ?? "",
+    operator_location: null,
+    reported_location: null,
   };
 }
 
@@ -334,6 +350,8 @@ export function formFromEntry(e: T.Entry): EntryForm {
     ...freqFields(e.ham?.frequency_hz ?? null),
     attachments: [],
     op_id: e.op_id ?? "",
+    operator_location: e.operator_location ?? null,
+    reported_location: e.reported_location ?? null,
   };
 }
 
@@ -353,6 +371,9 @@ export function formCopyOf(e: T.Entry, ctx: FormContext): EntryForm {
   f.em.operational_period = ctx.incident.operational_period;
   f.em.replied_at_utc = null;
   f.op_id = ctx.currentOpId ?? "";
+  // A copy is a new contact: no positions carried over from the original.
+  f.operator_location = null;
+  f.reported_location = null;
   return f;
 }
 
@@ -408,6 +429,8 @@ export function toEntryInput(f: EntryForm, type: T.LogbookType, zone: Zone): T.E
     emergency,
     new_attachments: f.attachments,
     op_id: f.op_id || null,
+    operator_location: f.operator_location,
+    reported_location: f.reported_location,
   };
 }
 

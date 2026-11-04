@@ -656,7 +656,10 @@ async fn open_attachment(state: State<'_, AppState>, attachment_id: String) -> C
 #[tauri::command]
 async fn save_entry(state: State<'_, AppState>, input: EntryInput, request_id: String, draft_id: Option<String>) -> Cmd<SaveResult> {
     let op = operator_snapshot(&state)?;
-    let (res, lbid) = with_book(&state, |lb| Ok((lb.save_new(&input, &request_id, &op)?, lb.id.clone())))?;
+    let (res, lbid) = with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        Ok((lb.save_new(&input, &request_id, &who)?, lb.id.clone()))
+    })?;
     if let Some(d) = draft_id {
         let _ = state.drafts.delete(&lbid, &d);
     }
@@ -674,8 +677,10 @@ async fn save_changes(
     draft_id: Option<String>,
 ) -> Cmd<SaveResult> {
     let op = operator_snapshot(&state)?;
-    let (res, lbid) =
-        with_book(&state, |lb| Ok((lb.save_changes(&entry_id, base_revision, &input, &reason, &request_id, &op)?, lb.id.clone())))?;
+    let (res, lbid) = with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        Ok((lb.save_changes(&entry_id, base_revision, &input, &reason, &request_id, &who)?, lb.id.clone()))
+    })?;
     if let Some(d) = draft_id {
         let _ = state.drafts.delete(&lbid, &d);
     }
@@ -685,13 +690,19 @@ async fn save_changes(
 #[tauri::command]
 async fn void_entry(state: State<'_, AppState>, entry_id: String, reason: String, request_id: String) -> Cmd<SaveResult> {
     let op = operator_snapshot(&state)?;
-    with_book(&state, |lb| lb.void_entry(&entry_id, &reason, &request_id, &op))
+    with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        lb.void_entry(&entry_id, &reason, &request_id, &who)
+    })
 }
 
 #[tauri::command]
 async fn restore_entry(state: State<'_, AppState>, entry_id: String, reason: String, request_id: String) -> Cmd<SaveResult> {
     let op = operator_snapshot(&state)?;
-    with_book(&state, |lb| lb.restore_entry(&entry_id, &reason, &request_id, &op))
+    with_book(&state, |lb| {
+        let who = lb.ensure_operator(&op)?;
+        lb.restore_entry(&entry_id, &reason, &request_id, &who)
+    })
 }
 
 #[tauri::command]
@@ -906,6 +917,36 @@ async fn run_export(state: State<'_, AppState>, req: ExportRequest, dest: String
     .map_err(|e| AppError::internal(e.to_string()))??;
     lock(&state.reveal_allow).insert(PathBuf::from(dest));
     Ok(r)
+}
+
+// ---------- station and operator shifts (2.1) ----------
+
+#[tauri::command]
+async fn get_station(state: State<'_, AppState>) -> Cmd<Station> {
+    with_book(&state, |lb| lb.station())
+}
+
+#[tauri::command]
+async fn set_station(state: State<'_, AppState>, station: Station) -> Cmd<Station> {
+    with_book(&state, |lb| lb.set_station(&station))
+}
+
+#[tauri::command]
+async fn operator_sessions(state: State<'_, AppState>) -> Cmd<Vec<OperatorSession>> {
+    with_book(&state, |lb| lb.operator_sessions())
+}
+
+#[tauri::command]
+async fn active_operator(state: State<'_, AppState>) -> Cmd<Option<OperatorSession>> {
+    with_book(&state, |lb| lb.active_operator())
+}
+
+/// Hand the open logbook's station to another local profile. Profiles stay local; the session keeps a
+/// snapshot, so the logbook remains readable on computers without that profile.
+#[tauri::command]
+async fn switch_operator(state: State<'_, AppState>, profile_id: String, at_utc: Option<String>, note: String) -> Cmd<OperatorSession> {
+    let incoming = OperatorSnapshot::from(&lock(&state.app).get_profile(&profile_id)?);
+    with_book(&state, |lb| lb.switch_operator(&incoming, at_utc.as_deref(), &note))
 }
 
 // ---------- operational periods and ICS forms (V2) ----------
@@ -1225,6 +1266,11 @@ pub fn run() {
             import_package,
             export_preview,
             run_export,
+            get_station,
+            set_station,
+            operator_sessions,
+            active_operator,
+            switch_operator,
             list_periods,
             current_period,
             save_period,
