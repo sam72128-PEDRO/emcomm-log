@@ -167,7 +167,10 @@
       out[prefix] = o
         .map((x) =>
           typeof x === "object" && x && "display_name" in x
-            ? (x as { display_name: string }).display_name
+            ? (() => {
+                const att = x as { display_name: string; caption?: string };
+                return att.caption ? `${att.display_name} (${att.caption})` : att.display_name;
+              })()
             : String(x),
         )
         .join(", ");

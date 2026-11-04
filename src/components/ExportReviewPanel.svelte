@@ -88,7 +88,7 @@
                 /></td
               >
               <td><button class="link" onclick={() => open(r)}>#{r.sequence_no}</button></td>
-              <td class="mono">{formatInstant(r.event_at_utc, app.zone, app.clock)}</td>
+              <td class="mono nowrap">{formatInstant(r.event_at_utc, app.zone, app.clock)}</td>
               <td>{r.kind}</td>
               <td>{r.station}</td>
               <td class="subj">{r.subject}{r.attachments ? ` · ${r.attachments} attachment(s)` : ""}</td>
@@ -117,6 +117,9 @@
   .table-wrap {
     max-height: 42vh;
     overflow: auto;
+  }
+  .nowrap {
+    white-space: nowrap;
   }
   tr.out {
     opacity: 0.65;
