@@ -197,7 +197,7 @@
           >
           <span class="hint" style="margin-top:-4px"
             >Off by default: place names and 6-character grids are kept, latitude/longitude are withheld. Turn
-            on only when the recipient needs exact positions.{#if format === "adif"}&nbsp;For ADIF this writes
+            on only when the recipient needs exact positions. {#if format === "adif"}For ADIF this writes
               MY_LAT/MY_LON from the station position only.{/if}</span
           >
           <span class="hint"

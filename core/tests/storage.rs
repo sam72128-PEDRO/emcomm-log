@@ -128,6 +128,9 @@ fn a04_concurrent_saves_get_unique_monotone_numbers() {
         let dir = dir.clone();
         handles.push(std::thread::spawn(move || {
             let mut lb = Logbook::open_unlocked_for_test(&dir).unwrap();
+            // Four writers contend for one file; a slow CI disk (Windows runners) can exceed the app's
+            // 5 s lock wait. The test checks numbering under contention, not that timeout (see a05).
+            lb.conn.busy_timeout(std::time::Duration::from_secs(60)).unwrap();
             let mut nums = Vec::new();
             for i in 0..25 {
                 let r = lb.save_new(&input(&format!("t{t} #{i}")), &rid(), &operator()).unwrap();
