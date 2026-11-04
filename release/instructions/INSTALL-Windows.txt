@@ -1,9 +1,9 @@
-EMCOMM LOG 2.1.0 for Windows
+EMCOMM LOG 2.2.0 for Windows
 ============================
 
 What's in this package (use ONE of the two installers)
-  EMCOMM LOG_2.1.0_x64_en-US.msi   Windows Installer package (recommended; good for managed PCs)
-  EMCOMM LOG_2.1.0_x64-setup.exe   Setup program (alternative)
+  EMCOMM LOG_2.2.0_x64_en-US.msi   Windows Installer package (recommended; good for managed PCs)
+  EMCOMM LOG_2.2.0_x64-setup.exe   Setup program (alternative)
   SHA256SUMS.txt                   checksums to confirm the download is intact
   CHANGELOG.md, OPERATOR_GUIDE.md, GPS_SETUP.md
 
@@ -28,10 +28,14 @@ Requirements
    display, the folder for logbooks and a backup folder. Use a local disk or a directly attached
    drive, not a network share or a OneDrive/Dropbox-synced folder.
 
-Upgrading from 2.0
-   Run the 2.1 installer; it replaces the old version. The first time 2.1 opens a 2.0 logbook it
+Upgrading from 2.0 or 2.1
+   Run the 2.2 installer; it replaces the old version. The first time 2.2 opens an older logbook it
    upgrades it and keeps an untouched copy in the logbook's hidden ".pre-migration" folder.
    Archived logbooks are only upgraded when you unarchive them.
+
+Moving logbooks between versions
+   A logbook or .emlog package used by 2.2 cannot be opened by EMCOMM LOG 2.1 or older: they refuse it
+   as a newer format (nothing is lost). Update every computer and tablet that shares logbooks to 2.2.
 
 Location and GPS (optional)
    - Computer location / built-in GPS: turn on Settings -> Privacy & security -> Location, and

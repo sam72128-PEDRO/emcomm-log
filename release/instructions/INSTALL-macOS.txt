@@ -1,8 +1,8 @@
-EMCOMM LOG 2.1.0 for macOS
+EMCOMM LOG 2.2.0 for macOS
 ==========================
 
 What's in this package
-  EMCOMM LOG_2.1.0_aarch64.dmg   the app (Apple Silicon: M1/M2/M3/M4 Macs)
+  EMCOMM LOG_2.2.0_aarch64.dmg   the app (Apple Silicon: M1/M2/M3/M4 Macs)
   SHA256SUMS.txt                 checksum to confirm the download is intact
   CHANGELOG.md, OPERATOR_GUIDE.md, GPS_SETUP.md
 
@@ -16,7 +16,7 @@ Requirements
    It should print "OK".
 
 2. Install
-   - Double-click "EMCOMM LOG_2.1.0_aarch64.dmg".
+   - Double-click "EMCOMM LOG_2.2.0_aarch64.dmg".
    - Drag "EMCOMM LOG" into the Applications folder.
    - Eject the disk image.
 
@@ -32,10 +32,14 @@ Requirements
    The setup wizard asks for your operator profile, time display, the folder for logbooks and a
    backup folder. Use a local disk, not a network share or a cloud-synced folder.
 
-Upgrading from 2.0
-   Install over the old version (replace it in Applications). The first time 2.1 opens a 2.0
+Upgrading from 2.0 or 2.1
+   Install over the old version (replace it in Applications). The first time 2.2 opens an older
    logbook it upgrades it and keeps an untouched copy in the logbook's hidden ".pre-migration"
    folder. Archived logbooks are only upgraded when you unarchive them.
+
+Moving logbooks between versions
+   A logbook or .emlog package used by 2.2 cannot be opened by EMCOMM LOG 2.1 or older: they refuse it
+   as a newer format (nothing is lost). Update every computer and tablet that shares logbooks to 2.2.
 
 Location and GPS (optional)
    - Computer location: the first time you press Capture GPS or Test GPS, macOS asks whether
