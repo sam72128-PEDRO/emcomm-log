@@ -1,0 +1,60 @@
+EMCOMM LOG 2.1.0 for Linux (x86_64)
+===================================
+
+What's in this package (use ONE of the three)
+  EMCOMM LOG_2.1.0_amd64.deb         Debian, Ubuntu, Linux Mint (x86_64 only; not Raspberry Pi)
+  EMCOMM LOG-2.1.0-1.x86_64.rpm      Fedora, RHEL/Rocky/Alma, openSUSE
+  EMCOMM LOG_2.1.0_amd64.AppImage    Any distribution; runs without installing
+  SHA256SUMS.txt                     checksums to confirm the download is intact
+  CHANGELOG.md, OPERATOR_GUIDE.md, GPS_SETUP.md
+
+Requirements
+  - 64-bit x86 PC. The .deb needs WebKitGTK 4.1 (libwebkit2gtk-4.1-0) and GTK 3: Ubuntu 22.04 or
+    later, Debian 12 or later. The package manager installs them; that step needs a connection to
+    your distribution's package mirror.
+  - EMCOMM LOG itself needs no internet connection and does not use one.
+
+1. Check the download (optional)
+     sha256sum -c SHA256SUMS.txt --ignore-missing
+
+2. Install - pick one
+   Debian / Ubuntu:
+     sudo apt install "./EMCOMM LOG_2.1.0_amd64.deb"
+   Fedora / RHEL family:
+     sudo dnf install "./EMCOMM LOG-2.1.0-1.x86_64.rpm"
+   AppImage (no install):
+     chmod +x "EMCOMM LOG_2.1.0_amd64.AppImage"
+     "./EMCOMM LOG_2.1.0_amd64.AppImage"
+     If it says FUSE is missing, install libfuse2 (Ubuntu 22.04: sudo apt install libfuse2;
+     Ubuntu 24.04: sudo apt install libfuse2t64).
+
+3. First run
+   Start "EMCOMM LOG" from your applications menu (or run emcomm-log). The setup wizard asks for your
+   operator profile, time display, the folder for logbooks and a backup folder. Use a local disk,
+   not a network share or a cloud-synced folder.
+
+Upgrading from 2.0
+   Install the 2.1 package the same way; it replaces the old version. The first time 2.1 opens a
+   2.0 logbook it upgrades it and keeps an untouched copy in the logbook's hidden ".pre-migration"
+   folder. Archived logbooks are only upgraded when you unarchive them.
+
+Location and GPS (optional)
+   - USB GPS receiver: usually /dev/ttyUSB0 or /dev/ttyACM0. Your user must be allowed to use it:
+       sudo usermod -aG dialout $USER     (Debian/Ubuntu; on Fedora/Arch the group is uucp)
+     then log out and back in.
+   - gpsd: if gpsd is running on this computer, choose "gpsd" as the source (default 127.0.0.1:2947).
+   - Bluetooth GPS receiver: pair it, then bind a serial port, e.g. sudo rfcomm bind 0 <MAC> 1
+     -> /dev/rfcomm0.
+   - Computer location uses GeoClue, if your desktop provides it.
+   Location and GPS have not yet been tested on real Linux hardware. See GPS_SETUP.md.
+
+Where your data lives
+   Settings and profiles: ~/.local/share/org.emcommlog.desktop
+   Logbooks: the folder you chose in setup. Help -> Where Is My Data? shows both.
+
+Uninstall
+   Debian/Ubuntu: sudo apt remove emcomm-log
+   Fedora:        sudo dnf remove emcomm-log
+   AppImage:      delete the file.
+   Your logbooks and settings are kept; delete the folders above yourself only if you no longer
+   need them.
