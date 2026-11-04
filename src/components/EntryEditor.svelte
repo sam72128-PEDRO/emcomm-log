@@ -35,6 +35,7 @@
     toTemplateDefaults,
     validateForm,
     carrySession,
+    followIdentity,
   } from "../lib/entryForm";
   import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
@@ -93,6 +94,15 @@
   let baseline = $state<EntryForm>(
     untrack(() => (mode === "edit" && entry ? formFromEntry(entry) : newForm(ctx()))),
   );
+  // Operator handover or station edit while a new QSO is open (2.1 spec §2.3).
+  let identity = { operator: app.profile?.callsign ?? "", station: app.station?.station_callsign ?? "" };
+  $effect(() => {
+    const next = { operator: app.profile?.callsign ?? "", station: app.station?.station_callsign ?? "" };
+    if (next.operator === identity.operator && next.station === identity.station) return;
+    if (mode !== "edit" && type === "ham") untrack(() => followIdentity(form, identity, next));
+    identity = next;
+  });
+
   // Periods load after the logbook opens; a new, untouched entry picks up the current one then
   // (once, so a deliberate "None" is not overridden later).
   let opDefaulted = false;

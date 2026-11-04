@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Crosshair, Eraser, House } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
-  import { describeSource, formatCoord, maidenhead, parseCoord } from "../lib/location";
+  import { accuracyNote, describeSource, formatCoord, maidenhead, parseCoord } from "../lib/location";
   import { formatInstant } from "../lib/time";
   import type * as T from "../lib/types";
   import GpsCaptureDialog from "./GpsCaptureDialog.svelte";
@@ -186,11 +186,7 @@
     <span class="hint"
       >{formatCoord(value.latitude_deg, value.longitude_deg)}{#if value.captured_at_utc}
         · fix {formatInstant(value.captured_at_utc, app.zone, app.clock)}{/if}{#if value.satellites != null}
-        · {value.satellites} satellites{/if}{value.accuracy_m != null
-        ? ` · ±${Math.round(value.accuracy_m)} m`
-        : value.source === "manual" || value.source === "reported"
-          ? ""
-          : " · accuracy unknown"}</span
+        · {value.satellites} satellites{/if}{accuracyNote(value) ? ` · ${accuracyNote(value)}` : ""}</span
     >
   {/if}
 </div>

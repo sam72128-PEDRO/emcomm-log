@@ -46,3 +46,21 @@ export function maidenhead(lat: number, lon: number): string {
   const a = (v: number) => String.fromCharCode(97 + Math.floor(v));
   return `${A(x / 20)}${A(y / 10)}${Math.floor((x % 20) / 2)}${Math.floor(y % 10)}${a((x % 2) * 12)}${a((y % 1) * 24)}`;
 }
+
+const MEASURED: T.LocationSource[] = [
+  "internal_gnss",
+  "external_usb_nmea",
+  "external_bluetooth_nmea",
+  "gpsd",
+  "os_position",
+];
+
+/** "±12 m", "accuracy unknown" for a measured fix without one, or "" for typed / reported places. */
+export function accuracyNote(l: T.Location): string {
+  if (l.accuracy_m != null) return `±${Math.round(l.accuracy_m)} m`;
+  if (l.latitude_deg == null) return "";
+  // A logbook default keeps its original source as the first word of provider_id.
+  const origin =
+    l.source === "logbook_default" ? (l.provider_id.split(" ")[0] as T.LocationSource) : l.source;
+  return MEASURED.includes(origin) ? "accuracy unknown" : "";
+}

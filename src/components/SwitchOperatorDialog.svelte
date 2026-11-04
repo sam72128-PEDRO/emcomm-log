@@ -8,8 +8,11 @@
 
   let { onclose }: { onclose: () => void } = $props();
 
-  const outgoing = app.shift?.operator ?? null;
-  const choices = $derived(app.profiles.filter((p) => p.active && p.id !== app.shift?.profile_id));
+  // Before the first entry no shift is recorded yet; the operator shown in the header is on duty.
+  const outgoing: { name: string; callsign: string } | null =
+    app.shift?.operator ?? (app.profile ? { name: app.profile.name, callsign: app.profile.callsign } : null);
+  const onDutyId = app.shift?.profile_id ?? app.profile?.id;
+  const choices = $derived(app.profiles.filter((p) => p.active && p.id !== onDutyId));
   let profileId = $state("");
   let at = $state<string | null>(null);
   let note = $state("");
@@ -74,7 +77,7 @@
       <strong
         >{outgoing
           ? `${outgoing.name}${outgoing.callsign ? ` · ${outgoing.callsign}` : ""}`
-          : "No shift yet"}</strong
+          : "No operator"}</strong
       >
     </div>
     <div class="field">

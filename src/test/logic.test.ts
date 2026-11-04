@@ -327,3 +327,40 @@ describe("maidenhead (2.1)", () => {
     expect(maidenhead(-33.86, 151.21)).toBe("QF56od");
   });
 });
+
+import { carrySession, followIdentity } from "../lib/entryForm";
+const INC = { incident_name: "", incident_number: "", operational_period: "", agency: "", location: "" };
+describe("operator handover in an open QSO (2.1)", () => {
+  it("follows the new operator unless the callsign was typed", () => {
+    const f = newForm({
+      type: "ham",
+      preset,
+      profile: null,
+      incident: INC,
+      station: null,
+      currentOpId: null,
+    });
+    f.ham.operator_call = "KJ4AAA";
+    f.ham.station_call = "W4CLB";
+    followIdentity(f, { operator: "KJ4AAA", station: "W4CLB" }, { operator: "KJ4BBB", station: "W4CLB" });
+    expect([f.ham.operator_call, f.ham.station_call]).toEqual(["KJ4BBB", "W4CLB"]);
+    f.ham.operator_call = "N0TYPED";
+    followIdentity(f, { operator: "KJ4BBB", station: "W4CLB" }, { operator: "KJ4CCC", station: "K4XX" });
+    expect([f.ham.operator_call, f.ham.station_call]).toEqual(["N0TYPED", "K4XX"]);
+  });
+  it("Save & Add Another does not carry the previous operator's callsign", () => {
+    const ctx = {
+      type: "ham" as const,
+      preset,
+      profile: null,
+      incident: INC,
+      station: null,
+      currentOpId: null,
+    };
+    const prev = newForm(ctx);
+    prev.ham.operator_call = "KJ4AAA";
+    const next = newForm(ctx);
+    next.ham.operator_call = "KJ4BBB";
+    expect(carrySession(prev, next).ham.operator_call).toBe("KJ4BBB");
+  });
+});
