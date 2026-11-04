@@ -237,3 +237,83 @@ fn flag_important_and_follow_up_lifecycle_is_independent_and_recorded() {
         Some("follow_up.due_utc")
     );
 }
+
+#[test]
+fn dir_per_logbook_directory_snapshots_and_travels() {
+    use emcomm_core::directory::{DirectoryInput, DirectoryKind};
+    use emcomm_core::package::export_package;
+    let t = tempfile::tempdir().unwrap();
+    let dir = create_book(t.path(), LogbookType::Emergency, "Directory");
+    let mut lb = Logbook::open(&dir).unwrap();
+    let shelter = lb
+        .save_directory(
+            None,
+            &DirectoryInput {
+                label: "Shelter 2".into(),
+                kind: DirectoryKind::TacticalIdentifier,
+                identifier: " shelter  2 ".into(),
+                agency: "Red Cross".into(),
+                channel: "TAC 2".into(),
+                aliases: vec!["Lake HS".into(), "lake hs".into()],
+                tags: vec!["shelter".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(shelter.entry.aliases, vec!["Lake HS"], "duplicate alias dropped");
+    assert_eq!(shelter.entry.tags, vec!["SHELTER"]);
+    let ham = lb
+        .save_directory(
+            None,
+            &DirectoryInput {
+                label: "Net control".into(),
+                kind: DirectoryKind::AmateurCallsign,
+                identifier: "w4clb".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(ham.entry.identifier, "W4CLB", "callsigns normalized");
+    assert!(lb.save_directory(None, &DirectoryInput { label: " ".into(), ..Default::default() }).is_err(), "label required");
+    // Same identifier with another meaning is allowed, with a warning.
+    let twin = lb
+        .save_directory(
+            None,
+            &DirectoryInput { label: "Shelter 2 (old site)".into(), identifier: "SHELTER 2".into(), ..Default::default() },
+        )
+        .unwrap();
+    assert_eq!(twin.similar.len(), 1);
+    assert_eq!(lb.list_directory("lake").unwrap().len(), 1, "alias search");
+    assert_eq!(lb.list_directory("").unwrap().len(), 3);
+
+    // An entry made from the directory keeps its own text; editing the directory never rewrites it.
+    let e = lb
+        .save_new(&EntryInput { from_text: "Shelter 2".into(), channel: "TAC 2".into(), ..input("Cots needed") }, &rid(), &operator())
+        .unwrap()
+        .entry;
+    lb.mark_directory_used(&shelter.entry.id, &e.id).unwrap();
+    assert_eq!(lb.list_directory("").unwrap()[0].id, shelter.entry.id, "recently used ranks first");
+    lb.save_directory(
+        Some(&shelter.entry.id),
+        &DirectoryInput { label: "Shelter 2".into(), channel: "TAC 5".into(), ..Default::default() },
+    )
+    .unwrap();
+    let again = lb.get_entry(&e.id).unwrap();
+    assert_eq!((again.from_text.as_str(), again.channel.as_str()), ("Shelter 2", "TAC 2"));
+
+    // Another logbook has its own, empty directory.
+    let other = create_book(t.path(), LogbookType::Emergency, "Other");
+    assert!(Logbook::open(&other).unwrap().list_directory("").unwrap().is_empty());
+
+    // The directory travels inside the .emlog package.
+    lb.delete_directory(&twin.entry.id).unwrap();
+    drop(lb);
+    let pkg = t.path().join("dir.emlog");
+    export_package(&dir, &pkg).unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let imp = import_package(&pkg, dest.path(), None, &[]).unwrap();
+    let lb2 = Logbook::open(Path::new(&imp.path)).unwrap();
+    let items = lb2.list_directory("").unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|d| d.identifier == "W4CLB" && d.kind == DirectoryKind::AmateurCallsign));
+}

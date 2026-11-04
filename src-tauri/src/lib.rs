@@ -935,6 +935,30 @@ async fn set_station(state: State<'_, AppState>, station: Station) -> Cmd<Statio
 }
 
 #[tauri::command]
+async fn list_directory(state: State<'_, AppState>, query: String) -> Cmd<Vec<emcomm_core::directory::DirectoryEntry>> {
+    with_book(&state, |lb| lb.list_directory(&query))
+}
+
+#[tauri::command]
+async fn save_directory(
+    state: State<'_, AppState>,
+    id: Option<String>,
+    input: emcomm_core::directory::DirectoryInput,
+) -> Cmd<emcomm_core::directory::DirectorySaveResult> {
+    with_book(&state, |lb| lb.save_directory(id.as_deref(), &input))
+}
+
+#[tauri::command]
+async fn delete_directory(state: State<'_, AppState>, id: String) -> Cmd<()> {
+    with_book(&state, |lb| lb.delete_directory(&id))
+}
+
+#[tauri::command]
+async fn mark_directory_used(state: State<'_, AppState>, id: String, entry_id: String) -> Cmd<()> {
+    with_book(&state, |lb| lb.mark_directory_used(&id, &entry_id))
+}
+
+#[tauri::command]
 async fn recent_values(
     state: State<'_, AppState>,
     fields: Vec<emcomm_core::recents::RecentField>,
@@ -1348,6 +1372,10 @@ pub fn run() {
             get_station,
             set_station,
             recent_values,
+            list_directory,
+            save_directory,
+            delete_directory,
+            mark_directory_used,
             operator_sessions,
             active_operator,
             switch_operator,
