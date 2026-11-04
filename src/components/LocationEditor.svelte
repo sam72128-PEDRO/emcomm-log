@@ -28,8 +28,8 @@
   let last: T.Location | null | undefined = undefined;
   $effect(() => {
     if (value !== last) {
-      latText = value?.latitude_deg != null ? String(value.latitude_deg) : "";
-      lonText = value?.longitude_deg != null ? String(value.longitude_deg) : "";
+      latText = value?.latitude_deg != null ? coordText(value.latitude_deg) : "";
+      lonText = value?.longitude_deg != null ? coordText(value.longitude_deg) : "";
       last = value;
     }
   });
@@ -38,11 +38,14 @@
   function replace(l: T.Location | null) {
     value = l;
     last = value;
-    latText = l?.latitude_deg != null ? String(l.latitude_deg) : "";
-    lonText = l?.longitude_deg != null ? String(l.longitude_deg) : "";
+    latText = l?.latitude_deg != null ? coordText(l.latitude_deg) : "";
+    lonText = l?.longitude_deg != null ? coordText(l.longitude_deg) : "";
     coordError = "";
     gridAuto = false;
   }
+
+  /** Coordinates for the text boxes: at most 6 decimals (about 0.1 m), no trailing zeros. */
+  const coordText = (v: number) => String(Number(v.toFixed(6)));
 
   function blank(): T.Location {
     return {
@@ -192,9 +195,15 @@
   {#if coordError || error}<span class="field-error">{coordError || error}</span>{/if}
   {#if value && value.latitude_deg != null}
     <span class="hint"
-      >{formatCoord(value.latitude_deg, value.longitude_deg)}{#if value.captured_at_utc}
-        · fix {formatInstant(value.captured_at_utc, app.zone, app.clock)}{/if}{#if value.satellites != null}
-        · {value.satellites} satellites{/if}{accuracyNote(value) ? ` · ${accuracyNote(value)}` : ""}</span
+      >{[
+        formatCoord(value.latitude_deg, value.longitude_deg),
+        value.captured_at_utc ? `fix ${formatInstant(value.captured_at_utc, app.zone, app.clock)}` : "",
+        value.satellites != null ? `${value.satellites} satellites` : "",
+        value.altitude_m != null ? `altitude ${Math.round(value.altitude_m)} m` : "",
+        accuracyNote(value),
+      ]
+        .filter(Boolean)
+        .join(" · ")}</span
     >
   {/if}
 </div>
