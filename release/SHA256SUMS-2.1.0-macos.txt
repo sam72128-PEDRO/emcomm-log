@@ -1,0 +1,2 @@
+# EMCOMM LOG 2.1.0 macOS (commit 5cd4814). Built and smoke-tested locally on macOS 14.6 (Apple Silicon). Unsigned. Windows/Linux not built for 2.1 yet.
+368e0996321afb2e58503db5a18cb3bfc4865c98996218b5954a50ce94277716  macos/EMCOMM LOG_2.1.0_aarch64.dmg
