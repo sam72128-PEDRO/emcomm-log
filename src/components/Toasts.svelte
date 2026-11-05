@@ -7,7 +7,8 @@
 <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{app.politeMessage}</div>
 <div class="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{app.assertiveMessage}</div>
 
-<div class="toasts" aria-hidden="true">
+<!-- While a dialog is open, toasts move to the top centre so they never cover its buttons. -->
+<div class="toasts" class:over-dialog={app.modalDepth > 0} aria-hidden="true">
   {#each app.toasts as t (t.id)}
     <div class="toast {t.tone}">
       {#if t.tone === "ok"}<CircleCheck size={18} />{:else if t.tone === "error"}<CircleAlert
@@ -35,6 +36,13 @@
     z-index: 60;
     width: 380px;
     max-width: calc(100vw - 36px);
+  }
+  .toasts.over-dialog {
+    bottom: auto;
+    top: 18px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
   }
   .toast {
     display: flex;
