@@ -65,14 +65,24 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 
   Found and fixed during the pass: caption changes were not shown in the revision history, and the review's
   time column wrapped.
+- **GitHub Actions (2026-11-05), after macOS was finished:**
+  - CI [41951473904](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41951473904) is green on
+    windows-latest and ubuntu-22.04, including the 2.2 tests and Linux⇄Windows `.emlog` round trips.
+  - Installer smoke and installed-app E2E
+    [41953144472](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41953144472): every installer
+    format launches offline; **60/60 on Windows (`.msi`) and 60/60 on Linux (`.deb`)**.
+  - The first runs found two defects, both fixed: a formatting slip, and a real one where the taller 2.2 Entry
+    Detail put its Void button under a toast on a 900 px screen (toasts now move to the top centre while a
+    dialog is open).
+  - The E2E suite still covers the 2.0/2.1 flows, not the six 2.2 features (those are covered by core tests
+    and the macOS hands-on pass).
 - **Not verified:**
   - Drag and drop from Finder: automation could not start a real macOS drag session, and the cause was not
     established. Needs a person to try it.
   - Pasting a screenshot: not tried, to avoid overwriting the clipboard.
   - ICS 213/214/309 review dialogs were not clicked through (the test logbook is HAM); the core rules are
     covered by tests.
-  - Windows and Linux: not built or tested for 2.2. Per the product owner's decision, CI runs after the
-    macOS version is finished.
+  - Windows/Linux by hand: GUI not clicked through on real Windows or Linux machines (automated E2E below).
   - Android: no 2.2 adapters yet (camera, Photo Picker, document picker, system save). They belong on the
     Android branch, rebased onto 2.2.
 
@@ -90,7 +100,7 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | ADIF-01..12 | **passing** | `adif_import.rs`, `AdifImportDialog` | `adif_import::tests`, `v22::adif_*` (atomic, idempotent, 2.1 export round trip, 1,000 QSOs: preview 56 ms, import 0.8 s debug), hands-on |
 | EXP-01..09, 11 | **passing** (ICS dialogs: core-tested, UI **not clicked**) | `export/review.rs`, `forms::plan_reviewed`, `ReviewExportDialog`, `ExportReviewPanel` | `v22::exp_*` (5 of 12, void blocks, ICS 214 out-of-period blocked, 213 eligibility), hands-on |
 | Regression (2.0/2.1 suites, export and form validators) | **passing on macOS** | — | all suites; `validate_exports.py`; `validate_forms.py` |
-| Desktop Windows/Linux, installers, E2E | **not run yet** | — | waiting for the go-ahead after macOS |
+| Desktop Windows/Linux, installers, E2E | **passing (automated)** | — | CI 41951473904; E2E 41953144472 (60/60 each) |
 | Android adapters (AND-*) | **not started** | — | Android branch |
 
 ## 2.1.0 — desktop GPS, Quick Entry, HAM presets, operator/station (spec EMLOG-DESKTOP-ENH-2026-11-03)
