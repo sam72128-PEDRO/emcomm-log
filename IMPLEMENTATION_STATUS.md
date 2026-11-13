@@ -52,16 +52,31 @@ commands, so later Windows/Linux/Android packaging needs no rework.
 |---|---|---|
 | Handover: 2+ operators rotate, attribution kept, open work visible across shifts, inherited vs this shift | **passing (core)** | `v23::handover_rotation_inherited_work_empty_shift_reconstruction_and_archive` (Alice → Bob → Cara; counts per shift; inherited flags; entries keep original operator). |
 | Handover preview changes nothing; empty shift; reconstructed labelled; archived read-only | **passing (core)** | Same test: data marker and revision count unchanged by preview; empty logbook and empty shift; reconstructed basis/text; archived preview works, switch blocked. |
-| Switch works without / despite the summary | **passing (by design + UI)** | Summary is a separate read-only command; the dialog shows a failure banner and still offers Continue Operator Switch. Not clicked through in the release app yet. |
+| Switch works without / despite the summary | **passing (by design + UI)** | Summary is a separate read-only command; the dialog shows a failure banner and still offers Continue Operator Switch. The failure banner itself was not triggered by hand. |
 | Verify: valid passes; corruption, missing attachment, bad manifest, unlisted file, missing folder fail; read-only | **passing (core)** | `v23::verify_valid_backup_is_complete_and_read_only` (tree digest incl. mtimes identical before/after), `v23::verify_detects_corruption_missing_attachments_bad_manifest_and_missing_folder`. |
 | Health states; skipped-unchanged not a failure; creation vs verification distinct; overdue | **passing (core)** | `v23::health_states`, `v23::verification_store_keeps_recent_records_outside_backups`. |
 | Backup/restore/retention regression | **passing** | Existing `protection::a08_*`, `a09_*`, `backup::tests::retention_*` unchanged and green. |
 | Marker defect fix | **passing** | `v23::backup_marker_sees_links_directory_and_shift_changes`. |
 | Lifecycle: transmit/link/follow-up/flag/favorite/shift never acknowledge; explicit ACK recorded with operator; regression needs reason; history preserved; counts | **passing (core + frontend)** | `v23::traffic_transmitting_linking_resolving_and_shifts_never_acknowledge`, `v23::traffic_pending_counts_match_records`, `lifecycle::tests::*`, vitest `2.3 traffic lifecycle rules`. |
-| Regression of existing workflows | **passing (automated)** | All 122 core tests, vitest 31/31, svelte-check 0/0, ESLint, Prettier, `cargo fmt --check`, clippy `-D warnings`, `validate_exports.py` and `validate_forms.py` pass. |
+| Regression of existing workflows | **passing (automated)** | All 123 Rust tests, vitest 31/31, svelte-check 0/0, ESLint, Prettier, `cargo fmt --check`, clippy `-D warnings`, `validate_exports.py` and `validate_forms.py` pass. |
 | macOS build | see CHANGELOG / release notes | `npx tauri build --bundles dmg` (aarch64), `scripts/mac_smoke.sh`. |
 
-**Not validated:** hands-on operator acceptance of the three features in the release app; reports
+**Hands-on in the release build (2026-11-13, throwaway data folder, Emergency logbook, two operators):**
+Switch operator → Handover Summary showed this shift (2 messages) and outstanding work (1 Pending, 1 Awaiting
+ACK) with the handover note; Copy Summary put the expected plain text on the clipboard; Continue Operator Switch
+switched to the second operator; the Traffic Log shift row's Shift summary opened the *Reconstructed* view.
+Messages: Awaiting ACK → Acknowledged recorded under the second operator; Acknowledged → Sent asked for a reason
+(Keep status changed nothing); a correction with a reason was saved and shown as CORRECTION in Entry Details →
+Message status with the full status history. Settings → Backups → Backup Health: Unknown after an automatic
+backup; Verify Latest Backup → Verified with all seven checks listed; after one byte of the backup database was
+flipped on disk, Verify → Verification Failed. Defects found and fixed in this pass (each rechecked in a rebuilt app): Messages table overflowed
+the window; a declined correction left the select showing the unsaved status; Backup Health did not refresh
+after new changes (it now refreshes on data changes and every minute); a raw UTC timestamp in the protection
+line; spacing in the status history. Not done by hand: ICS 213/214/309 and report exports (unchanged in 2.3),
+Quick Entry Save & Add Another under a second operator, the summary-failure banner. The Dashboard badge was
+seen (Unknown after a newer, unverified backup).
+
+**Not validated:** full operator acceptance of the three features in the release app; reports
 (PDF/DOCX/XLSX) are unchanged and were not re-checked by hand; no Windows/Linux/Android build or CI run.
 
 ## 2.2.0 — six additions (EMLOG-2.2-SHARED-2026-11-04)

@@ -288,7 +288,7 @@
       {:else if step === 3}
         <h2>Backups</h2>
         <p class="muted">
-          Backups are independent, verified copies made every interval while a logbook is open, when you close
+          Backups are independent, checked copies made every interval while a logbook is open, when you close
           it, and on demand. The backup folder must be outside the live logbook — another drive is best.
         </p>
         <div class="field">

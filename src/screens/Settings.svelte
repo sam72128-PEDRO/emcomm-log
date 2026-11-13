@@ -489,7 +489,7 @@
       {:else if section === "backups"}
         <h2>Backups</h2>
         <p class="muted">
-          Independent, verified copies of the open logbook: automatically every interval, when the logbook
+          Independent, checked copies of the open logbook: automatically every interval, when the logbook
           closes, and on demand. Each backup is checked (hashes and database integrity) before it counts as
           successful. Old backups are removed only after a newer one succeeds.
         </p>

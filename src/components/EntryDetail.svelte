@@ -374,10 +374,9 @@
                     {fmt(c.at_utc)} · {c.from ? HANDLING_LABEL[c.from] : "Not tracked"} → {c.to
                       ? HANDLING_LABEL[c.to]
                       : "Not tracked"}
-                    · {c.by.name || "—"}{#if c.correction}
-                      <span class="badge warn">CORRECTION</span>{/if}{#if c.reason}<span class="muted">
-                        — {c.reason}</span
-                      >{/if}
+                    · {c.by.name || "—"}
+                    {#if c.correction}<span class="badge warn">CORRECTION</span>{/if}
+                    {#if c.reason}<span class="muted">— {c.reason}</span>{/if}
                   </li>
                 {/each}
               </ol>

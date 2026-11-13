@@ -13,6 +13,17 @@
   let error = $state<string | null>(null);
   const h = $derived(app.backupHealth);
 
+  // Health depends on the live logbook (changes since the last backup) and on the clock (age, overdue):
+  // refresh when shown, after any data change, and every minute while visible.
+  $effect(() => {
+    void app.dataVersion;
+    void app.refreshBackupHealth();
+  });
+  $effect(() => {
+    const t = setInterval(() => void app.refreshBackupHealth(), 60_000);
+    return () => clearInterval(t);
+  });
+
   const tone = (st: T.BackupHealthState) =>
     st === "verified" ? "ok" : st === "unknown" ? "neutral" : st === "attention_required" ? "warn" : "danger";
   const when = (t: string | null | undefined) => (t ? formatInstant(t, app.zone, app.clock) : "—");

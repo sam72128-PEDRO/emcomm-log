@@ -83,6 +83,10 @@
   const health = $derived(app.active!.health);
   const op = $derived(info.logbook_type === "emergency" ? currentPeriod(app.periods) : null);
   const b = $derived(app.backup);
+  $effect(() => {
+    void app.dataVersion;
+    void app.refreshBackupHealth();
+  });
   const healthTone = (st: T.BackupHealthState) =>
     st === "verified" ? "ok" : st === "unknown" ? "neutral" : st === "attention_required" ? "warn" : "danger";
 

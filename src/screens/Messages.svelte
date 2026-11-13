@@ -57,9 +57,12 @@
 
   const count = (t: (typeof tabs)[number]) => t.states.reduce((n, s) => n + (app.stats?.handling[s] ?? 0), 0);
 
-  async function change(e: T.Entry, v: string) {
+  async function change(e: T.Entry, el: HTMLSelectElement) {
     busyId = e.id;
-    await changeHandling(e, (v || null) as T.Handling | null);
+    const ok = await changeHandling(e, (el.value || null) as T.Handling | null);
+    // A declined correction changes nothing: put the select back on the recorded status (the bound value did
+    // not change, so Svelte would not rewrite it).
+    if (!ok) el.value = e.handling ?? "";
     busyId = null;
   }
 </script>
@@ -82,70 +85,74 @@
   </div>
   <div class="panel-body">
     {#if error}<div class="banner error" role="alert">{error}</div>{/if}
-    <table class="data">
-      <thead
-        ><tr
-          ><th>#</th><th>Time</th><th>Type</th><th>From → To</th><th>Summary</th><th>Priority</th><th
-            >Handling</th
-          ><th>Outstanding action</th><th>Last status change</th></tr
-        ></thead
-      >
-      <tbody>
-        {#each items as e (e.id)}
-          <tr>
-            <td class="mono"
-              ><button
-                class="link"
-                onclick={() => (app.detailEntryId = e.id)}
-                aria-label="Open entry {e.sequence_no}">{String(e.sequence_no).padStart(4, "0")}</button
-              ></td
-            >
-            <td class="nowrap">{formatInstant(e.event_at_utc, app.zone, app.clock)}</td>
-            <td><KindBadge kind={e.kind} /></td>
-            <td class="nowrap">{e.from_text || "—"} → {e.to_text || "—"}</td>
-            <td class="ellipsis" style="max-width:380px"
-              >{e.subject}{#if e.emergency?.message_number}&nbsp;
-                <span class="muted">(Msg {e.emergency.message_number})</span>{/if}</td
-            >
-            <td>{PRIORITY_LABEL[e.priority]}</td>
-            <td>
-              <select
-                aria-label="Handling status for entry {e.sequence_no}"
-                value={e.handling ?? ""}
-                onchange={(ev) => change(e, ev.currentTarget.value)}
-                disabled={busyId === e.id || app.readOnly || !!app.storageBlocked}
+    <div class="table-wrap">
+      <table class="data">
+        <thead
+          ><tr
+            ><th>#</th><th>Time</th><th>Type</th><th>From → To</th><th>Summary</th><th>Priority</th><th
+              >Handling</th
+            ><th>Outstanding action</th><th>Last status change</th></tr
+          ></thead
+        >
+        <tbody>
+          {#each items as e (e.id)}
+            <tr>
+              <td class="mono"
+                ><button
+                  class="link"
+                  onclick={() => (app.detailEntryId = e.id)}
+                  aria-label="Open entry {e.sequence_no}">{String(e.sequence_no).padStart(4, "0")}</button
+                ></td
               >
-                {#each Object.entries(HANDLING_LABEL) as [v, l] (v)}<option value={v}>{l}</option>{/each}
-                <option value="">Not tracked</option>
-              </select>
-            </td>
-            <td class="small">
-              {outstandingAction(e.handling) || "—"}
-              {#if e.follow_up?.state === "open"}<div>
-                  <span class="badge warn" title="A separate follow-up; it does not change the message status"
-                    >FOLLOW-UP OPEN</span
-                  >
-                </div>{/if}
-              {#if e.related_count}<div class="muted">{e.related_count} related</div>{/if}
-            </td>
-            <td class="small nowrap">
-              {#if latest[e.id]}{formatInstant(latest[e.id].at_utc, app.zone, app.clock)}
-                <div class="muted">
-                  {latest[e.id].by_name || "—"}{latest[e.id].by_callsign
-                    ? ` · ${latest[e.id].by_callsign}`
-                    : ""}
-                </div>{:else}—{/if}
-            </td>
-          </tr>
-        {:else}
-          <tr
-            ><td colspan="9" class="empty"
-              >No messages in this state. Set "Message handling" when logging traffic to track it here.</td
-            ></tr
-          >
-        {/each}
-      </tbody>
-    </table>
+              <td class="when">{formatInstant(e.event_at_utc, app.zone, app.clock)}</td>
+              <td><KindBadge kind={e.kind} /></td>
+              <td>{e.from_text || "—"} → {e.to_text || "—"}</td>
+              <td class="ellipsis" style="max-width:220px"
+                >{e.subject}{#if e.emergency?.message_number}&nbsp;
+                  <span class="muted">(Msg {e.emergency.message_number})</span>{/if}</td
+              >
+              <td>{PRIORITY_LABEL[e.priority]}</td>
+              <td>
+                <select
+                  class="handling-select"
+                  aria-label="Handling status for entry {e.sequence_no}"
+                  value={e.handling ?? ""}
+                  onchange={(ev) => change(e, ev.currentTarget)}
+                  disabled={busyId === e.id || app.readOnly || !!app.storageBlocked}
+                >
+                  {#each Object.entries(HANDLING_LABEL) as [v, l] (v)}<option value={v}>{l}</option>{/each}
+                  <option value="">Not tracked</option>
+                </select>
+              </td>
+              <td class="small">
+                {outstandingAction(e.handling) || "—"}
+                {#if e.follow_up?.state === "open"}<div>
+                    <span
+                      class="badge warn"
+                      title="A separate follow-up; it does not change the message status">FOLLOW-UP OPEN</span
+                    >
+                  </div>{/if}
+                {#if e.related_count}<div class="muted">{e.related_count} related</div>{/if}
+              </td>
+              <td class="small when">
+                {#if latest[e.id]}{formatInstant(latest[e.id].at_utc, app.zone, app.clock)}
+                  <div class="muted">
+                    {latest[e.id].by_name || "—"}{latest[e.id].by_callsign
+                      ? ` · ${latest[e.id].by_callsign}`
+                      : ""}
+                  </div>{:else}—{/if}
+              </td>
+            </tr>
+          {:else}
+            <tr
+              ><td colspan="9" class="empty"
+                >No messages in this state. Set "Message handling" when logging traffic to track it here.</td
+              ></tr
+            >
+          {/each}
+        </tbody>
+      </table>
+    </div>
     {#if total > items.length}<p class="muted">
         Showing the first {items.length} of {total}. Use the Traffic Log handling filter to see all.
       </p>{/if}
@@ -153,6 +160,18 @@
 </section>
 
 <style>
+  .when {
+    min-width: 8.5em;
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  .tabs {
+    flex-wrap: wrap;
+  }
+  .handling-select {
+    min-width: 9.5em;
+  }
   .title {
     display: flex;
     gap: 10px;

@@ -41,7 +41,7 @@
       this computer only, in <span class="mono">{app.dataDir}</span>.
     </p>
     <p style="margin:0">
-      <strong>Backups</strong> are verified copies in the backup folder set in Settings → Backups{#if app.settings?.backup.destination}:
+      <strong>Backups</strong> are checked copies in the backup folder set in Settings → Backups{#if app.settings?.backup.destination}:
         <span class="mono">{app.settings.backup.destination}</span>{/if}.
     </p>
     <h3>If the logbook location becomes unavailable</h3>

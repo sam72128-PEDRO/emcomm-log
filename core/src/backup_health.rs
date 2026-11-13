@@ -653,7 +653,7 @@ pub fn assess(i: HealthInputs) -> BackupHealth {
     h.protection = match (&i.latest_backup, h.changes_since_backup) {
         (None, _) => "No independent copy of this logbook exists yet.".into(),
         (Some(_), Some(false)) => "The latest backup contains every change made so far.".into(),
-        (Some(lb), Some(true)) => format!("Changes made after {} are not in any backup yet.", lb.created_at_utc),
+        (Some(_), Some(true)) => "Changes made after the latest backup are not in any backup yet.".into(),
         (Some(_), None) => "Whether the latest backup holds the newest changes cannot be determined.".into(),
     };
 
