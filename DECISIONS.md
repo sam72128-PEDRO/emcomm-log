@@ -170,3 +170,29 @@ Ambiguities in the specification and mockups, and the choice made. Data integrit
 46. **Android adapters are separate work.** Camera, Photo Picker, SAF picking and `ACTION_CREATE_DOCUMENT` belong
     on the Android branch, rebased onto 2.2; the core (schema, parser, duplicate rules, review) is shared.
 
+
+## 2.3.0
+
+47. **No schema change for 2.3.** Everything 2.3 shows is derived from data 2.2 already keeps: shifts
+    (`operator_sessions`), entries, handling status, follow-ups, links, and the immutable revision history
+    (which already records every status change with time, editor and reason). Logbook schema stays 5 and the app
+    database stays 2, so 2.2 and 2.3 open each other's logbooks, backups and `.emlog` packages.
+48. **Handover summaries are computed, not stored.** A preview reads the open shift now. A past shift is rebuilt
+    from records and is always labelled *Reconstructed*; it shows that shift's entries as they stand now and
+    deliberately omits "what was outstanding then", which could not be shown honestly as the original picture.
+    Storing original snapshots would need a new table (schema 6) and was declined for 2.3. Shift membership is by
+    recorded time in `[shift start, handover)`; ADIF imports and voided entries are counted separately.
+49. **Verified means a full verification of that backup.** Creation-time checks (hashes + integrity, unchanged)
+    are reported as "checked when created", and a new backup is *Unknown* until **Verify Latest Backup** checks
+    that same folder. Verification results live in `backup-verifications.json` in the per-user app folder (last
+    10 per logbook) — never in the backup, so verifying never writes to it, and not in `backup_runs`, whose CHECK
+    constraint (`auto/close/manual`) could only change through an app-database migration. The latest backup is
+    found from manifests on disk, so health is right even if the run history was cleared.
+50. **Status regressions need a reason; forward steps do not.** `lifecycle::check_transition` in Save Changes
+    refuses, without a reason, any change that lowers the lifecycle rank of a transmitted message (Sent 1, Awaiting
+    ACK/Relayed 2, Acknowledged/Delivered 3, Closed 4; clearing counts as lower). Pending-traffic counts keep the
+    2.2 definition (Pending + Sent + Awaiting ACK) — one shared definition in core (`Handling::is_outstanding`)
+    mirrored in `handling.ts`.
+51. **Backup "unchanged" marker covers 2.2 tables.** Link, directory, ADIF batch and shift changes are part of
+    the data marker (tolerating older archived logbooks without those tables); previously they let a scheduled
+    backup be skipped.

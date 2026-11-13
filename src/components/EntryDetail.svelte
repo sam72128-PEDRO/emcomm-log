@@ -29,6 +29,8 @@
 
   let entry = $state<T.Entry | null>(null);
   let revisions = $state<T.EntryRevision[]>([]);
+  // 2.3: message status lifecycle (read from the revision history; nothing stored twice).
+  let lifecycle = $state<T.Lifecycle | null>(null);
   let error = $state<string | null>(null);
   let editing = $state(false);
   let editDraft = $state<T.Draft | null>(null);
@@ -41,6 +43,7 @@
     try {
       [entry, revisions] = await Promise.all([api.getEntry(id), api.entryRevisions(id)]);
       error = null;
+      lifecycle = await api.entryLifecycle(id).catch(() => null);
     } catch (e) {
       error = toAppError(e).message;
     }
@@ -321,6 +324,66 @@
       {#if entry.status === "void" && entry.void_reason}<p class="muted" style="margin:0">
           Void reason: {entry.void_reason}
         </p>{/if}
+      {#if lifecycle && (lifecycle.current || lifecycle.changes.length)}
+        <fieldset class="lifecycle">
+          <legend>Message status</legend>
+          <dl class="kv">
+            <dt>Current status</dt>
+            <dd>
+              {#if lifecycle.current}<span class="badge info">{HANDLING_LABEL[lifecycle.current]}</span>{/if}
+              {lifecycle.stage}
+            </dd>
+            <dt>Outstanding action</dt>
+            <dd>{lifecycle.voided ? "None (entry is voided)" : lifecycle.outstanding_action || "None"}</dd>
+            {#if lifecycle.latest_change}<dt>Latest status change</dt>
+              <dd>
+                {fmt(lifecycle.latest_change.at_utc)} by {lifecycle.latest_change.by.name || "—"}{lifecycle
+                  .latest_change.by.callsign
+                  ? ` · ${lifecycle.latest_change.by.callsign}`
+                  : ""}
+                <span class="muted">(revision {lifecycle.latest_change.revision})</span>
+                {#if lifecycle.latest_change.correction}<span class="badge warn">CORRECTION</span>{/if}
+              </dd>{/if}
+            {#if lifecycle.acknowledgment}<dt>
+                {lifecycle.current === "delivered" ? "Delivery recorded" : "Acknowledgment recorded"}
+              </dt>
+              <dd>
+                {fmt(lifecycle.acknowledgment.at_utc)} by {lifecycle.acknowledgment.by.name || "—"}{lifecycle
+                  .acknowledgment.reason
+                  ? ` — ${lifecycle.acknowledgment.reason}`
+                  : ""}
+              </dd>{:else if lifecycle.current === "sent" || lifecycle.current === "awaiting_ack"}<dt>
+                Acknowledgment
+              </dt>
+              <dd class="muted">Not recorded. Transmitting a message does not acknowledge it.</dd>{/if}
+            <dt>Follow-up</dt>
+            <dd>
+              {lifecycle.follow_up_state === "open"
+                ? "Open"
+                : lifecycle.follow_up_state === "resolved"
+                  ? "Resolved"
+                  : "None"}
+              <span class="muted">— tracked separately; it never changes the message status.</span>
+            </dd>
+          </dl>
+          {#if lifecycle.changes.length > 1}<details>
+              <summary>Status history ({lifecycle.changes.length} changes)</summary>
+              <ol class="status-history">
+                {#each lifecycle.changes as c (c.revision)}
+                  <li>
+                    {fmt(c.at_utc)} · {c.from ? HANDLING_LABEL[c.from] : "Not tracked"} → {c.to
+                      ? HANDLING_LABEL[c.to]
+                      : "Not tracked"}
+                    · {c.by.name || "—"}{#if c.correction}
+                      <span class="badge warn">CORRECTION</span>{/if}{#if c.reason}<span class="muted">
+                        — {c.reason}</span
+                      >{/if}
+                  </li>
+                {/each}
+              </ol>
+            </details>{/if}
+        </fieldset>
+      {/if}
       <h2 class="subject">{entry.subject}</h2>
       <dl class="kv">
         <dt>Event time</dt>
@@ -578,5 +641,12 @@
   }
   legend :global(svg) {
     vertical-align: -2px;
+  }
+  .lifecycle {
+    margin: 0;
+  }
+  .status-history {
+    margin: 4px 0 0;
+    padding-left: 20px;
   }
 </style>

@@ -41,6 +41,29 @@ Status key: **passing** (evidence below) · **partial** (passes where it could b
 | A14 Menus/shortcuts on all OSs; focus, Tab, Esc, screen-reader status | **passing (automated on Windows and Linux, by hand on macOS); no human screen-reader session** | Installed-app E2E (`scripts/e2e.py`, 50/50 on Windows and Linux): Ctrl+1–5/F/,/Enter shortcuts, Tab order, focus into dialogs and restored after Esc, focus to invalid field, shortcuts blocked under dialogs with announcement, save and validation announced in live regions, native View menu driven by OS automation (pywinauto / xdotool), and the OS accessibility tree (UIA for Narrator/NVDA, AT-SPI for Orca) exposes labelled fields, buttons and combos. axe-core: no serious/critical violations on 10 screens. | macOS release app: native menus with shortcuts, Cmd+1–5/E/Enter, F1, Tab order, Esc and dialog focus verified by hand. Not done: a session with a real screen reader (VoiceOver/NVDA/Orca) by a person. |
 | A15 Native installers launch offline on clean machine; no placeholders/demo data | **passing** | `installer-smoke.yml` on fresh GitHub VMs with the CI installers ([run 41664446060](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/41664446060)): **Linux** `.deb` (apt), `.AppImage`, and `.rpm` (clean Fedora container) launched with no network, stayed running, created their data store, wizard rendered; **Windows** `.msi` and NSIS `.exe` installed silently and run with the app's outbound traffic blocked by firewall rule, same checks. **macOS** (built locally): `scripts/mac_smoke.sh` mounts the `.dmg`, runs the app with all IP networking denied (Seatbelt), checks it stays up, creates its data store and shows the wizard. | Smoke screenshots exposed and verified a fix for the window running off small (1024x768) screens. Not covered: Gatekeeper/SmartScreen first-launch prompts for unsigned builds. No demo data is shipped. |
 
+## 2.3.0 — handover summary, backup health, traffic lifecycle (V2.3.0 specification)
+
+Built and tested on macOS 14.6.1 (Apple Silicon) only, per the specification; Windows, Linux and Android were
+not built and no CI was run. No schema change (DECISIONS #47). Shared logic is in `core/` (`handover.rs`,
+`backup_health.rs`, `lifecycle.rs`) with no platform-specific code; the Tauri layer adds thin read-only
+commands, so later Windows/Linux/Android packaging needs no rework.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Handover: 2+ operators rotate, attribution kept, open work visible across shifts, inherited vs this shift | **passing (core)** | `v23::handover_rotation_inherited_work_empty_shift_reconstruction_and_archive` (Alice → Bob → Cara; counts per shift; inherited flags; entries keep original operator). |
+| Handover preview changes nothing; empty shift; reconstructed labelled; archived read-only | **passing (core)** | Same test: data marker and revision count unchanged by preview; empty logbook and empty shift; reconstructed basis/text; archived preview works, switch blocked. |
+| Switch works without / despite the summary | **passing (by design + UI)** | Summary is a separate read-only command; the dialog shows a failure banner and still offers Continue Operator Switch. Not clicked through in the release app yet. |
+| Verify: valid passes; corruption, missing attachment, bad manifest, unlisted file, missing folder fail; read-only | **passing (core)** | `v23::verify_valid_backup_is_complete_and_read_only` (tree digest incl. mtimes identical before/after), `v23::verify_detects_corruption_missing_attachments_bad_manifest_and_missing_folder`. |
+| Health states; skipped-unchanged not a failure; creation vs verification distinct; overdue | **passing (core)** | `v23::health_states`, `v23::verification_store_keeps_recent_records_outside_backups`. |
+| Backup/restore/retention regression | **passing** | Existing `protection::a08_*`, `a09_*`, `backup::tests::retention_*` unchanged and green. |
+| Marker defect fix | **passing** | `v23::backup_marker_sees_links_directory_and_shift_changes`. |
+| Lifecycle: transmit/link/follow-up/flag/favorite/shift never acknowledge; explicit ACK recorded with operator; regression needs reason; history preserved; counts | **passing (core + frontend)** | `v23::traffic_transmitting_linking_resolving_and_shifts_never_acknowledge`, `v23::traffic_pending_counts_match_records`, `lifecycle::tests::*`, vitest `2.3 traffic lifecycle rules`. |
+| Regression of existing workflows | **passing (automated)** | All 122 core tests, vitest 31/31, svelte-check 0/0, ESLint, Prettier, `cargo fmt --check`, clippy `-D warnings`, `validate_exports.py` and `validate_forms.py` pass. |
+| macOS build | see CHANGELOG / release notes | `npx tauri build --bundles dmg` (aarch64), `scripts/mac_smoke.sh`. |
+
+**Not validated:** hands-on operator acceptance of the three features in the release app; reports
+(PDF/DOCX/XLSX) are unchanged and were not re-checked by hand; no Windows/Linux/Android build or CI run.
+
 ## 2.2.0 — six additions (EMLOG-2.2-SHARED-2026-11-04)
 
 **Where it was verified (2026-11-04).**

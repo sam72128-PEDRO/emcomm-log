@@ -92,6 +92,27 @@ the operator and station it was logged with. If an entry is half-typed, you choo
 outgoing operator, or leave it open for the incoming operator to finish (it is then recorded under them).
 The Traffic Log can filter by operator and shows each shift change as a divider row.
 
+### Handover summary (2.3)
+
+In **Switch operator…**, **Handover Summary…** shows a preview before you switch. Choose the incoming operator
+and type the handover note first if you want them in it. The summary has two parts:
+
+- **This shift** — what was logged since the outgoing operator came on duty: a count by type, and the
+  Important, Flagged and Priority/Emergency entries. ADIF imports and voided entries are counted separately.
+- **Outstanding at the station** — open work from *all* shifts, because it belongs to the station, not to one
+  operator: messages not yet transmitted (Pending), transmitted with no acknowledgment recorded (Sent),
+  awaiting acknowledgment, open follow-ups (overdue ones marked), and Important entries. Anything logged
+  before this shift is marked **EARLIER SHIFT**.
+
+Click an entry number to open it (the switch is not made). **Copy Summary** puts plain text (UTC times) on the
+clipboard to paste into a message or a paper log. **Continue Operator Switch** makes the switch; **Cancel /
+Return to Log** leaves everything as it was. The summary is optional, saves nothing and changes nothing; if it
+cannot be produced you can still switch.
+
+Summaries are not stored. In the Traffic Log, **Shift summary** on a shift-change row rebuilds the earlier shift
+from its records and is labelled **Reconstructed**: it shows that shift's entries as they stand now, and does
+not try to recreate what was outstanding at that moment.
+
 ### Locations and privacy (2.1)
 
 Each entry can carry two separate locations, in the collapsible *Location* section:
@@ -167,6 +188,25 @@ optional reason. **Void** (with optional reason) hides an entry from the default
 deleted and its number is never reused. Show voided entries with the *Status* filter; **Restore** makes it
 active again. There is no hard delete.
 
+### Message status (2.3)
+
+A message's **status** says where it stands: *Pending* (logged, not yet transmitted), *Sent* (transmitted; no
+acknowledgment recorded), *Awaiting ACK* (transmitted and an acknowledgment is expected), *Acknowledged*, and
+*Relayed*, *Delivered*, *Closed*. Transmitting a message never acknowledges it, and nothing else does either —
+not linking an entry, resolving a follow-up, flagging, switching operators or making a report. Record the
+acknowledgment yourself when it arrives (Messages screen, the Dashboard's Pending Traffic button, or Edit).
+
+A **follow-up** is separate: a message can be acknowledged with a follow-up still open, and resolving the
+follow-up does not change the message status.
+
+**Messages** (`Ctrl/Cmd+4`) has tabs for each stage, and shows the outstanding action and the last status
+change (time and operator) for each message. **Entry Details → Message status** shows the current status, what
+is still to do, who recorded the latest change and the acknowledgment, and the full status history.
+
+Moving a status **back** (for example Acknowledged → Sent, or clearing the status of a message already sent)
+is a correction: you are asked for a reason, the change is marked **CORRECTION**, and the earlier status stays
+in the history. Normal forward steps never ask for anything.
+
 ## 5. Backups and restore
 
 With a backup folder configured, a verified backup is made every interval while a logbook is open (skipped if
@@ -175,6 +215,23 @@ Each backup is a dated folder under `<backup folder>/<logbook>--<id>/` with a ma
 only counts as successful after every file and the database are verified. A failed backup never replaces an
 older one. Old backups are pruned only after a newer one succeeds (default: newest 8, plus one per day for 7
 days and one per week for 4 weeks).
+
+**Backup Health (2.3)** — Settings → Backups, and a badge on the Dashboard:
+
+| State | Meaning |
+|---|---|
+| Verified | The newest backup passed **Verify Latest Backup**; the time of that check is shown. |
+| Unknown | A backup exists and was checked when it was made, but has not been fully verified since. |
+| Attention Required | A backup attempt failed, the schedule is overdue (changes not backed up for more than two intervals), the destination is not writable, or there is no backup of this logbook yet. |
+| Verification Failed | The newest backup failed verification. Make a new backup and check the destination drive. |
+| Unavailable | The backup folder or drive cannot be reached. |
+| Not Configured | No backup folder is set. Logging still works. |
+
+**Verify Latest Backup** reads the newest backup of the open logbook and checks: folder and manifest readable;
+manifest valid; SHA-256 of every file; SQLite integrity; foreign keys; every attachment the database refers to;
+and that the backup matches its manifest. Each check is listed with its result, and a check that could not run
+is shown as *not checked*, never as passed. Verification never changes, deletes or repairs a backup. A
+scheduled backup that was skipped because nothing changed is shown as "no changes", not as a failure.
 
 **Restore Backup** (Home): pick the backup folder, select a backup, review the verified summary, choose a name
 and destination. It is restored as a **new, separate logbook**; existing logbooks are never overwritten.

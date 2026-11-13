@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.3.0 — 2026-11-13
+
+Three refinements from the V2.3.0 specification, built on 2.2 without a second system for any of them.
+**No database change:** the logbook stays at schema 5 and the app database at version 2, so 2.3 logbooks,
+backups and `.emlog` packages open in 2.2 and 2.2 ones open in 2.3 unchanged. Built and tested on macOS only;
+nothing in the shared core is macOS-specific.
+
+**Operator handover summary**
+- Switch operator… → **Handover Summary…** previews a summary before the switch: logbook/incident, station,
+  outgoing and incoming operator, shift start and handover time, operational period; this shift's entries by
+  type plus Important/Flagged/Priority ones; outstanding work at the station (not transmitted, transmitted
+  with no acknowledgment recorded, awaiting acknowledgment, open and overdue follow-ups, Important entries),
+  each item marked when it was inherited from an earlier shift; the note received at shift start and the
+  handover note. **Copy Summary**, click any entry to open it, **Continue Operator Switch**, or
+  **Cancel / Return to Log**. Optional: Switch operator works exactly as before without it, and a summary
+  that cannot be generated never blocks the switch.
+- Traffic Log shift-change rows have **Shift summary**: the earlier shift, **reconstructed from records** and
+  labelled as such (summaries are not stored, so none is ever presented as an original snapshot).
+- A preview reads only; it never writes to the logbook. Archived logbooks can be summarised; switching in
+  them stays blocked.
+
+**Backup health and Verify Latest Backup**
+- Settings → Backups shows **Backup Health**: Verified, Not Configured, Unavailable, Attention Required,
+  Verification Failed or Unknown, with destination and whether it is reachable, schedule, last attempted,
+  last successful and last verified backup, backup age, last recorded error, and whether the newest changes
+  are in a backup. The Dashboard shows the state with a link to the details.
+- **Verify Latest Backup** (off the UI thread) checks the folder and manifest, the SHA-256 of every file,
+  SQLite integrity, foreign keys, every attachment the database references, and completeness against the
+  manifest, and lists each check with its result. It only reads: it never changes, prunes, restores or
+  repairs a backup. A backup is shown as Verified only after this check of that same backup; the check made
+  when a backup is created is shown separately ("checked when created"), so new backups show **Unknown**
+  until verified.
+- A scheduled backup skipped because nothing changed is shown as such, never as a failure.
+
+**Message status (traffic lifecycle)**
+- Messages: *Transmitted, no ACK recorded* (Sent) and *Awaiting ACK* are separate tabs (2.2 combined them),
+  plus *Relayed / Delivered / Closed*. New columns: outstanding action, last status change (time and
+  operator), open follow-up and related-entry count.
+- Entry Details → **Message status**: current status, outstanding action, latest change and who recorded it,
+  the acknowledgment (when, by whom, note), the full status history, and the follow-up shown separately.
+- Moving a status back (for example Acknowledged → Sent, or clearing the status of a transmitted message)
+  now needs a reason, so recorded progress is never silently overwritten; the earlier status stays in the
+  history and the change is marked as a correction. Forward changes stay one click.
+- Nothing acknowledges a message except an explicit status change: transmitting, linking, resolving a
+  follow-up, flagging, switching shifts and reports leave it alone (now covered by tests).
+
+**Fixed**
+- Automatic backups were skipped as "unchanged" after changes that create no entry revision — adding or
+  removing a related-entry link, editing the logbook directory, an ADIF import batch record, or a shift
+  change. These now count as changes. (Existing 2.2 backups are unaffected; the next scheduled backup after
+  upgrading may run once even with no new data.)
+- The Dashboard called the last successful backup "verified"; it now says "checked when created", and new
+  backup records read "Created and checked".
+
 ## 2.2.0 — 2026-11-04
 
 Six additions from the V2.2 handoff package (EMLOG-2.2-SHARED-2026-11-04). Logbooks upgrade from 2.1

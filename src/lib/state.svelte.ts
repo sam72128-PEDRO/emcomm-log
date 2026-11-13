@@ -77,6 +77,8 @@ class AppStore {
   draftStatus = $state<DraftStatus>({ kind: "idle" });
   storageBlocked = $state<T.AppError | null>(null);
   backup = $state<T.BackupStatus | null>(null);
+  /** 2.3: Backup Health (computed by the core; refreshed after backups and verification). */
+  backupHealth = $state<T.BackupHealth | null>(null);
   toasts = $state<Toast[]>([]);
   politeMessage = $state("");
   assertiveMessage = $state("");
@@ -143,6 +145,7 @@ class AppStore {
       void this.refreshIdentity();
     }
     this.backup = v?.backup ?? null;
+    void this.refreshBackupHealth();
     this.storageBlocked = v && !v.health.ok && v.health.error ? v.health.error : null;
     this.dataVersion++;
   }
@@ -159,6 +162,19 @@ class AppStore {
       this.stats = await api.logbookStats(a, b);
     } catch {
       this.stats = null;
+    }
+  }
+
+  async refreshBackupHealth() {
+    if (!this.active) {
+      this.backupHealth = null;
+      return;
+    }
+    try {
+      const h = await api.getBackupHealth();
+      this.backupHealth = h && typeof h === "object" && "state" in h ? h : null;
+    } catch {
+      this.backupHealth = null;
     }
   }
 
@@ -292,7 +308,11 @@ class AppStore {
     await Promise.all(this.editors.map((e) => e.flush()));
   }
 
-  async navigate(screen: Screen) {
+  /** 2.3: section Settings opens at on its next mount (e.g. "backups" from the dashboard). */
+  settingsSection = $state<string | null>(null);
+
+  async navigate(screen: Screen, section?: string) {
+    if (section) this.settingsSection = section;
     if (screen === this.screen) return;
     await this.flushDrafts();
     this.screen = screen;

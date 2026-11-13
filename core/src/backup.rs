@@ -113,7 +113,7 @@ pub fn run_backup(live_dir: &Path, dest_root: &Path, kind: &str, retention: &Bac
     }
 }
 
-fn find_existing_book_dir(dest_root: &Path, logbook_id: &str) -> Option<PathBuf> {
+pub(crate) fn find_existing_book_dir(dest_root: &Path, logbook_id: &str) -> Option<PathBuf> {
     let suffix = format!("--{}", short_uuid(logbook_id));
     fs::read_dir(dest_root)
         .ok()?

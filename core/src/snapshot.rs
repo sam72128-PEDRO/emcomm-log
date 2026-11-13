@@ -75,8 +75,29 @@ pub fn data_marker(conn: &Connection) -> AppResult<String> {
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
     )?;
-    Ok(fsutil::sha256_bytes(format!("{parts:?}").as_bytes()))
+    // 2.3: 2.2 tables changed without an entry revision (links, the station directory, ADIF import
+    // batches, attachment captions/removals ride on revisions already) and shift changes must also
+    // count as changes, or a scheduled backup would be skipped as "unchanged".
+    let v22: V22Marker = conn
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM entry_links),
+                (SELECT COUNT(*) FROM entry_links WHERE removed_at_utc IS NOT NULL),
+                (SELECT MAX(removed_at_utc) FROM entry_links),
+                (SELECT COUNT(*) FROM station_directory),
+                (SELECT MAX(updated_at_utc) FROM station_directory),
+                (SELECT COUNT(*) FROM adif_import_batches),
+                (SELECT COUNT(*) FROM operator_sessions),
+                (SELECT MAX(COALESCE(ended_at_utc, started_at_utc)) FROM operator_sessions)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+        )
+        // An archived logbook from an older version (viewed, never upgraded) lacks these tables.
+        .unwrap_or_default();
+    Ok(fsutil::sha256_bytes(format!("{parts:?}{v22:?}").as_bytes()))
 }
+
+/// Counts and latest change times of the 2.2 tables and shifts (see `data_marker`).
+type V22Marker = (i64, i64, Option<String>, i64, Option<String>, i64, i64, Option<String>);
 
 pub fn live_data_marker(live_dir: &Path) -> AppResult<String> {
     let conn = Logbook::open_read_only(&live_dir.join(DB_FILE))?;

@@ -35,6 +35,7 @@
   import Form213Dialog from "../components/Form213Dialog.svelte";
   import Form309Dialog from "../components/Form309Dialog.svelte";
   import Form214Dialog from "../components/Form214Dialog.svelte";
+  import ShiftSummaryDialog from "../components/ShiftSummaryDialog.svelte";
 
   const book = app.active!;
   const kinds = allowedKinds(book.info.logbook_type);
@@ -92,8 +93,13 @@
   );
   // Shift changes (not the first shift) shown between the entries they fall between, in event-time order.
   const handovers = $derived(
-    app.sessions.slice(1).map((x, k) => ({ ...x, prev: app.sessions[k].operator.name })),
+    app.sessions
+      .slice(1)
+      .map((x, k) => ({ ...x, prev: app.sessions[k].operator.name, prevId: app.sessions[k].id })),
   );
+  // 2.3: reconstructed summary of the shift that ended at a handover row.
+  let shiftSummaryId = $state<string | null>(null);
+
   function shiftsBefore(i: number) {
     if (q.sort === "recorded" || q.operator || q.text) return [];
     const t = (iso: string) => Date.parse(iso);
@@ -485,7 +491,12 @@
                 )}:
                 <strong>{sh.operator.name}</strong> on duty{sh.prev ? `, relieving ${sh.prev}` : ""}{sh.note
                   ? ` — ${sh.note}`
-                  : ""}</td
+                  : ""}
+                <button
+                  class="small link"
+                  onclick={() => (shiftSummaryId = sh.prevId)}
+                  title="Summary of {sh.prev}'s shift, reconstructed from records">Shift summary</button
+                ></td
               >
             </tr>
           {/each}
@@ -650,6 +661,10 @@
     entryIds={[...app.selection]}
     opId={page.items.find((e) => app.selection.includes(e.id) && e.op_id)?.op_id ?? null}
     onclose={() => (form214 = false)}
+  />{/if}
+{#if shiftSummaryId}<ShiftSummaryDialog
+    sessionId={shiftSummaryId}
+    onclose={() => (shiftSummaryId = null)}
   />{/if}
 {#if form213}<Form213Dialog entryIds={[...app.selection]} onclose={() => (form213 = false)} />{/if}
 {#if form309}<Form309Dialog

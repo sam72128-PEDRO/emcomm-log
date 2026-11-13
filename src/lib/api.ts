@@ -159,6 +159,15 @@ export const api = {
   activeOperator: () => call<T.OperatorSession | null>("active_operator"),
   switchOperator: (profileId: string, atUtc: string | null, note: string) =>
     call<T.OperatorSession>("switch_operator", { profileId, atUtc, note }),
+  // 2.3 (all read-only)
+  handoverPreview: (incomingProfileId: string | null, atUtc: string | null, note: string) =>
+    call<T.HandoverSummary>("handover_preview", { incomingProfileId, atUtc, note }),
+  shiftSummary: (sessionId: string) => call<T.HandoverSummary>("shift_summary", { sessionId }),
+  entryLifecycle: (id: string) => call<T.Lifecycle>("entry_lifecycle", { id }),
+  latestHandlingChanges: (ids: string[]) =>
+    call<T.LatestHandlingChange[]>("latest_handling_changes", { ids }),
+  getBackupHealth: () => call<T.BackupHealth>("get_backup_health"),
+  verifyLatestBackup: () => call<T.VerifyReport>("verify_latest_backup"),
   listPeriods: () => call<T.OperationalPeriod[]>("list_periods"),
   currentPeriod: () => call<T.OperationalPeriod | null>("current_period"),
   savePeriod: (id: string | null, input: T.OperationalPeriodInput) =>

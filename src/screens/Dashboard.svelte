@@ -83,6 +83,8 @@
   const health = $derived(app.active!.health);
   const op = $derived(info.logbook_type === "emergency" ? currentPeriod(app.periods) : null);
   const b = $derived(app.backup);
+  const healthTone = (st: T.BackupHealthState) =>
+    st === "verified" ? "ok" : st === "unknown" ? "neutral" : st === "attention_required" ? "warn" : "danger";
 
   async function saveNotes() {
     notesBusy = true;
@@ -313,8 +315,15 @@
             Last attempt {relativeAge(b.last.finished_at_utc)}: {b.last.message}
           </div>{/if}
         {#if b?.last_success}<div class="small muted">
-            Last verified backup {formatInstant(b.last_success.finished_at_utc, app.zone, app.clock)} ({b
-              .last_success.kind}, {b.last_success.entry_count} entries)
+            Last successful backup {formatInstant(b.last_success.finished_at_utc, app.zone, app.clock)} ({b
+              .last_success.kind}, {b.last_success.entry_count} entries; checked when created)
+          </div>{/if}
+        {#if app.backupHealth && app.backupHealth.state !== "not_configured"}<div class="row wrap small">
+            <span class="muted">Backup health:</span>
+            <span class="badge {healthTone(app.backupHealth.state)}"
+              >{app.backupHealth.state_label.toUpperCase()}</span
+            >
+            <button class="small link" onclick={() => app.navigate("settings", "backups")}>Details…</button>
           </div>{/if}
         {#if b?.message}<div class="small muted">{b.message}</div>{/if}
         {#if b?.configured}<div class="small muted">

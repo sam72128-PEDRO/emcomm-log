@@ -733,6 +733,8 @@ impl Logbook {
                 ),
             ));
         }
+        // 2.3: undoing recorded transmission/acknowledgment progress is a correction and needs a reason.
+        crate::lifecycle::check_transition(before.handling, v.handling, &reason)?;
         let new_rev = before.current_revision + 1;
         let result = (|| -> AppResult<Option<Entry>> {
             check_op(&tx, &v.op_id, before.op_id.as_deref())?;

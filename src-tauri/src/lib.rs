@@ -5,6 +5,7 @@ mod menu;
 
 use emcomm_core::appdb::{AppDb, BackupRun};
 use emcomm_core::backup::{self, BackupListing, BackupPreview};
+use emcomm_core::backup_health;
 use emcomm_core::drafts::{Draft, DraftMeta, DraftStore};
 use emcomm_core::error::{AppError, AppResult, ErrorCode};
 use emcomm_core::export::{self, ExportPreview, ExportRequest, ExportResult, forms, ics309};
@@ -40,6 +41,10 @@ pub struct AppState {
     gps_cancel: Arc<AtomicBool>,
     /// 2.2: cancels the attachment copy in progress.
     attach_cancel: Arc<AtomicBool>,
+    /// 2.3: last time a scheduled backup was skipped because nothing had changed (shown, never a failure).
+    last_unchanged_check: Mutex<Option<String>>,
+    /// 2.3: one backup verification at a time.
+    verifying: AtomicBool,
 }
 
 type Cmd<T> = Result<T, AppError>;
@@ -372,6 +377,7 @@ fn run_backup_kind(app: &AppHandle, kind: &str, skip_if_unchanged: bool) -> Back
         if let (Some(last), Ok(marker)) = (last, snapshot::live_data_marker(&dir))
             && last.data_marker.as_deref() == Some(marker.as_str())
         {
+            *lock(&state.last_unchanged_check) = Some(now_utc());
             return BackupOutcome { ok: true, skipped: true, path: last.path, error: None };
         }
     }
@@ -389,8 +395,8 @@ fn run_backup_kind(app: &AppHandle, kind: &str, skip_if_unchanged: bool) -> Back
         path: result.as_ref().ok().map(|r| r.path.clone()),
         entry_count: result.as_ref().ok().map(|r| r.entry_count),
         message: match &result {
-            Ok(r) if r.pruned > 0 => format!("Verified; removed {} old backup(s) per retention", r.pruned),
-            Ok(_) => "Verified".into(),
+            Ok(r) if r.pruned > 0 => format!("Created and checked; removed {} old backup(s) per retention", r.pruned),
+            Ok(_) => "Created and checked".into(),
             Err(e) => e.message.clone(),
         },
         data_marker: result.as_ref().ok().map(|r| r.data_marker.clone()),
@@ -1222,6 +1228,111 @@ async fn switch_operator(state: State<'_, AppState>, profile_id: String, at_utc:
     with_book(&state, |lb| lb.switch_operator(&incoming, at_utc.as_deref(), &note))
 }
 
+// ---------- 2.3: backup health and verification ----------
+
+fn backup_health_for(s: &AppState, logbook_id: &str, live_dir: &Path) -> AppResult<backup_health::BackupHealth> {
+    let (settings, runs) = {
+        let db = lock(&s.app);
+        (db.settings()?, db.backup_runs(logbook_id, 50)?)
+    };
+    let dest = settings.backup.destination.clone();
+    let check = dest.as_deref().map(|d| backup::check_destination(Path::new(d), live_dir));
+    let latest = dest.as_deref().filter(|d| Path::new(d).is_dir()).and_then(|d| backup_health::latest_backup(Path::new(d), logbook_id));
+    let verifications = backup_health::VerificationStore::new(&s.data_dir).for_logbook(logbook_id);
+    let live_marker = snapshot::live_data_marker(live_dir).ok();
+    Ok(backup_health::assess(backup_health::HealthInputs {
+        destination: dest.as_deref(),
+        destination_check: check,
+        runs: &runs,
+        latest_backup: latest,
+        verifications: &verifications,
+        live_marker,
+        last_unchanged_check_utc: lock(&s.last_unchanged_check).clone(),
+        interval_minutes: settings.backup.interval_minutes,
+        on_close: settings.backup.on_close,
+        now: chrono::Utc::now(),
+    }))
+}
+
+#[tauri::command]
+async fn get_backup_health(app: AppHandle) -> Cmd<backup_health::BackupHealth> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = app.state::<AppState>();
+        let (id, dir) = lock(&s.book).as_ref().map(|lb| (lb.id.clone(), lb.dir.clone())).ok_or_else(no_book)?;
+        backup_health_for(&s, &id, &dir)
+    })
+    .await
+    .map_err(|e| AppError::internal(e.to_string()))?
+}
+
+/// Verify the newest backup of the active logbook, off the UI thread. Read-only: the backup is never
+/// modified, pruned, restored or repaired. Holds the backup lock so retention cannot remove the folder
+/// while it is being read.
+#[tauri::command]
+async fn verify_latest_backup(app: AppHandle) -> Cmd<backup_health::VerifyReport> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = app.state::<AppState>();
+        let (id, dir) = lock(&s.book).as_ref().map(|lb| (lb.id.clone(), lb.dir.clone())).ok_or_else(no_book)?;
+        let dest = lock(&s.app)
+            .settings()?
+            .backup
+            .destination
+            .ok_or_else(|| AppError::validation("destination", "No backup destination is configured"))?;
+        if !Path::new(&dest).is_dir() {
+            return Err(AppError::new(ErrorCode::StorageUnavailable, "The backup destination is not available (drive disconnected?)"));
+        }
+        if s.verifying.swap(true, Ordering::SeqCst) {
+            return Err(AppError::new(ErrorCode::Conflict, "A verification is already running"));
+        }
+        let result = (|| {
+            let _guard = lock(&s.backup_lock);
+            let latest = backup_health::latest_backup(Path::new(&dest), &id)
+                .ok_or_else(|| AppError::not_found("No backup of this logbook was found at the destination"))?;
+            let report = backup_health::verify_backup(Path::new(&latest.path));
+            backup_health::VerificationStore::new(&s.data_dir).record(backup_health::VerificationRecord::from_report(&id, &report))?;
+            Ok(report)
+        })();
+        s.verifying.store(false, Ordering::SeqCst);
+        if let Ok(h) = backup_health_for(&s, &id, &dir) {
+            let _ = app.emit("backup-health", h);
+        }
+        result
+    })
+    .await
+    .map_err(|e| AppError::internal(e.to_string()))?
+}
+
+// ---------- 2.3: handover summary and traffic lifecycle (read-only) ----------
+
+#[tauri::command]
+async fn handover_preview(
+    state: State<'_, AppState>,
+    incoming_profile_id: Option<String>,
+    at_utc: Option<String>,
+    note: String,
+) -> Cmd<emcomm_core::handover::HandoverSummary> {
+    let incoming = match incoming_profile_id.filter(|p| !p.is_empty()) {
+        Some(p) => Some(OperatorSnapshot::from(&lock(&state.app).get_profile(&p)?)),
+        None => None,
+    };
+    with_book(&state, |lb| emcomm_core::handover::preview(&lb.conn, incoming, at_utc.as_deref(), &note))
+}
+
+#[tauri::command]
+async fn shift_summary(state: State<'_, AppState>, session_id: String) -> Cmd<emcomm_core::handover::HandoverSummary> {
+    with_book(&state, |lb| emcomm_core::handover::reconstruct(&lb.conn, &session_id))
+}
+
+#[tauri::command]
+async fn entry_lifecycle(state: State<'_, AppState>, id: String) -> Cmd<emcomm_core::lifecycle::Lifecycle> {
+    with_book(&state, |lb| emcomm_core::lifecycle::entry_lifecycle(&lb.conn, &id))
+}
+
+#[tauri::command]
+async fn latest_handling_changes(state: State<'_, AppState>, ids: Vec<String>) -> Cmd<Vec<emcomm_core::lifecycle::LatestHandlingChange>> {
+    with_book(&state, |lb| emcomm_core::lifecycle::latest_handling_changes(&lb.conn, &ids))
+}
+
 // ---------- GPS (2.1): one fix on request, never tracking ----------
 
 #[tauri::command]
@@ -1520,6 +1631,8 @@ pub fn run() {
                 gps_busy: Arc::new(AtomicBool::new(false)),
                 gps_cancel: Arc::new(AtomicBool::new(false)),
                 attach_cancel: Arc::new(AtomicBool::new(false)),
+                last_unchanged_check: Mutex::new(None),
+                verifying: AtomicBool::new(false),
             });
             create_main_window(app)?;
             fit_window_to_screen(app.handle());
@@ -1603,6 +1716,12 @@ pub fn run() {
             list_drafts,
             delete_draft,
             run_backup_now,
+            get_backup_health,
+            verify_latest_backup,
+            handover_preview,
+            shift_summary,
+            entry_lifecycle,
+            latest_handling_changes,
             get_backup_status,
             list_backups,
             preview_backup,

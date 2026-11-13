@@ -964,3 +964,164 @@ export interface ExportReview {
   total: number;
   notes: string[];
 }
+
+// ---------- 2.3: handover summary, traffic lifecycle, backup health ----------
+
+export interface HandoverEntryRef {
+  id: string;
+  sequence_no: number;
+  kind: EntryKind;
+  summary: string;
+  event_at_utc: string;
+  recorded_at_utc: string;
+  priority: Priority | null;
+  handling: Handling | null;
+  important: boolean;
+  flagged: boolean;
+  follow_up_open: boolean;
+  follow_up_due_utc: string | null;
+  follow_up_note: string;
+  overdue: boolean;
+  inherited: boolean;
+  logged_by: string;
+}
+
+export interface HandoverRefList {
+  total: number;
+  items: HandoverEntryRef[];
+}
+
+export interface HandoverSummary {
+  basis: "preview" | "reconstructed";
+  generated_at_utc: string;
+  logbook_name: string;
+  incident_name: string;
+  station_label: string;
+  tactical_id: string;
+  station_callsign: string;
+  outgoing: OperatorSnapshot | null;
+  incoming: OperatorSnapshot | null;
+  shift_id: string | null;
+  shift_start_utc: string | null;
+  handover_at_utc: string;
+  period_name: string | null;
+  period_start_utc: string | null;
+  period_end_utc: string | null;
+  activity: {
+    total: number;
+    by_kind: { kind: EntryKind; count: number }[];
+    voided: number;
+    imported: number;
+    significant: HandoverRefList;
+  };
+  outstanding: {
+    not_transmitted: HandoverRefList;
+    transmitted_no_ack: HandoverRefList;
+    awaiting_ack: HandoverRefList;
+    open_follow_ups: HandoverRefList;
+    overdue_follow_ups: number;
+    important: HandoverRefList;
+    inherited_items: number;
+  } | null;
+  shift_start_note: string;
+  handover_note: string;
+  text: string;
+}
+
+export interface HandlingChange {
+  revision: number;
+  action: string;
+  at_utc: string;
+  from: Handling | null;
+  to: Handling | null;
+  by: OperatorSnapshot;
+  reason: string;
+  correction: boolean;
+}
+
+export interface Lifecycle {
+  entry_id: string;
+  current: Handling | null;
+  stage: string;
+  outstanding_action: string;
+  outstanding: boolean;
+  latest_change: HandlingChange | null;
+  acknowledgment: HandlingChange | null;
+  changes: HandlingChange[];
+  follow_up_state: FollowUpState;
+  related_count: number;
+  voided: boolean;
+}
+
+export interface LatestHandlingChange {
+  entry_id: string;
+  revision: number;
+  at_utc: string;
+  by_name: string;
+  by_callsign: string;
+  to: Handling | null;
+}
+
+export type BackupHealthState =
+  "verified" | "not_configured" | "unavailable" | "attention_required" | "verification_failed" | "unknown";
+
+export interface VerificationRecord {
+  logbook_id: string;
+  path: string;
+  verified_at_utc: string;
+  complete: boolean;
+  scope: string;
+  problems: string[];
+  backup_created_at_utc: string | null;
+}
+
+export interface LatestBackup {
+  path: string;
+  created_at_utc: string;
+  kind: string;
+  entry_count: number;
+}
+
+export interface BackupHealth {
+  state: BackupHealthState;
+  state_label: string;
+  headline: string;
+  reasons: string[];
+  destination: string | null;
+  destination_accessible: boolean | null;
+  destination_message: string | null;
+  interval_minutes: number;
+  on_close: boolean;
+  last_attempt: BackupRun | null;
+  last_success: BackupRun | null;
+  latest_backup: LatestBackup | null;
+  backup_age_minutes: number | null;
+  last_unchanged_check_utc: string | null;
+  latest_verification: VerificationRecord | null;
+  last_verification_any: VerificationRecord | null;
+  changes_since_backup: boolean | null;
+  protection: string;
+  last_error: string | null;
+}
+
+export interface VerifyStep {
+  id: string;
+  label: string;
+  status: "passed" | "failed" | "not_run";
+  detail: string;
+}
+
+export interface VerifyReport {
+  path: string;
+  logbook_id: string | null;
+  verified_at_utc: string;
+  backup_created_at_utc: string | null;
+  backup_kind: string | null;
+  complete: boolean;
+  steps: VerifyStep[];
+  scope: string;
+  problems: string[];
+  files_checked: number;
+  attachments_checked: number;
+  entry_count: number | null;
+}

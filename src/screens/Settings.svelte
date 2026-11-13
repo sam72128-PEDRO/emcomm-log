@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import GpsCaptureDialog from "../components/GpsCaptureDialog.svelte";
+  import BackupHealthPanel from "../components/BackupHealthPanel.svelte";
   import { DEFAULT_GPS, GPS_MAX_AGE_S, GPS_TIMEOUT_S } from "../lib/gps";
   import {
     Settings as SettingsIcon,
@@ -27,7 +29,14 @@
   import DirectoryPanel from "../components/DirectoryPanel.svelte";
 
   type Section = "general" | "profiles" | "presets" | "backups" | "location" | "directory" | "storage";
-  let section = $state<Section>("general");
+  let section = $state<Section>(untrack(() => (app.settingsSection as Section | null) ?? "general"));
+  $effect(() => {
+    const want = app.settingsSection as Section | null;
+    if (want) {
+      section = want;
+      app.settingsSection = null;
+    }
+  });
   const sections: { id: Section; label: string }[] = [
     { id: "general", label: "General" },
     { id: "profiles", label: "Operator Profiles" },
@@ -563,6 +572,7 @@
                 >{/if}
             </div>
           </fieldset>
+          <BackupHealthPanel disabled={dirty} />
         {/if}
         {#if app.settings?.backup.destination}
           <div class="row">

@@ -40,6 +40,7 @@
         await listen<BackupStatus>("backup-status", (ev) => {
           const prev = app.backup?.last;
           app.backup = ev.payload;
+          if (!ev.payload.running) void app.refreshBackupHealth();
           const last = ev.payload.last;
           if (
             last &&

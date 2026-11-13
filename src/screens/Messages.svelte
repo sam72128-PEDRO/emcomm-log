@@ -4,22 +4,27 @@
   import { api, toAppError } from "../lib/api";
   import type * as T from "../lib/types";
   import { HANDLING_LABEL, PRIORITY_LABEL } from "../lib/entryForm";
-  import { changeHandling } from "../lib/handling";
+  import { changeHandling, outstandingAction, OUTSTANDING_HANDLING } from "../lib/handling";
   import { formatInstant } from "../lib/time";
   import KindBadge from "../components/KindBadge.svelte";
 
-  type Tab = "open" | T.Handling | "all";
+  type Tab = "open" | "pending" | "sent" | "awaiting_ack" | "acknowledged" | "other" | "all";
   let tab = $state<Tab>("open");
   let items = $state<T.Entry[]>([]);
   let total = $state(0);
   let error = $state<string | null>(null);
   let busyId = $state<string | null>(null);
+  // 2.3: latest recorded status change per row (time and operator), read from revision history.
+  let latest = $state<Record<string, T.LatestHandlingChange>>({});
 
+  // Transmitted (Sent) and Awaiting ACK are separate: transmitting a message never means it was acknowledged.
   const tabs: { id: Tab; label: string; states: T.Handling[] }[] = [
-    { id: "open", label: "Needs action", states: ["pending", "sent", "awaiting_ack"] },
-    { id: "pending", label: "Pending (to send)", states: ["pending"] },
-    { id: "awaiting_ack", label: "Sent, awaiting ACK", states: ["sent", "awaiting_ack"] },
+    { id: "open", label: "Needs action", states: OUTSTANDING_HANDLING },
+    { id: "pending", label: "Not transmitted", states: ["pending"] },
+    { id: "sent", label: "Transmitted, no ACK recorded", states: ["sent"] },
+    { id: "awaiting_ack", label: "Awaiting ACK", states: ["awaiting_ack"] },
     { id: "acknowledged", label: "Acknowledged", states: ["acknowledged"] },
+    { id: "other", label: "Relayed / Delivered / Closed", states: ["relayed", "delivered", "closed"] },
     {
       id: "all",
       label: "All tracked",
@@ -34,6 +39,12 @@
       items = p.items;
       total = p.total;
       error = null;
+      try {
+        const rows = items.length ? await api.latestHandlingChanges(items.map((e) => e.id)) : [];
+        latest = Object.fromEntries((Array.isArray(rows) ? rows : []).map((r) => [r.entry_id, r]));
+      } catch {
+        latest = {};
+      }
     } catch (e) {
       error = toAppError(e).message;
     }
@@ -57,7 +68,10 @@
   <div class="panel-head">
     <h1 class="title"><Mail size={22} class="icon" />Messages</h1>
     <span class="spacer"></span>
-    <span class="muted">Entries with a handling status. Changing a status saves a new revision.</span>
+    <span class="muted"
+      >Entries with a handling status. Changing a status saves a new revision; nothing is acknowledged
+      automatically.</span
+    >
   </div>
   <div class="tabs" role="tablist" aria-label="Message status">
     {#each tabs as t (t.id)}
@@ -73,7 +87,7 @@
         ><tr
           ><th>#</th><th>Time</th><th>Type</th><th>From → To</th><th>Summary</th><th>Priority</th><th
             >Handling</th
-          ></tr
+          ><th>Outstanding action</th><th>Last status change</th></tr
         ></thead
       >
       <tbody>
@@ -105,10 +119,27 @@
                 <option value="">Not tracked</option>
               </select>
             </td>
+            <td class="small">
+              {outstandingAction(e.handling) || "—"}
+              {#if e.follow_up?.state === "open"}<div>
+                  <span class="badge warn" title="A separate follow-up; it does not change the message status"
+                    >FOLLOW-UP OPEN</span
+                  >
+                </div>{/if}
+              {#if e.related_count}<div class="muted">{e.related_count} related</div>{/if}
+            </td>
+            <td class="small nowrap">
+              {#if latest[e.id]}{formatInstant(latest[e.id].at_utc, app.zone, app.clock)}
+                <div class="muted">
+                  {latest[e.id].by_name || "—"}{latest[e.id].by_callsign
+                    ? ` · ${latest[e.id].by_callsign}`
+                    : ""}
+                </div>{:else}—{/if}
+            </td>
           </tr>
         {:else}
           <tr
-            ><td colspan="7" class="empty"
+            ><td colspan="9" class="empty"
               >No messages in this state. Set "Message handling" when logging traffic to track it here.</td
             ></tr
           >

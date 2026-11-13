@@ -424,3 +424,21 @@ describe("2.2 flags and directory", () => {
     expect(matchDirectory(items, "Shelter")).toBeNull();
   });
 });
+
+describe("2.3 traffic lifecycle rules (mirror the core)", () => {
+  it("only undoing recorded progress is a correction", async () => {
+    const { isHandlingRegression, OUTSTANDING_HANDLING, outstandingAction } = await import("../lib/handling");
+    expect(isHandlingRegression("pending", "sent")).toBe(false);
+    expect(isHandlingRegression("sent", "awaiting_ack")).toBe(false);
+    expect(isHandlingRegression("awaiting_ack", "acknowledged")).toBe(false);
+    expect(isHandlingRegression(null, "pending")).toBe(false);
+    expect(isHandlingRegression("pending", null)).toBe(false);
+    expect(isHandlingRegression("acknowledged", "sent")).toBe(true);
+    expect(isHandlingRegression("acknowledged", null)).toBe(true);
+    expect(isHandlingRegression("sent", "pending")).toBe(true);
+    expect(isHandlingRegression("closed", "delivered")).toBe(true);
+    expect(OUTSTANDING_HANDLING).toEqual(["pending", "sent", "awaiting_ack"]);
+    expect(outstandingAction("acknowledged")).toBe("");
+    expect(outstandingAction("sent")).toContain("Awaiting ACK");
+  });
+});

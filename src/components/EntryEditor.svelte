@@ -38,6 +38,7 @@
   } from "../lib/entryForm";
   import type { EntryForm, FieldErrors, FormContext } from "../lib/entryForm";
   import { formatInstant } from "../lib/time";
+  import { isHandlingRegression } from "../lib/handling";
   import { currentPeriod } from "../lib/periods";
   import { channelHint, channelValue } from "../lib/plan";
   import { fillText, matchDirectory, normKey } from "../lib/directory";
@@ -471,6 +472,12 @@
   }
 
   const err = (k: string) => errors[k] ?? "";
+  // 2.3: undoing recorded transmission/acknowledgment progress needs a reason (the core enforces it).
+  const handlingCorrection = $derived(
+    mode === "edit" &&
+      !!entry &&
+      isHandlingRegression(entry.handling, (form.handling || null) as T.Handling | null),
+  );
 </script>
 
 <div
@@ -1236,8 +1243,20 @@
 
   {#if mode === "edit"}
     <div class="field">
-      <label for={fid("reason")}>Reason for change (optional, kept in revision history)</label>
-      <input id={fid("reason")} type="text" bind:value={reason} maxlength="500" />
+      <label for={fid("reason")}
+        >{#if handlingCorrection}Reason for change<span class="req">*</span>
+          <span class="muted">(required: the message status moves back)</span>{:else}Reason for change
+          (optional, kept in revision history){/if}</label
+      >
+      <input
+        id={fid("reason")}
+        type="text"
+        bind:value={reason}
+        maxlength="500"
+        aria-invalid={err("reason") ? "true" : undefined}
+        aria-describedby={err("reason") ? fid("reason-err") : undefined}
+      />
+      {#if err("reason")}<span class="field-error" id={fid("reason-err")}>{err("reason")}</span>{/if}
     </div>
   {/if}
 
