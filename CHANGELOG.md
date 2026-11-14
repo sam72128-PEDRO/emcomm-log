@@ -96,6 +96,26 @@ Six additions from the V2.2 handoff package (EMLOG-2.2-SHARED-2026-11-04). Logbo
   ICS 214 can start from a Traffic Log selection; entries outside the period are blocked, never added.
   Reviewing never changes an entry.
 
+## 2.3.0 tablet (Android) — 2026-11-14
+
+All of 2.2.0 and 2.3.0 on the Android tablet build (the tablet was at 2.1.0):
+- Attachments: **Attach files…** takes several files at once through Android's picker (Photos/Gallery
+  included); **Take photo…** uses the tablet's camera app; **Save As** uses Android's *Save to* screen.
+  Drag and drop and screenshot paste are desktop-only and are not shown on the tablet.
+- ADIF import uses Android's file picker.
+- Handover summary, Backup Health with Verify Latest Backup, and the message-status changes work as on the
+  desktop. Backups on the microSD card are verified in place, read-only.
+- Installs as an update over 2.1.0 (same signing key); logbooks upgrade to schema 5 with a verified copy.
+
+## 2.1.0 tablet (Android) — 2026-11-04
+
+All of 2.1.0 on the Android tablet build, on top of the 2.0 tablet port (`docs/ANDROID_TABLET.md`):
+- External GPS receivers are not used on the tablet; **Capture GPS** uses the tablet's own location
+  (satellite GPS labelled *Device GPS*, otherwise *OS position*), with the location permission asked on
+  first use. Manual entry and the station default always work.
+- The tablet app now requests the location permission (it still has no network permission).
+- ADIF files saved through Android's "Save to…" keep their `.adi` name.
+
 ## 2.1.0 — 2026-11-03
 
 Desktop enhancement (spec EMLOG-DESKTOP-ENH-2026-11-03). Logbooks upgrade from 2.0 (schema 3 → 4) with a

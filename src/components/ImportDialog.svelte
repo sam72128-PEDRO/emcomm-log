@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID, DEVICE, shownPath } from "../lib/platform";
   import { FolderOpen, CircleAlert, ShieldCheck, PackageOpen } from "@lucide/svelte";
   import Modal from "./Modal.svelte";
   import { app } from "../lib/state.svelte";
@@ -52,7 +53,7 @@
     try {
       const out = await api.importPackage(file, parent, name.trim() || null);
       const dup = out.result.duplicate_of.length
-        ? ` Note: this package came from a logbook already on this computer (${out.result.duplicate_of.join(", ")}); it was imported as a separate copy.`
+        ? ` Note: this package came from a logbook already on this ${DEVICE} (${out.result.duplicate_of.join(", ")}); it was imported as a separate copy.`
         : "";
       app.toast(
         dup ? "warn" : "ok",
@@ -73,14 +74,13 @@
 
 <Modal title="Import .emlog package" size="lg" {onclose} {busy}>
   <p class="muted" style="margin:0">
-    Import always creates a new local logbook. Nothing on this computer is overwritten or merged. Operator
-    profiles are not imported; the logbook's own settings, templates, favorites, revisions and attachments
-    are.
+    Import always creates a new local logbook. Nothing on this {DEVICE} is overwritten or merged. Operator profiles
+    are not imported; the logbook's own settings, templates, favorites, revisions and attachments are.
   </p>
   <div class="field">
     <label for="im-file">Package file</label>
     <div class="row">
-      <input id="im-file" type="text" readonly value={file} placeholder="Choose a .emlog file" />
+      <input id="im-file" type="text" readonly value={shownPath(file)} placeholder="Choose a .emlog file" />
       <button onclick={choose} disabled={busy} data-autofocus><PackageOpen size={16} />Choose…</button>
     </div>
   </div>
@@ -110,7 +110,7 @@
         <label for="im-parent">Import into folder</label>
         <div class="row">
           <input id="im-parent" type="text" readonly value={parent} />
-          <button onclick={browseParent}><FolderOpen size={16} />Browse…</button>
+          {#if !IS_ANDROID}<button onclick={browseParent}><FolderOpen size={16} />Browse…</button>{/if}
         </div>
       </div>
     </div>

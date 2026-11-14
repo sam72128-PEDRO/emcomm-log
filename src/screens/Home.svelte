@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID, DEVICE } from "../lib/platform";
   import { onMount } from "svelte";
   import {
     BookPlus,
@@ -149,7 +150,7 @@
   async function forget(r: LogbookIndexRow) {
     const a = await confirm.ask({
       title: "Remove from list?",
-      message: `"${r.name}" will be removed from this computer's logbook list only. Its folder and data are NOT deleted.`,
+      message: `"${r.name}" will be removed from this ${DEVICE}'s logbook list only. Its folder and data are NOT deleted.`,
       detail: r.path,
       buttons: [
         { id: "ok", label: "Remove from list", tone: "danger" },
@@ -182,7 +183,7 @@
     <button class="primary" onclick={() => (app.dialog = "create")}
       ><BookPlus size={17} />Create Logbook</button
     >
-    <button onclick={openFolder}><FolderOpen size={17} />Open Folder…</button>
+    {#if !IS_ANDROID}<button onclick={openFolder}><FolderOpen size={17} />Open Folder…</button>{/if}
     <button onclick={() => (app.dialog = "import")}><PackageOpen size={17} />Import Package…</button>
     <button onclick={() => (app.dialog = "restore")}><ArchiveRestore size={17} />Restore Backup…</button>
     <button onclick={() => app.navigate("settings")}><SettingsIcon size={17} />Settings</button>
@@ -274,6 +275,7 @@
                       >
                       <button
                         class="small icon-only"
+                        hidden={IS_ANDROID}
                         title="Reveal location"
                         aria-label="Reveal location of {r.name}"
                         onclick={() =>
@@ -281,7 +283,9 @@
                         ><FolderSearch size={15} /></button
                       >
                     {:else}
-                      <button class="small" onclick={() => relink(r)}><Link size={15} />Relink…</button>
+                      {#if !IS_ANDROID}<button class="small" onclick={() => relink(r)}
+                          ><Link size={15} />Relink…</button
+                        >{/if}
                       <button class="small" onclick={load}>Retry</button>
                     {/if}
                     {#if app.active?.info.id !== r.id}
@@ -302,7 +306,7 @@
       </div>
     {/if}
   </section>
-  <p class="muted small">
+  <p class="muted small" hidden={IS_ANDROID}>
     Unavailable means the folder could not be found (for example, a removable drive is unplugged). EMCOMM LOG
     never creates a replacement elsewhere — reconnect the drive and press Retry, or Relink to the folder's new
     location.

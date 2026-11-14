@@ -3,7 +3,8 @@
   // the logbook's staging area at once (so the source may vanish) and become part of the entry only when it
   // is saved. Nothing is opened automatically.
   import { onMount } from "svelte";
-  import { Paperclip, FileText, X, Upload, Undo2, LoaderCircle } from "@lucide/svelte";
+  import { Paperclip, FileText, X, Upload, Undo2, LoaderCircle, Camera } from "@lucide/svelte";
+  import { IS_ANDROID } from "../lib/platform";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { app } from "../lib/state.svelte";
@@ -84,6 +85,14 @@
     }
   }
 
+  async function photo() {
+    try {
+      await stageFiles(await api.takePhoto(), "camera");
+    } catch (e) {
+      app.toast("error", `Photo not attached: ${toAppError(e).message}`);
+    }
+  }
+
   async function pick() {
     try {
       await stageFiles(await api.pickAttachments(), "file");
@@ -136,24 +145,27 @@
       if (copying && ev.payload.token === copying.token)
         copying = { ...copying, done: ev.payload.done, total: ev.payload.total };
     }).then((u) => (alive ? offs.push(u) : u()));
-    try {
-      getCurrentWebview()
-        .onDragDropEvent((ev) => {
-          const p = ev.payload;
-          if (disabled || !zone || zone.offsetParent === null) return;
-          if (p.type === "over" || p.type === "enter") over = inZone(p.position.x, p.position.y);
-          else if (p.type === "leave") over = false;
-          else if (p.type === "drop") {
-            const hit = inZone(p.position.x, p.position.y);
-            over = false;
-            if (hit && p.paths.length)
-              void api.describeFiles(p.paths).then((f) => stageFiles(f, "drag_drop"));
-          }
-        })
-        .then((u) => (alive ? offs.push(u) : u()));
-    } catch {
-      /* not running inside Tauri (tests) */
-    }
+    // Android has no drag and drop from other apps into the WebView; listen only on desktop.
+    if (!IS_ANDROID)
+      try {
+        getCurrentWebview()
+          .onDragDropEvent((ev) => {
+            const p = ev.payload;
+            if (disabled || !zone || zone.offsetParent === null) return;
+            if (p.type === "over" || p.type === "enter") over = inZone(p.position.x, p.position.y);
+            else if (p.type === "leave") over = false;
+            else if (p.type === "drop") {
+              const hit = inZone(p.position.x, p.position.y);
+              over = false;
+              if (hit && p.paths.length)
+                void api.describeFiles(p.paths).then((f) => stageFiles(f, "drag_drop"));
+            }
+          })
+          .then((u) => (alive ? offs.push(u) : u()))
+          .catch(() => {});
+      } catch {
+        /* not running inside Tauri (tests) */
+      }
     return () => {
       alive = false;
       offs.forEach((u) => u());
@@ -170,20 +182,25 @@
     aria-label="Attachments"
     aria-describedby="{id}-hint"
   >
-    <Upload size={16} aria-hidden="true" />
-    <span>Drop files here</span>
-    <input
-      class="paste"
-      type="text"
-      id="{id}-paste"
-      aria-label="Paste a screenshot or image here"
-      placeholder="or click here and paste an image"
-      value=""
-      onpaste={onPaste}
-      oninput={(e) => (e.currentTarget.value = "")}
-      {disabled}
-    />
+    {#if !IS_ANDROID}
+      <Upload size={16} aria-hidden="true" />
+      <span>Drop files here</span>
+      <input
+        class="paste"
+        type="text"
+        id="{id}-paste"
+        aria-label="Paste a screenshot or image here"
+        placeholder="or click here and paste an image"
+        value=""
+        onpaste={onPaste}
+        oninput={(e) => (e.currentTarget.value = "")}
+        {disabled}
+      />
+    {/if}
     <span class="spacer"></span>
+    {#if IS_ANDROID}<button type="button" class="small" onclick={photo} {disabled}
+        ><Camera size={14} />Take photo…</button
+      >{/if}
     <button type="button" class="small" onclick={pick} {disabled}><Paperclip size={14} />Attach files…</button
     >
   </div>
@@ -254,7 +271,9 @@
                 ? " (pasted)"
                 : a.source === "drag_drop"
                   ? " (dropped)"
-                  : ""}</span
+                  : a.source === "camera"
+                    ? " (photo)"
+                    : ""}</span
             >
             <input
               type="text"

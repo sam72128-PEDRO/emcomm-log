@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IS_ANDROID } from "../lib/platform";
   import { Crosshair, Eraser, House } from "@lucide/svelte";
   import { app } from "../lib/state.svelte";
   import { accuracyNote, describeSource, formatCoord, maidenhead, parseCoord } from "../lib/location";
@@ -123,7 +124,9 @@
       <button
         class="small ghost"
         onclick={() => (capturing = true)}
-        title="Get one fix from a GPS receiver or the computer's location"
+        title={IS_ANDROID
+          ? "Get one fix from the tablet's location"
+          : "Get one fix from a GPS receiver or the computer's location"}
         ><Crosshair size={14} />Capture GPS…</button
       >
       {#if defaultLocation}<button
