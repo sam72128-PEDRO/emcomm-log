@@ -1,0 +1,63 @@
+EMCOMM LOG 2.3.0 for Android tablets
+====================================
+
+What's in this package
+  EMCOMM-LOG-2.3.0-tablet.apk   the app (ARM64; built for the Samsung Galaxy Tab S7 FE)
+  SHA256SUMS.txt                checksum to confirm the file is intact
+  CHANGELOG.md, OPERATOR_GUIDE.md, ANDROID_TABLET.md
+
+This is the full 2.3.0 release on the tablet: everything in 2.2 (attachments, related entries, the
+logbook directory, Important / follow-up, ADIF import, review before export) and 2.3 (handover
+summary, Backup Health with Verify Latest Backup, message-status improvements).
+
+On the tablet:
+  - Attachments: "Attach files..." (several at once; the picker also shows Photos/Gallery) and
+    "Take photo..." (uses the tablet's camera app). Drag and drop and screenshot paste are desktop-only.
+  - Exports, attachment "Save As" and packages go through Android's "Save to" screen.
+
+Requirements
+  - An ARM64 Android tablet running Android 11 or later. Target device: Galaxy Tab S7 FE. Tested on the
+    Android emulator (Tab S7 FE profile, Android 15); not yet confirmed on a physical tablet.
+  - Not distributed through Google Play: this is a file you install yourself ("sideloading").
+  - No internet connection is needed or used.
+
+1. Check the file (optional)
+   On a computer, in the folder with the files:
+     macOS / Linux:  shasum -a 256 -c SHA256SUMS.txt
+     Windows (PowerShell):  Get-FileHash -Algorithm SHA256 EMCOMM-LOG-2.3.0-tablet.apk
+
+2. Copy it to the tablet
+   - USB-C cable: on the tablet choose "Transfer files". On a Mac you need Google's Android File Transfer
+     (or any file-transfer app); on Windows it appears as a drive. Copy the .apk into the tablet's Download
+     folder.
+   - Or put the .apk on a cloud drive or send it to yourself, and download it on the tablet.
+
+3. Install
+   - On the tablet open Files (or My Files) -> Download -> tap EMCOMM-LOG-2.3.0-tablet.apk.
+   - Android asks permission to install apps from this source (the Files app or browser). Allow it for this
+     install, then tap Install. You can switch the permission off again afterwards.
+   - If Play Protect warns that the app is not from the Play Store, choose "Install anyway": it is your own
+     build, not a Play Store app.
+
+4. First run
+   The setup wizard asks for your operator profile and time display. Logbooks live in the app's private
+   storage on the tablet; backups go to the microSD card when one is inserted.
+
+Upgrading from 2.1 (or 2.0)
+   Install the 2.3.0 .apk over the old app; it is signed with the same key, so Android installs it as an
+   update and keeps your logbooks, settings and drafts. The first time 2.3 opens a logbook it upgrades it
+   (schema 4 -> 5) and keeps an untouched copy of the old database. This was checked on the emulator
+   (2.1 logbook with an entry, then 2.3 installed over it). Export your logbooks first anyway (see below).
+
+IMPORTANT: back up before removing the app
+   Uninstalling the app erases its logbooks. Use the app's logbook export (a .emlog package) and copy the
+   file off the tablet before uninstalling or resetting it.
+
+Moving logbooks between devices
+   A .emlog package moves a whole logbook between the tablet and a desktop. Tablet 2.3 and desktop 2.2/2.3
+   use the same format, so packages move both ways. EMCOMM LOG 2.1 or older cannot open them (it refuses
+   them as a newer format; nothing is lost).
+
+GPS
+   The tablet's own location works when you press Capture GPS and allow location. External USB/Bluetooth
+   GPS receivers are not supported on the tablet.
