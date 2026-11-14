@@ -72,9 +72,14 @@ backup; Verify Latest Backup → Verified with all seven checks listed; after on
 flipped on disk, Verify → Verification Failed. Defects found and fixed in this pass (each rechecked in a rebuilt app): Messages table overflowed
 the window; a declined correction left the select showing the unsaved status; Backup Health did not refresh
 after new changes (it now refreshes on data changes and every minute); a raw UTC timestamp in the protection
-line; spacing in the status history. Not done by hand: ICS 213/214/309 and report exports (unchanged in 2.3),
-Quick Entry Save & Add Another under a second operator, the summary-failure banner. The Dashboard badge was
-seen (Unknown after a newer, unverified backup).
+line; spacing in the status history. Second hands-on pass (same build, after the fixes): the summary-failure banner (a handover time in year
+2300, outside the supported range) showed "The summary could not be generated … You can still switch
+operators", Continue refused the invalid time with its own message, and after clearing the time the switch
+succeeded. Quick Entry with Save & Add Another under the second operator saved #3 and #4 recorded as that
+operator (operator and *Prepared by*), while earlier entries kept the first operator. ICS 213 (selected
+message), ICS 214 and ICS 309 (operational period) and PDF/DOCX/XLSX/CSV/TXT reports were produced from the
+app and read back with pypdf, python-docx, openpyxl and csv: each held exactly the entries in its scope, with
+each entry's original operator.
 
 **Not validated:** full operator acceptance of the three features in the release app; reports
 (PDF/DOCX/XLSX) are unchanged and were not re-checked by hand; no Windows/Linux/Android build or CI run.
