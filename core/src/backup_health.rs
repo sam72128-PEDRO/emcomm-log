@@ -660,11 +660,8 @@ pub fn assess(i: HealthInputs) -> BackupHealth {
     if let Some(v) = &verification
         && !v.complete
     {
-        let mut reasons = vec![format!(
-            "Verification on {} failed: {}",
-            v.verified_at_utc,
-            v.problems.first().cloned().unwrap_or_else(|| v.scope.clone())
-        )];
+        // Times are shown (formatted for the operator's zone) next to the state, not inside the text.
+        let mut reasons = vec![format!("Verification failed: {}", v.problems.first().cloned().unwrap_or_else(|| v.scope.clone()))];
         reasons.append(&mut h.reasons);
         h.reasons = reasons;
         return finish(h, HealthState::VerificationFailed, "The latest backup failed its integrity check".into());
@@ -674,7 +671,7 @@ pub fn assess(i: HealthInputs) -> BackupHealth {
         return finish(h, HealthState::AttentionRequired, head);
     }
     match verification {
-        Some(v) => finish(h, HealthState::Verified, format!("Latest backup verified on {}", v.verified_at_utc)),
+        Some(_) => finish(h, HealthState::Verified, "The latest backup passed a full verification".into()),
         None => finish(
             h,
             HealthState::Unknown,
