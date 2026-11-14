@@ -257,6 +257,25 @@ out of a narrow dialog; resources dialog not focusing its first cell; missing sp
 `minmax(0, 1fr)` — fixed in code, not yet seen on screen because the Mac locked). Also changed by design: the
 "current period" is only a running one, so entries logged between periods are not attached to the last one.
 
+## 2.3.0 release packaging (2026-11-14)
+
+- **Windows / Linux:** CI on `main` ([run 43550637108](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/43550637108),
+  2.3.0 as merged) and [run 43551876970](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/43551876970)
+  (with the Backup Health headline fix; the packaged installers come from this run): format, lint, typecheck,
+  frontend tests, clippy, all Rust tests, export/form validators, installers, and `.emlog` round trips
+  Linux⇄Windows — all green. Installer smoke and installed-app E2E
+  ([run 43552054880](https://github.com/sam72128-PEDRO/emcomm-log/actions/runs/43552054880), installers of the
+  first run): green on Windows and Linux.
+- **macOS:** local DMG from the same commit; `scripts/mac_smoke.sh` passes (networking denied).
+- **Android tablet 2.3.0** (this branch, `android-2.3` = `main` + the tablet shell): `cargo clippy` for
+  `aarch64-linux-android` clean; signed release APK (versionCode 2003000). On the Tab S7 FE emulator (Android 15):
+  2.1.0 installed and set up, one entry logged, then 2.3.0 installed **as an update** (same key) — the logbook
+  upgraded 4 → 5 with a pre-migration copy and the entry intact; Handover Summary and Copy Summary (Android
+  clipboard); Backup Health → Verify Latest Backup on the emulated microSD card → Verified; **Take photo** through
+  the camera app attached a JPEG (thumbnail, "photo" source) and the entry saved with it. Not exercised on the
+  emulator: the multi-select Attach files picker, attachment Save As and ADIF import through Android's pickers
+  (same bridge pattern as the 2.1 pickers), and anything on the physical tablet.
+
 ## Android tablet 2.1.0 (2026-11-04)
 
 Branch `android-2.1` = `v2.1` + the Android tablet port, external GPS left out, tablet location added.
