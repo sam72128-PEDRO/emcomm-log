@@ -155,7 +155,7 @@ export async function backupNow() {
   const o = await api
     .runBackupNow()
     .catch((e) => ({ ok: false, skipped: false, path: null, error: toAppError(e) }));
-  if (o.ok) app.toast("ok", "Backup Succeeded: verified copy written.");
+  if (o.ok) app.toast("ok", "Backup Succeeded: copy written and checked.");
   else app.toast("error", `Backup Failed: ${o.error?.message ?? "unknown error"}`);
   if (app.active) app.backup = await api.getBackupStatus().catch(() => app.backup);
 }
